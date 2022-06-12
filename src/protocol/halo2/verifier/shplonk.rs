@@ -3,8 +3,8 @@ use crate::{
     transcript::Transcript,
     util::{
         loader::{LoadedScalar, Loader},
-        CommonPolynomial, CommonPolynomialEvaluation, Curve, Domain, Expression, Field, Query,
-        Rotation, MSM,
+        CommonPolynomial, CommonPolynomialEvaluation, Curve, Domain, Expression, Field, Fraction,
+        Query, Rotation, MSM,
     },
     Error,
 };
@@ -48,14 +48,28 @@ where
 
     let proof = Proof::read(protocol, loader, statements, transcript)?;
 
-    let langranges = langranges(protocol, statements);
-    let common_poly_eval =
-        CommonPolynomialEvaluation::new(&protocol.domain, loader, langranges, &proof.z);
+    let (common_poly_eval, sets) = {
+        let mut common_poly_eval = CommonPolynomialEvaluation::new(
+            &protocol.domain,
+            loader,
+            langranges(protocol, statements),
+            &proof.z,
+        );
+        let mut sets = intermediate_sets(protocol, loader, &proof.z, &proof.z_prime);
+
+        L::LoadedScalar::batch_invert(
+            iter::empty()
+                .chain(common_poly_eval.denoms())
+                .chain(sets.iter_mut().flat_map(IntermediateSet::denoms)),
+        );
+        L::LoadedScalar::batch_invert(sets.iter_mut().flat_map(IntermediateSet::denoms));
+
+        (common_poly_eval, sets)
+    };
 
     let commitments = proof.commitments(protocol, loader, &common_poly_eval);
     let evaluations = proof.evaluations(protocol, loader, &common_poly_eval)?;
 
-    let sets = intermediate_sets(protocol, loader, &proof.z, &proof.z_prime);
     let f = {
         let powers_of_mu = proof
             .mu
@@ -75,26 +89,6 @@ where
     let lhs = f + rhs.clone() * proof.z_prime.clone();
 
     strategy.process(loader, proof, lhs, rhs)
-}
-
-fn langranges<C: Curve>(
-    protocol: &Protocol<C>,
-    statements: &[&[C::Scalar]],
-) -> impl IntoIterator<Item = i32> {
-    protocol
-        .relations
-        .iter()
-        .cloned()
-        .sum::<Expression<_>>()
-        .used_langrange()
-        .into_iter()
-        .chain(
-            0..statements
-                .iter()
-                .map(|statement| statement.len())
-                .max()
-                .unwrap_or_default() as i32,
-        )
 }
 
 pub struct Proof<C: Curve, L: Loader<C>> {
@@ -221,7 +215,7 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
             .chain(iter::once((
                 protocol.vanishing_poly(),
                 common_poly_eval
-                    .zn
+                    .zn()
                     .powers(self.quotients.len())
                     .into_iter()
                     .zip(self.quotients.iter().cloned().map(MSM::base))
@@ -285,7 +279,7 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
                     relation
                         .evaluate(
                             &|scalar| Ok(loader.load_const(&scalar)),
-                            &|poly| Ok(common_poly_eval.get(poly).clone()),
+                            &|poly| Ok(common_poly_eval.get(poly)),
                             &|index| {
                                 evaluations
                                     .get(&index)
@@ -306,7 +300,7 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
                         .map(|evaluation| power_of_alpha * evaluation)
                 })
                 .collect::<Result<Vec<_>, Error>>()?,
-        ) * &common_poly_eval.zn_minus_one_inv;
+        ) * &common_poly_eval.zn_minus_one_inv();
 
         evaluations.insert(
             Query {
@@ -320,13 +314,33 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
     }
 }
 
+fn langranges<C: Curve>(
+    protocol: &Protocol<C>,
+    statements: &[&[C::Scalar]],
+) -> impl IntoIterator<Item = i32> {
+    protocol
+        .relations
+        .iter()
+        .cloned()
+        .sum::<Expression<_>>()
+        .used_langrange()
+        .into_iter()
+        .chain(
+            0..statements
+                .iter()
+                .map(|statement| statement.len())
+                .max()
+                .unwrap_or_default() as i32,
+        )
+}
+
 struct IntermediateSet<C: Curve, L: Loader<C>> {
     polys: Vec<usize>,
     rotations: Vec<Rotation>,
     z_s: L::LoadedScalar,
-    commitment_coeff: Option<L::LoadedScalar>,
-    evaluation_coeffs: Vec<L::LoadedScalar>,
-    remainder_coeff: L::LoadedScalar,
+    evaluation_coeffs: Vec<Fraction<L::LoadedScalar>>,
+    commitment_coeff: Option<Fraction<L::LoadedScalar>>,
+    remainder_coeff: Option<Fraction<L::LoadedScalar>>,
 }
 
 impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
@@ -377,7 +391,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
             .iter()
             .zip(normalized_ell_primes.iter())
             .map(|(omega, normalized_ell_prime)| {
-                let value = L::LoadedScalar::sum_products_with_coeff_and_constant(
+                L::LoadedScalar::sum_products_with_coeff_and_constant(
                     &[
                         (
                             *normalized_ell_prime,
@@ -391,9 +405,9 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                         ),
                     ],
                     &C::Scalar::zero(),
-                );
-                value.invert().unwrap()
+                )
             })
+            .map(Fraction::one_over)
             .collect::<Vec<_>>();
 
         let z_s = rotations
@@ -401,24 +415,40 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
             .map(|rotation| z_prime_minus_z_omega_i.get(rotation).unwrap().clone())
             .reduce(|acc, z_prime_minus_z_omega_i| acc * z_prime_minus_z_omega_i)
             .unwrap();
-        let z_s_1_over_z_s = z_s_1
-            .as_ref()
-            .map(|z_s_1| z_s_1.clone() * z_s.invert().unwrap());
-
-        let barycentric_weights_sum_inv =
-            L::LoadedScalar::sum(&barycentric_weights).invert().unwrap();
-        let remainder_coeff = z_s_1_over_z_s
-            .as_ref()
-            .map(|z_s_1_over_z_s| z_s_1_over_z_s.clone() * barycentric_weights_sum_inv.clone())
-            .unwrap_or(barycentric_weights_sum_inv);
+        let z_s_1_over_z_s = z_s_1.clone().map(|z_s_1| Fraction::new(z_s_1, z_s.clone()));
 
         Self {
             polys: Vec::new(),
             rotations,
             z_s,
-            commitment_coeff: z_s_1_over_z_s,
             evaluation_coeffs: barycentric_weights,
-            remainder_coeff,
+            commitment_coeff: z_s_1_over_z_s,
+            remainder_coeff: None,
+        }
+    }
+
+    fn denoms(&mut self) -> impl IntoIterator<Item = &'_ mut L::LoadedScalar> {
+        if self.evaluation_coeffs.first().unwrap().denom().is_some() {
+            self.evaluation_coeffs
+                .iter_mut()
+                .chain(self.commitment_coeff.as_mut())
+                .filter_map(Fraction::denom_mut)
+                .collect::<Vec<_>>()
+        } else if self.remainder_coeff.is_none() {
+            let barycentric_weights_sum = L::LoadedScalar::sum(
+                &self
+                    .evaluation_coeffs
+                    .iter()
+                    .map(Fraction::evaluate)
+                    .collect::<Vec<_>>(),
+            );
+            self.remainder_coeff = Some(match self.commitment_coeff.clone() {
+                Some(coeff) => Fraction::new(coeff.evaluate(), barycentric_weights_sum),
+                None => Fraction::one_over(barycentric_weights_sum),
+            });
+            vec![self.remainder_coeff.as_mut().unwrap().denom_mut().unwrap()]
+        } else {
+            unreachable!()
         }
     }
 
@@ -436,17 +466,17 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                     .commitment_coeff
                     .as_ref()
                     .map(|commitment_coeff| {
-                        commitments.get(poly).unwrap().clone() * commitment_coeff.clone()
+                        commitments.get(poly).unwrap().clone() * commitment_coeff.evaluate()
                     })
                     .unwrap_or_else(|| commitments.get(poly).unwrap().clone());
-                let remainder = self.remainder_coeff.clone()
+                let remainder = self.remainder_coeff.as_ref().unwrap().evaluate()
                     * L::LoadedScalar::sum(
                         &self
                             .rotations
                             .iter()
                             .zip(self.evaluation_coeffs.iter())
                             .map(|(rotation, coeff)| {
-                                coeff.clone()
+                                coeff.evaluate()
                                     * evaluations
                                         .get(&Query {
                                             poly: *poly,
@@ -621,7 +651,7 @@ mod test {
         use crate::protocol::halo2::{
             compile,
             test::{gen_vk_and_proof, read_srs},
-            transcript::Blake2bTranscript,
+            transcript::native::Blake2bTranscript,
         };
         use halo2_proofs::{
             halo2curves::bn256::Bn256,

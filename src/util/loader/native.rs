@@ -1,6 +1,6 @@
 use crate::util::{
-    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
-    Curve, PrimeField,
+    loader::{self, EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
+    Curve, FieldOps, PrimeField,
 };
 use lazy_static::lazy_static;
 use std::fmt::Debug;
@@ -9,7 +9,7 @@ lazy_static! {
     static ref LOADER: NativeLoader = NativeLoader;
 }
 
-impl<C: Curve> super::sealed::LoadedEcPoint<C, NativeLoader> for C {
+impl<C: Curve> loader::sealed::LoadedEcPoint<C, NativeLoader> for C {
     fn loader(&self) -> &NativeLoader {
         &LOADER
     }
@@ -27,7 +27,13 @@ impl<C: Curve> LoadedEcPoint<C> for C {
     }
 }
 
-impl<F: PrimeField> super::sealed::LoadedScalar<F, NativeLoader> for F {
+impl<F: PrimeField> FieldOps for F {
+    fn invert(&self) -> Option<F> {
+        self.invert().into()
+    }
+}
+
+impl<F: PrimeField> loader::sealed::LoadedScalar<F, NativeLoader> for F {
     fn loader(&self) -> &NativeLoader {
         &LOADER
     }
@@ -35,10 +41,6 @@ impl<F: PrimeField> super::sealed::LoadedScalar<F, NativeLoader> for F {
 
 impl<F: PrimeField> LoadedScalar<F> for F {
     type Loader = NativeLoader;
-
-    fn invert(&self) -> Option<Self> {
-        self.invert().into()
-    }
 }
 
 #[derive(Clone, Debug)]

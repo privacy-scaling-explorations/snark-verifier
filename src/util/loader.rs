@@ -1,12 +1,9 @@
-use crate::util::{Curve, PrimeField};
-use std::{
-    fmt::Debug,
-    iter,
-    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
-};
+use crate::util::{Curve, FieldOps, GroupOps, PrimeField};
+use std::{fmt::Debug, iter};
 
 #[cfg(feature = "evm")]
 pub mod evm;
+
 pub mod native;
 
 pub(super) mod sealed {
@@ -22,23 +19,7 @@ pub(super) mod sealed {
 }
 
 pub trait LoadedEcPoint<C: Curve>:
-    'static
-    + Eq
-    + Clone
-    + Debug
-    + Send
-    + Sync
-    + Sized
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + Neg<Output = Self>
-    + for<'a> Add<&'a Self, Output = Self>
-    + for<'a> Sub<&'a Self, Output = Self>
-    + AddAssign
-    + SubAssign
-    + for<'a> AddAssign<&'a Self>
-    + for<'a> SubAssign<&'a Self>
-    + sealed::LoadedEcPoint<C, Self::Loader>
+    'static + Clone + Debug + GroupOps + sealed::LoadedEcPoint<C, Self::Loader>
 {
     type Loader: Loader<C, LoadedEcPoint = Self>;
 
@@ -53,27 +34,7 @@ pub trait LoadedEcPoint<C: Curve>:
 }
 
 pub trait LoadedScalar<F: PrimeField>:
-    'static
-    + Eq
-    + Clone
-    + Debug
-    + Send
-    + Sync
-    + Sized
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Neg<Output = Self>
-    + for<'a> Add<&'a Self, Output = Self>
-    + for<'a> Mul<&'a Self, Output = Self>
-    + for<'a> Sub<&'a Self, Output = Self>
-    + MulAssign
-    + AddAssign
-    + SubAssign
-    + for<'a> MulAssign<&'a Self>
-    + for<'a> AddAssign<&'a Self>
-    + for<'a> SubAssign<&'a Self>
-    + sealed::LoadedScalar<F, Self::Loader>
+    'static + Clone + Debug + FieldOps + sealed::LoadedScalar<F, Self::Loader>
 {
     type Loader: ScalarLoader<F, LoadedScalar = Self>;
 
@@ -117,7 +78,15 @@ pub trait LoadedScalar<F: PrimeField>:
         Self::sum_with_const(values, &F::zero())
     }
 
-    fn invert(&self) -> Option<Self>;
+    fn invert(&self) -> Option<Self> {
+        FieldOps::invert(self)
+    }
+
+    fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self>) {
+        values
+            .into_iter()
+            .for_each(|value| *value = LoadedScalar::invert(value).unwrap_or_else(|| value.clone()))
+    }
 
     fn pow_const(&self, mut exp: u64) -> Self {
         assert!(exp > 0);

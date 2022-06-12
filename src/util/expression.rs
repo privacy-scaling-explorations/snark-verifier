@@ -1,16 +1,14 @@
 use crate::util::{
     loader::{LoadedScalar, Loader},
-    Curve, Field, Rotation,
+    Curve, Domain, Field, Fraction, Rotation,
 };
 use std::{
     cmp::max,
     collections::{BTreeSet, HashMap},
     fmt::Debug,
-    iter::Sum,
+    iter::{self, Sum},
     ops::{Add, Mul, Neg, Sub},
 };
-
-use super::Domain;
 
 #[derive(Clone, Copy, Debug)]
 pub enum CommonPolynomial {
@@ -24,10 +22,10 @@ where
     C: Curve,
     L: Loader<C>,
 {
-    pub zn: L::LoadedScalar,
-    pub zn_minus_one_inv: L::LoadedScalar,
+    zn: L::LoadedScalar,
+    zn_minus_one_inv: Fraction<L::LoadedScalar>,
     identity: L::LoadedScalar,
-    lagrange: HashMap<i32, L::LoadedScalar>,
+    lagrange: HashMap<i32, Fraction<L::LoadedScalar>>,
 }
 
 impl<C, L> CommonPolynomialEvaluation<C, L>
@@ -58,22 +56,38 @@ where
 
         let lagrange_evals = omegas
             .iter()
-            .map(|omega| numer.clone() * omega * (z.clone() - omega).invert().unwrap())
+            .map(|omega| Fraction::new(numer.clone() * omega, z.clone() - omega))
             .collect::<Vec<_>>();
 
         Self {
             zn,
-            zn_minus_one_inv: zn_minus_one.invert().unwrap(),
+            zn_minus_one_inv: Fraction::one_over(zn_minus_one),
             identity: z.clone(),
             lagrange: HashMap::from_iter(langranges.into_iter().zip(lagrange_evals)),
         }
     }
 
-    pub fn get(&self, poly: CommonPolynomial) -> &L::LoadedScalar {
+    pub fn zn(&self) -> L::LoadedScalar {
+        self.zn.clone()
+    }
+
+    pub fn zn_minus_one_inv(&self) -> L::LoadedScalar {
+        self.zn_minus_one_inv.evaluate()
+    }
+
+    pub fn get(&self, poly: CommonPolynomial) -> L::LoadedScalar {
         match poly {
-            CommonPolynomial::Identity => &self.identity,
-            CommonPolynomial::Lagrange(i) => self.lagrange.get(&i).unwrap(),
+            CommonPolynomial::Identity => self.identity.clone(),
+            CommonPolynomial::Lagrange(i) => self.lagrange.get(&i).unwrap().evaluate(),
         }
+    }
+
+    pub fn denoms(&mut self) -> impl IntoIterator<Item = &'_ mut L::LoadedScalar> {
+        self.lagrange
+            .iter_mut()
+            .map(|(_, value)| value.denom_mut())
+            .chain(iter::once(self.zn_minus_one_inv.denom_mut()))
+            .flatten()
     }
 }
 
