@@ -5,6 +5,8 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
+#[cfg(feature = "evm")]
+pub mod evm;
 pub mod native;
 
 pub(super) mod sealed {
