@@ -1,6 +1,6 @@
-use crate::{
-    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Scalar, ScalarLoader},
-    util::{Curve, PrimeField},
+use crate::util::{
+    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
+    Curve, PrimeField,
 };
 use lazy_static::lazy_static;
 use std::fmt::Debug;
@@ -18,14 +18,10 @@ impl<C: Curve> super::sealed::LoadedEcPoint<C, NativeLoader> for C {
 impl<C: Curve> LoadedEcPoint<C> for C {
     type Loader = NativeLoader;
 
-    fn multi_scalar_multiplication(
-        pairs: impl IntoIterator<Item = (Scalar<C, Self::Loader>, Self)>,
-    ) -> Self {
+    fn multi_scalar_multiplication(pairs: impl IntoIterator<Item = (C::Scalar, C)>) -> Self {
         pairs
             .into_iter()
-            .map(|(scalar, base)| match scalar {
-                Scalar::Const(scalar) | Scalar::Loaded(scalar) => base * scalar,
-            })
+            .map(|(scalar, base)| base * scalar)
             .reduce(|acc, value| acc + value)
             .unwrap()
     }

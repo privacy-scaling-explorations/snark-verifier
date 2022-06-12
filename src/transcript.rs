@@ -1,4 +1,7 @@
-use crate::{loader::Loader, util::Curve, Error};
+use crate::{
+    util::{loader::Loader, Curve},
+    Error,
+};
 
 pub trait Transcript<C, L>
 where

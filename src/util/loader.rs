@@ -1,4 +1,4 @@
-use crate::util::{Curve, Field, PrimeField};
+use crate::util::{Curve, PrimeField};
 use std::{
     fmt::Debug,
     iter,
@@ -7,7 +7,7 @@ use std::{
 
 pub mod native;
 
-mod sealed {
+pub(super) mod sealed {
     use crate::util::{Curve, PrimeField};
 
     pub trait LoadedEcPoint<C: Curve, L: super::Loader<C>> {
@@ -41,7 +41,12 @@ pub trait LoadedEcPoint<C: Curve>:
     type Loader: Loader<C, LoadedEcPoint = Self>;
 
     fn multi_scalar_multiplication(
-        pairs: impl IntoIterator<Item = (Scalar<C, Self::Loader>, Self)>,
+        pairs: impl IntoIterator<
+            Item = (
+                <Self::Loader as ScalarLoader<C::Scalar>>::LoadedScalar,
+                Self,
+            ),
+        >,
     ) -> Self;
 }
 
@@ -178,88 +183,3 @@ pub trait ScalarLoader<F: PrimeField>: Debug {
 pub trait Loader<C: Curve>: EcPointLoader<C> + ScalarLoader<C::Scalar> + Clone {}
 
 impl<C: Curve, T: EcPointLoader<C> + ScalarLoader<C::Scalar> + Clone> Loader<C> for T {}
-
-#[derive(Clone, Debug)]
-pub enum Scalar<C: Curve, L: Loader<C>> {
-    Const(C::Scalar),
-    Loaded(L::LoadedScalar),
-}
-
-impl<C: Curve, L: Loader<C>> Scalar<C, L> {
-    pub fn zero() -> Self {
-        Self::Const(C::Scalar::zero())
-    }
-
-    pub fn one() -> Self {
-        Self::Const(C::Scalar::one())
-    }
-}
-
-impl<C: Curve, L: Loader<C>> Add for Scalar<C, L> {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        use sealed::LoadedScalar;
-        match (self, rhs) {
-            (Scalar::Const(lhs), Scalar::Const(rhs)) => Scalar::Const(lhs + rhs),
-            (Scalar::Loaded(lhs), Scalar::Loaded(rhs)) => Scalar::Loaded(lhs + rhs),
-            (Scalar::Const(constant), Scalar::Loaded(loaded))
-            | (Scalar::Loaded(loaded), Scalar::Const(constant)) => {
-                Scalar::Loaded(loaded.loader().load_const(&constant) + loaded)
-            }
-        }
-    }
-}
-
-impl<C: Curve, L: Loader<C>> AddAssign for Scalar<C, L> {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = self.clone() + rhs;
-    }
-}
-
-impl<C: Curve, L: Loader<C>> Sub for Scalar<C, L> {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        self + (-rhs)
-    }
-}
-
-impl<C: Curve, L: Loader<C>> SubAssign for Scalar<C, L> {
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = self.clone() - rhs;
-    }
-}
-
-impl<C: Curve, L: Loader<C>> Mul for Scalar<C, L> {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        use sealed::LoadedScalar;
-        match (self, rhs) {
-            (Scalar::Const(lhs), Scalar::Const(rhs)) => Scalar::Const(lhs * rhs),
-            (Scalar::Loaded(lhs), Scalar::Loaded(rhs)) => Scalar::Loaded(lhs * rhs),
-            (Scalar::Const(constant), Scalar::Loaded(loaded))
-            | (Scalar::Loaded(loaded), Scalar::Const(constant)) => {
-                Scalar::Loaded(loaded.loader().load_const(&constant) * loaded)
-            }
-        }
-    }
-}
-
-impl<C: Curve, L: Loader<C>> MulAssign for Scalar<C, L> {
-    fn mul_assign(&mut self, rhs: Self) {
-        *self = self.clone() * rhs;
-    }
-}
-
-impl<C: Curve, L: Loader<C>> Neg for Scalar<C, L> {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        match self {
-            Scalar::Const(constant) => Scalar::Const(-constant),
-            Scalar::Loaded(loaded) => Scalar::Loaded(-loaded),
-        }
-    }
-}

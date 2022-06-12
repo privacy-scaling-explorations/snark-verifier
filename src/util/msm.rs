@@ -1,6 +1,6 @@
-use crate::{
-    loader::{LoadedEcPoint, Loader, Scalar},
-    util::Curve,
+use crate::util::{
+    loader::{sealed, LoadedEcPoint, Loader},
+    Curve,
 };
 use std::{
     default::Default,
@@ -10,17 +10,17 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub struct MSM<C: Curve, L: Loader<C>> {
-    pub scalar: Scalar<C, L>,
+    pub scalar: Option<L::LoadedScalar>,
     bases: Vec<L::LoadedEcPoint>,
-    scalars: Vec<Scalar<C, L>>,
+    scalars: Vec<L::LoadedScalar>,
 }
 
 impl<C: Curve, L: Loader<C>> Default for MSM<C, L> {
     fn default() -> Self {
         Self {
-            scalar: Scalar::zero(),
-            bases: Vec::new(),
+            scalar: None,
             scalars: Vec::new(),
+            bases: Vec::new(),
         }
     }
 }
@@ -28,43 +28,48 @@ impl<C: Curve, L: Loader<C>> Default for MSM<C, L> {
 impl<C: Curve, L: Loader<C>> MSM<C, L> {
     pub fn scalar(scalar: L::LoadedScalar) -> Self {
         MSM {
-            scalar: Scalar::Loaded(scalar),
+            scalar: Some(scalar),
             ..Default::default()
         }
     }
 
     pub fn base(base: L::LoadedEcPoint) -> Self {
+        let one = sealed::LoadedEcPoint::loader(&base).load_one();
         MSM {
+            scalars: vec![one],
             bases: vec![base],
-            scalars: vec![Scalar::one()],
             ..Default::default()
         }
     }
 
     pub fn evaluate(self, gen: L::LoadedEcPoint) -> L::LoadedEcPoint {
         L::LoadedEcPoint::multi_scalar_multiplication(
-            iter::once((self.scalar, gen))
+            iter::empty()
+                .chain(self.scalar.map(|scalar| (scalar, gen)))
                 .chain(self.scalars.into_iter().zip(self.bases.into_iter())),
         )
     }
 
     pub fn scale(&mut self, factor: L::LoadedScalar) {
-        let factor = Scalar::Loaded(factor);
-        self.scalar *= factor.clone();
+        self.scalar = self.scalar.clone().map(|scalar| scalar * factor.clone());
         for scalar in self.scalars.iter_mut() {
             *scalar *= factor.clone()
         }
     }
 
-    pub fn push(&mut self, base: L::LoadedEcPoint, scalar: L::LoadedScalar) {
+    pub fn push(&mut self, scalar: L::LoadedScalar, base: L::LoadedEcPoint) {
+        self.scalars.push(scalar);
         self.bases.push(base);
-        self.scalars.push(Scalar::Loaded(scalar));
     }
 
     pub fn extend(&mut self, other: Self) {
-        self.scalar += other.scalar;
-        self.bases.extend(other.bases);
+        self.scalar = match (self.scalar.clone(), other.scalar.clone()) {
+            (Some(lhs), Some(rhs)) => Some(lhs + rhs),
+            (Some(scalar), None) | (None, Some(scalar)) => Some(scalar),
+            (None, None) => None,
+        };
         self.scalars.extend(other.scalars);
+        self.bases.extend(other.bases);
     }
 }
 
@@ -98,7 +103,7 @@ impl<C: Curve, L: Loader<C>> Mul<L::LoadedScalar> for MSM<C, L> {
 impl<C: Curve, L: Loader<C>> Neg for MSM<C, L> {
     type Output = MSM<C, L>;
     fn neg(mut self) -> MSM<C, L> {
-        self.scalar = -self.scalar;
+        self.scalar = self.scalar.map(|scalar| -scalar);
         for scalar in self.scalars.iter_mut() {
             *scalar = -scalar.clone();
         }

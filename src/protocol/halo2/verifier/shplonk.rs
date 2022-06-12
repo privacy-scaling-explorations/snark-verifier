@@ -1,8 +1,8 @@
 use crate::{
-    loader::{LoadedScalar, Loader},
     protocol::Protocol,
     transcript::Transcript,
     util::{
+        loader::{LoadedScalar, Loader},
         CommonPolynomial, CommonPolynomialEvaluation, Curve, Domain, Expression, Field, Query,
         Rotation, MSM,
     },
@@ -557,8 +557,10 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
 mod test {
     use super::{verify_proof, Proof, VerificationStrategy};
     use crate::{
-        loader::{native::NativeLoader, Loader},
-        util::{Group, MSM},
+        util::{
+            loader::{native::NativeLoader, Loader},
+            Group, MSM,
+        },
         Error,
     };
     use halo2_proofs::{

@@ -1,7 +1,6 @@
 use crate::{
-    loader::native::NativeLoader,
     transcript::Transcript,
-    util::{Group, PrimeField},
+    util::{loader::native::NativeLoader, Group, PrimeField},
     Error,
 };
 use blake2b_simd::{Params, State};
