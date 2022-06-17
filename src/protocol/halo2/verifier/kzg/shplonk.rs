@@ -1,10 +1,13 @@
 use crate::{
-    protocol::Protocol,
+    protocol::{
+        halo2::verifier::kzg::{langranges, VerificationStrategy, MSM},
+        Protocol,
+    },
     transcript::Transcript,
     util::{
         loader::{LoadedScalar, Loader},
         CommonPolynomial, CommonPolynomialEvaluation, Curve, Domain, Expression, Field, Fraction,
-        Query, Rotation, MSM,
+        Query, Rotation,
     },
     Error,
 };
@@ -13,46 +16,28 @@ use std::{
     iter,
 };
 
-pub trait VerificationStrategy<C, L>
-where
-    C: Curve,
-    L: Loader<C>,
-{
-    type Output;
-
-    fn process(
-        &mut self,
-        loader: &L,
-        proof: Proof<C, L>,
-        lhs: MSM<C, L>,
-        rhs: MSM<C, L>,
-    ) -> Result<Self::Output, Error>;
-
-    fn finalize(self) -> bool;
-}
-
 pub fn verify_proof<C, L, V, T>(
     protocol: &Protocol<C>,
     loader: &L,
-    statements: &[&[C::Scalar]],
+    statements: &[&[L::LoadedScalar]],
     transcript: &mut T,
     strategy: &mut V,
 ) -> Result<V::Output, Error>
 where
     C: Curve,
     L: Loader<C>,
-    V: VerificationStrategy<C, L>,
+    V: VerificationStrategy<C, L, Proof<C, L>>,
     T: Transcript<C, L>,
 {
     transcript.common_scalar(&loader.load_const(&protocol.transcript_initial_state))?;
 
-    let proof = Proof::read(protocol, loader, statements, transcript)?;
+    let proof = Proof::read(protocol, statements, transcript)?;
 
     let (common_poly_eval, sets) = {
         let mut common_poly_eval = CommonPolynomialEvaluation::new(
             &protocol.domain,
             loader,
-            langranges(protocol, statements),
+            langranges::<_, L>(protocol, statements),
             &proof.z,
         );
         let mut sets = intermediate_sets(protocol, loader, &proof.z, &proof.z_prime);
@@ -80,8 +65,7 @@ where
 
         msms.zip(proof.gamma.powers(sets.len()).into_iter().rev())
             .map(|(msm, power_of_gamma)| msm * power_of_gamma)
-            .reduce(|acc, msm| acc + msm)
-            .unwrap()
+            .sum::<MSM<_, _>>()
             - MSM::base(proof.w.clone()) * sets[0].z_s.clone()
     };
 
@@ -109,8 +93,7 @@ pub struct Proof<C: Curve, L: Loader<C>> {
 impl<C: Curve, L: Loader<C>> Proof<C, L> {
     fn read<T: Transcript<C, L>>(
         protocol: &Protocol<C>,
-        loader: &L,
-        statements: &[&[C::Scalar]],
+        statements: &[&[L::LoadedScalar]],
         transcript: &mut T,
     ) -> Result<Self, Error> {
         let statements = {
@@ -123,8 +106,8 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
                 .map(|statements| {
                     statements
                         .iter()
+                        .cloned()
                         .map(|statement| {
-                            let statement = loader.load_var(statement);
                             transcript.common_scalar(&statement)?;
                             Ok(statement)
                         })
@@ -220,8 +203,7 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
                     .into_iter()
                     .zip(self.quotients.iter().cloned().map(MSM::base))
                     .map(|(coeff, piece)| piece * coeff)
-                    .reduce(|acc, piece| acc + piece)
-                    .unwrap(),
+                    .sum(),
             )))
             .collect()
     }
@@ -314,29 +296,9 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
     }
 }
 
-fn langranges<C: Curve>(
-    protocol: &Protocol<C>,
-    statements: &[&[C::Scalar]],
-) -> impl IntoIterator<Item = i32> {
-    protocol
-        .relations
-        .iter()
-        .cloned()
-        .sum::<Expression<_>>()
-        .used_langrange()
-        .into_iter()
-        .chain(
-            0..statements
-                .iter()
-                .map(|statement| statement.len())
-                .max()
-                .unwrap_or_default() as i32,
-        )
-}
-
 struct IntermediateSet<C: Curve, L: Loader<C>> {
-    polys: Vec<usize>,
     rotations: Vec<Rotation>,
+    polys: Vec<usize>,
     z_s: L::LoadedScalar,
     evaluation_coeffs: Vec<Fraction<L::LoadedScalar>>,
     commitment_coeff: Option<Fraction<L::LoadedScalar>>,
@@ -418,8 +380,8 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
         let z_s_1_over_z_s = z_s_1.clone().map(|z_s_1| Fraction::new(z_s_1, z_s.clone()));
 
         Self {
-            polys: Vec::new(),
             rotations,
+            polys: Vec::new(),
             z_s,
             evaluation_coeffs: barycentric_weights,
             commitment_coeff: z_s_1_over_z_s,
@@ -488,8 +450,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                     );
                 (commitment - MSM::scalar(remainder)) * power_of_mu.clone()
             })
-            .reduce(|acc, msm| acc + msm)
-            .unwrap()
+            .sum()
     }
 }
 
@@ -585,66 +546,14 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
 
 #[cfg(test)]
 mod test {
-    use super::{verify_proof, Proof, VerificationStrategy};
+    use super::verify_proof;
     use crate::{
-        util::{
-            loader::{native::NativeLoader, Loader},
-            Group, MSM,
-        },
-        Error,
+        protocol::halo2::verifier::kzg::SingleProofVerifier, util::loader::native::NativeLoader,
     };
-    use halo2_proofs::{
-        halo2curves::pairing::{MillerLoopResult, MultiMillerLoop},
-        poly::kzg::{
-            multiopen::{ProverSHPLONK, VerifierSHPLONK},
-            strategy::BatchVerifier,
-        },
+    use halo2_proofs::poly::kzg::{
+        multiopen::{ProverSHPLONK, VerifierSHPLONK},
+        strategy::BatchVerifier,
     };
-
-    struct SingleProofVerifier<M: MultiMillerLoop> {
-        g1: M::G1Affine,
-        g2: M::G2Affine,
-        s_g2: M::G2Affine,
-    }
-
-    impl<M: MultiMillerLoop> SingleProofVerifier<M> {
-        fn new(g1: M::G1Affine, g2: M::G2Affine, s_g2: M::G2Affine) -> Self {
-            SingleProofVerifier { g1, g2, s_g2 }
-        }
-    }
-
-    impl<M, L> VerificationStrategy<M::G1, L> for SingleProofVerifier<M>
-    where
-        M: MultiMillerLoop,
-        L: Loader<M::G1, LoadedEcPoint = M::G1, LoadedScalar = M::Scalar>,
-    {
-        type Output = bool;
-
-        fn process(
-            &mut self,
-            loader: &L,
-            _: Proof<M::G1, L>,
-            lhs: MSM<M::G1, L>,
-            rhs: MSM<M::G1, L>,
-        ) -> Result<Self::Output, Error> {
-            let minus_g2 = M::G2Prepared::from(-self.g2);
-            let s_g2 = M::G2Prepared::from(self.s_g2);
-
-            let lhs = lhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
-            let rhs = rhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
-
-            Ok(
-                M::multi_miller_loop(&[(&lhs.into(), &minus_g2), (&rhs.into(), &s_g2)])
-                    .final_exponentiation()
-                    .is_identity()
-                    .into(),
-            )
-        }
-
-        fn finalize(self) -> bool {
-            true
-        }
-    }
 
     #[test]
     fn test_shplonk_native() {

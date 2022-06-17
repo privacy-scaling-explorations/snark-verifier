@@ -492,7 +492,7 @@ pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, n: usize) -> Protoc
 pub(crate) mod test {
     use halo2_proofs::{
         arithmetic::{CurveAffine, FieldExt},
-        circuit::{floor_planner::V1, Layouter},
+        circuit::{floor_planner::V1, Layouter, Value},
         dev::MockProver,
         plonk::{
             create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Any, Circuit, Column,
@@ -649,7 +649,12 @@ pub(crate) mod test {
                 || "",
                 |mut table| {
                     for byte in 0..256 {
-                        table.assign_cell(|| "", self.byte, byte, || Ok(F::from(byte as u64)))?;
+                        table.assign_cell(
+                            || "",
+                            self.byte,
+                            byte,
+                            || Value::known(F::from(byte as u64)),
+                        )?;
                     }
                     Ok(())
                 },
@@ -700,15 +705,14 @@ pub(crate) mod test {
                         move || {
                             a.value()
                                 .map(|a| F::from(((a.get_lower_32() >> (8 * i)) & 0xff) as u64))
-                                .ok_or(Error::Synthesis)
                         }
                     };
-                    region.assign_fixed(|| "", config.q_a, 1, || Ok(-F::one()))?;
-                    region.assign_fixed(|| "", config.q_b, 1, || Ok(F::from(1 << 24)))?;
-                    region.assign_fixed(|| "", config.q_c, 1, || Ok(F::from(1 << 16)))?;
-                    region.assign_fixed(|| "", config.q_d, 1, || Ok(F::from(1 << 8)))?;
-                    region.assign_fixed(|| "", config.q_e, 1, || Ok(F::one()))?;
-                    region.assign_fixed(|| "", config.q_byte, 1, || Ok(F::one()))?;
+                    region.assign_fixed(|| "", config.q_a, 1, || Value::known(-F::one()))?;
+                    region.assign_fixed(|| "", config.q_b, 1, || Value::known(F::from(1 << 24)))?;
+                    region.assign_fixed(|| "", config.q_c, 1, || Value::known(F::from(1 << 16)))?;
+                    region.assign_fixed(|| "", config.q_d, 1, || Value::known(F::from(1 << 8)))?;
+                    region.assign_fixed(|| "", config.q_e, 1, || Value::known(F::one()))?;
+                    region.assign_fixed(|| "", config.q_byte, 1, || Value::known(F::one()))?;
                     a.copy_advice(|| "", &mut region, config.a, 1)?;
                     region.assign_advice(|| "", config.b, 1, a_le_byte(3))?;
                     region.assign_advice(|| "", config.c, 1, a_le_byte(2))?;

@@ -6,22 +6,10 @@ pub mod evm;
 
 pub mod native;
 
-pub(super) mod sealed {
-    use crate::util::{Curve, PrimeField};
-
-    pub trait LoadedEcPoint<C: Curve, L: super::Loader<C>> {
-        fn loader(&self) -> &L;
-    }
-
-    pub trait LoadedScalar<F: PrimeField, L: super::ScalarLoader<F>> {
-        fn loader(&self) -> &L;
-    }
-}
-
-pub trait LoadedEcPoint<C: Curve>:
-    'static + Clone + Debug + GroupOps + sealed::LoadedEcPoint<C, Self::Loader>
-{
+pub trait LoadedEcPoint<C: Curve>: 'static + Clone + Debug + GroupOps {
     type Loader: Loader<C, LoadedEcPoint = Self>;
+
+    fn loader(&self) -> &Self::Loader;
 
     fn multi_scalar_multiplication(
         pairs: impl IntoIterator<
@@ -33,10 +21,10 @@ pub trait LoadedEcPoint<C: Curve>:
     ) -> Self;
 }
 
-pub trait LoadedScalar<F: PrimeField>:
-    'static + Clone + Debug + FieldOps + sealed::LoadedScalar<F, Self::Loader>
-{
+pub trait LoadedScalar<F: PrimeField>: 'static + Clone + Debug + FieldOps {
     type Loader: ScalarLoader<F, LoadedScalar = Self>;
+
+    fn loader(&self) -> &Self::Loader;
 
     fn sum_with_coeff_and_constant(values: &[(F, Self)], constant: &F) -> Self {
         assert!(!values.is_empty());
@@ -124,8 +112,6 @@ pub trait EcPointLoader<C: Curve>: Debug {
 
     fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint;
 
-    fn ec_point_load_var(&self, value: &C) -> Self::LoadedEcPoint;
-
     fn ec_point_load_zero(&self) -> Self::LoadedEcPoint {
         self.ec_point_load_const(&C::identity())
     }
@@ -139,8 +125,6 @@ pub trait ScalarLoader<F: PrimeField>: Debug {
     type LoadedScalar: LoadedScalar<F, Loader = Self>;
 
     fn load_const(&self, value: &F) -> Self::LoadedScalar;
-
-    fn load_var(&self, value: &F) -> Self::LoadedScalar;
 
     fn load_zero(&self) -> Self::LoadedScalar {
         self.load_const(&F::zero())

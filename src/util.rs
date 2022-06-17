@@ -1,6 +1,5 @@
 mod arithmetic;
 mod expression;
-mod msm;
 
 pub mod loader;
 pub use arithmetic::{
@@ -8,4 +7,3 @@ pub use arithmetic::{
     GroupEncoding, GroupOps, PrimeField, Rotation,
 };
 pub use expression::{CommonPolynomial, CommonPolynomialEvaluation, Expression, Query};
-pub use msm::MSM;

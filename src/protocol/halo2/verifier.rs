@@ -1,1 +1,1 @@
-pub mod shplonk;
+pub mod kzg;

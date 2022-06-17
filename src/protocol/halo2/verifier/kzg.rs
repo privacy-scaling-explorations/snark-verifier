@@ -1,12 +1,103 @@
-use crate::util::{
-    loader::{sealed, LoadedEcPoint, Loader},
-    Curve,
+use crate::{
+    protocol::Protocol,
+    util::{
+        loader::{LoadedEcPoint, Loader},
+        Curve, Expression, Group,
+    },
+    Error,
 };
+use halo2_proofs::halo2curves::pairing::{MillerLoopResult, MultiMillerLoop};
 use std::{
     default::Default,
-    iter,
+    iter::{self, Sum},
     ops::{Add, Mul, Neg, Sub},
 };
+
+pub mod plonk;
+pub mod shplonk;
+
+pub trait VerificationStrategy<C, L, P>
+where
+    C: Curve,
+    L: Loader<C>,
+{
+    type Output;
+
+    fn process(
+        &mut self,
+        loader: &L,
+        proof: P,
+        lhs: MSM<C, L>,
+        rhs: MSM<C, L>,
+    ) -> Result<Self::Output, Error>;
+
+    fn finalize(self) -> bool;
+}
+
+pub struct SingleProofVerifier<M: MultiMillerLoop> {
+    g1: M::G1Affine,
+    g2: M::G2Affine,
+    s_g2: M::G2Affine,
+}
+
+impl<M: MultiMillerLoop> SingleProofVerifier<M> {
+    pub fn new(g1: M::G1Affine, g2: M::G2Affine, s_g2: M::G2Affine) -> Self {
+        SingleProofVerifier { g1, g2, s_g2 }
+    }
+}
+
+impl<M, L, P> VerificationStrategy<M::G1, L, P> for SingleProofVerifier<M>
+where
+    M: MultiMillerLoop,
+    L: Loader<M::G1, LoadedEcPoint = M::G1, LoadedScalar = M::Scalar>,
+{
+    type Output = bool;
+
+    fn process(
+        &mut self,
+        loader: &L,
+        _: P,
+        lhs: MSM<M::G1, L>,
+        rhs: MSM<M::G1, L>,
+    ) -> Result<Self::Output, Error> {
+        let minus_g2 = M::G2Prepared::from(-self.g2);
+        let s_g2 = M::G2Prepared::from(self.s_g2);
+
+        let lhs = lhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
+        let rhs = rhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
+
+        Ok(
+            M::multi_miller_loop(&[(&lhs.into(), &minus_g2), (&rhs.into(), &s_g2)])
+                .final_exponentiation()
+                .is_identity()
+                .into(),
+        )
+    }
+
+    fn finalize(self) -> bool {
+        unreachable!()
+    }
+}
+
+pub fn langranges<C: Curve, L: Loader<C>>(
+    protocol: &Protocol<C>,
+    statements: &[&[L::LoadedScalar]],
+) -> impl IntoIterator<Item = i32> {
+    protocol
+        .relations
+        .iter()
+        .cloned()
+        .sum::<Expression<_>>()
+        .used_langrange()
+        .into_iter()
+        .chain(
+            0..statements
+                .iter()
+                .map(|statement| statement.len())
+                .max()
+                .unwrap_or_default() as i32,
+        )
+}
 
 #[derive(Clone, Debug)]
 pub struct MSM<C: Curve, L: Loader<C>> {
@@ -34,7 +125,7 @@ impl<C: Curve, L: Loader<C>> MSM<C, L> {
     }
 
     pub fn base(base: L::LoadedEcPoint) -> Self {
-        let one = sealed::LoadedEcPoint::loader(&base).load_one();
+        let one = base.loader().load_one();
         MSM {
             scalars: vec![one],
             bases: vec![base],
@@ -108,5 +199,11 @@ impl<C: Curve, L: Loader<C>> Neg for MSM<C, L> {
             *scalar = -scalar.clone();
         }
         self
+    }
+}
+
+impl<C: Curve, L: Loader<C>> Sum for MSM<C, L> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.reduce(|acc, item| acc + item).unwrap_or_default()
     }
 }
