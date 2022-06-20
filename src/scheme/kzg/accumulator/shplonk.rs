@@ -1,78 +1,94 @@
 use crate::{
-    protocol::{
-        halo2::verifier::kzg::{langranges, VerificationStrategy, MSM},
-        Protocol,
-    },
-    transcript::Transcript,
+    loader::{LoadedScalar, Loader},
+    protocol::Protocol,
+    scheme::kzg::{AccumulationStrategy, Accumulator, MSM},
     util::{
-        loader::{LoadedScalar, Loader},
         CommonPolynomial, CommonPolynomialEvaluation, Curve, Domain, Expression, Field, Fraction,
-        Query, Rotation,
+        Query, Rotation, Transcript,
     },
     Error,
 };
 use std::{
     collections::{HashMap, HashSet},
     iter,
+    marker::PhantomData,
 };
 
-pub fn verify_proof<C, L, V, T>(
-    protocol: &Protocol<C>,
-    loader: &L,
-    statements: &[&[L::LoadedScalar]],
-    transcript: &mut T,
-    strategy: &mut V,
-) -> Result<V::Output, Error>
+pub struct ShplonkAccumulator<C, L, T, S> {
+    _marker: PhantomData<(C, L, T, S)>,
+}
+
+impl<C, L, T, S> ShplonkAccumulator<C, L, T, S> {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<C, L, T, S> Accumulator<C, L, T, S> for ShplonkAccumulator<C, L, T, S>
 where
     C: Curve,
     L: Loader<C>,
-    V: VerificationStrategy<C, L, Proof<C, L>>,
     T: Transcript<C, L>,
+    S: AccumulationStrategy<C, L, Proof<C, L>>,
 {
-    transcript.common_scalar(&loader.load_const(&protocol.transcript_initial_state))?;
+    type Proof = Proof<C, L>;
 
-    let proof = Proof::read(protocol, statements, transcript)?;
+    fn accumulate(
+        &mut self,
+        protocol: &Protocol<C>,
+        loader: &L,
+        statements: &[&[L::LoadedScalar]],
+        transcript: &mut T,
+        strategy: &mut S,
+    ) -> Result<S::Output, Error> {
+        transcript.common_scalar(&loader.load_const(&protocol.transcript_initial_state))?;
 
-    let (common_poly_eval, sets) = {
-        let mut common_poly_eval = CommonPolynomialEvaluation::new(
-            &protocol.domain,
-            loader,
-            langranges::<_, L>(protocol, statements),
-            &proof.z,
-        );
-        let mut sets = intermediate_sets(protocol, loader, &proof.z, &proof.z_prime);
+        let proof = Proof::read(protocol, statements, transcript)?;
 
-        L::LoadedScalar::batch_invert(
-            iter::empty()
-                .chain(common_poly_eval.denoms())
-                .chain(sets.iter_mut().flat_map(IntermediateSet::denoms)),
-        );
-        L::LoadedScalar::batch_invert(sets.iter_mut().flat_map(IntermediateSet::denoms));
+        let (common_poly_eval, sets) = {
+            let mut common_poly_eval = CommonPolynomialEvaluation::new(
+                &protocol.domain,
+                loader,
+                protocol.langranges(statements),
+                &proof.z,
+            );
+            let mut sets = intermediate_sets(protocol, loader, &proof.z, &proof.z_prime);
 
-        (common_poly_eval, sets)
-    };
+            L::LoadedScalar::batch_invert(
+                iter::empty()
+                    .chain(common_poly_eval.denoms())
+                    .chain(sets.iter_mut().flat_map(IntermediateSet::denoms)),
+            );
+            L::LoadedScalar::batch_invert(sets.iter_mut().flat_map(IntermediateSet::denoms));
 
-    let commitments = proof.commitments(protocol, loader, &common_poly_eval);
-    let evaluations = proof.evaluations(protocol, loader, &common_poly_eval)?;
+            (common_poly_eval, sets)
+        };
 
-    let f = {
-        let powers_of_mu = proof
-            .mu
-            .powers(sets.iter().map(|set| set.polys.len()).max().unwrap());
-        let msms = sets
-            .iter()
-            .map(|set| set.msm(&commitments, &evaluations, &powers_of_mu));
+        let commitments = proof.commitments(protocol, loader, &common_poly_eval);
+        let evaluations = proof.evaluations(protocol, loader, &common_poly_eval)?;
 
-        msms.zip(proof.gamma.powers(sets.len()).into_iter().rev())
-            .map(|(msm, power_of_gamma)| msm * power_of_gamma)
-            .sum::<MSM<_, _>>()
-            - MSM::base(proof.w.clone()) * sets[0].z_s.clone()
-    };
+        let f = {
+            let powers_of_mu = proof
+                .mu
+                .powers(sets.iter().map(|set| set.polys.len()).max().unwrap());
+            let msms = sets
+                .iter()
+                .map(|set| set.msm(&commitments, &evaluations, &powers_of_mu));
 
-    let rhs = MSM::base(proof.w_prime.clone());
-    let lhs = f + rhs.clone() * proof.z_prime.clone();
+            msms.zip(proof.gamma.powers(sets.len()).into_iter().rev())
+                .map(|(msm, power_of_gamma)| msm * power_of_gamma)
+                .sum::<MSM<_, _>>()
+                - MSM::base(proof.w.clone()) * sets[0].z_s.clone()
+        };
 
-    strategy.process(loader, proof, lhs, rhs)
+        let rhs = MSM::base(proof.w_prime.clone());
+        let lhs = f + rhs.clone() * proof.z_prime.clone();
+
+        strategy.process(loader, proof, lhs, rhs)
+    }
 }
 
 pub struct Proof<C: Curve, L: Loader<C>> {
@@ -542,86 +558,4 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
             intermediate_sets
         },
     )
-}
-
-#[cfg(test)]
-mod test {
-    use super::verify_proof;
-    use crate::{
-        collect_slice,
-        protocol::halo2::{
-            compile,
-            test::{gen_vk_and_proof, read_srs, BigCircuit},
-            transcript::native::Blake2bTranscript,
-            verifier::kzg::NativeDecider,
-        },
-        util::loader::native::NativeLoader,
-    };
-    use halo2_proofs::{
-        halo2curves::bn256::{Bn256, Fr},
-        poly::{
-            commitment::ParamsProver,
-            kzg::{
-                commitment::{KZGCommitmentScheme, ParamsKZG},
-                multiopen::{ProverSHPLONK, VerifierSHPLONK},
-                strategy::BatchVerifier,
-            },
-        },
-    };
-
-    #[test]
-    fn test_shplonk_native() {
-        use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
-        use rand::SeedableRng;
-        use rand_chacha::ChaCha20Rng;
-        use std::iter;
-
-        const K: u32 = 9;
-        const N: usize = 2;
-
-        let params = read_srs::<_, ParamsKZG<Bn256>>("kzg", K);
-
-        let mut rng = ChaCha20Rng::from_seed(Default::default());
-        let circuits = iter::repeat_with(|| BigCircuit::<Fr>::rand(&mut rng))
-            .take(N)
-            .collect::<Vec<_>>();
-        let instances = circuits
-            .iter()
-            .map(BigCircuit::instances)
-            .collect::<Vec<_>>();
-
-        let (vk, proof) = {
-            collect_slice!(instances, 2);
-            gen_vk_and_proof::<
-                KZGCommitmentScheme<_>,
-                _,
-                ProverSHPLONK<_>,
-                VerifierSHPLONK<_>,
-                BatchVerifier<_, _>,
-                Blake2bWrite<_, _, _>,
-                Blake2bRead<_, _, _>,
-                Challenge255<_>,
-                _,
-            >(&params, &circuits, &instances, &mut rng)
-        };
-
-        let protocol = compile(&vk, N);
-        let loader = NativeLoader;
-        let statements = instances.into_iter().flatten().collect::<Vec<_>>();
-        let mut transcript = Blake2bTranscript::init(proof.as_slice());
-        let mut strategy =
-            NativeDecider::<Bn256>::new(params.get_g()[0], params.g2(), params.s_g2());
-        let accept = {
-            collect_slice!(statements);
-            verify_proof(
-                &protocol,
-                &loader,
-                &statements,
-                &mut transcript,
-                &mut strategy,
-            )
-            .unwrap()
-        };
-        assert!(accept);
-    }
 }

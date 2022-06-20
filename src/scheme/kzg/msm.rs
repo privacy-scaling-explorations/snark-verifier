@@ -1,103 +1,12 @@
 use crate::{
-    protocol::Protocol,
-    util::{
-        loader::{LoadedEcPoint, Loader},
-        Curve, Expression, Group,
-    },
-    Error,
+    loader::{LoadedEcPoint, Loader},
+    util::Curve,
 };
-use halo2_proofs::halo2curves::pairing::{MillerLoopResult, MultiMillerLoop};
 use std::{
     default::Default,
     iter::{self, Sum},
     ops::{Add, Mul, Neg, Sub},
 };
-
-pub mod plonk;
-pub mod shplonk;
-
-pub trait VerificationStrategy<C, L, P>
-where
-    C: Curve,
-    L: Loader<C>,
-{
-    type Output;
-
-    fn process(
-        &mut self,
-        loader: &L,
-        proof: P,
-        lhs: MSM<C, L>,
-        rhs: MSM<C, L>,
-    ) -> Result<Self::Output, Error>;
-
-    fn finalize(self) -> bool;
-}
-
-pub struct NativeDecider<M: MultiMillerLoop> {
-    g1: M::G1Affine,
-    g2: M::G2Affine,
-    s_g2: M::G2Affine,
-}
-
-impl<M: MultiMillerLoop> NativeDecider<M> {
-    pub fn new(g1: M::G1Affine, g2: M::G2Affine, s_g2: M::G2Affine) -> Self {
-        NativeDecider { g1, g2, s_g2 }
-    }
-}
-
-impl<M, L, P> VerificationStrategy<M::G1, L, P> for NativeDecider<M>
-where
-    M: MultiMillerLoop,
-    L: Loader<M::G1, LoadedEcPoint = M::G1, LoadedScalar = M::Scalar>,
-{
-    type Output = bool;
-
-    fn process(
-        &mut self,
-        loader: &L,
-        _: P,
-        lhs: MSM<M::G1, L>,
-        rhs: MSM<M::G1, L>,
-    ) -> Result<Self::Output, Error> {
-        let g2 = M::G2Prepared::from(self.g2);
-        let minus_s_g2 = M::G2Prepared::from(-self.s_g2);
-
-        let lhs = lhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
-        let rhs = rhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
-
-        Ok(
-            M::multi_miller_loop(&[(&lhs.into(), &g2), (&rhs.into(), &minus_s_g2)])
-                .final_exponentiation()
-                .is_identity()
-                .into(),
-        )
-    }
-
-    fn finalize(self) -> bool {
-        unreachable!()
-    }
-}
-
-pub fn langranges<C: Curve, L: Loader<C>>(
-    protocol: &Protocol<C>,
-    statements: &[&[L::LoadedScalar]],
-) -> impl IntoIterator<Item = i32> {
-    protocol
-        .relations
-        .iter()
-        .cloned()
-        .sum::<Expression<_>>()
-        .used_langrange()
-        .into_iter()
-        .chain(
-            0..statements
-                .iter()
-                .map(|statement| statement.len())
-                .max()
-                .unwrap_or_default() as i32,
-        )
-}
 
 #[derive(Clone, Debug)]
 pub struct MSM<C: Curve, L: Loader<C>> {

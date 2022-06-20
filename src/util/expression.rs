@@ -1,6 +1,6 @@
-use crate::util::{
+use crate::{
     loader::{LoadedScalar, Loader},
-    Curve, Domain, Field, Fraction, Rotation,
+    util::{Curve, Domain, Field, Fraction, Rotation},
 };
 use std::{
     cmp::max,

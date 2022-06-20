@@ -4,8 +4,9 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::upper_case_acronyms)]
 
+pub mod loader;
 pub mod protocol;
-pub mod transcript;
+pub mod scheme;
 pub mod util;
 
 #[derive(Clone, Debug)]

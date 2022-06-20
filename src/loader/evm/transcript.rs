@@ -1,13 +1,13 @@
 use crate::{
-    transcript::Transcript,
-    util::{
-        loader::{
-            evm::{EcPoint, EvmLoader, Pointer, Scalar},
-            native::NativeLoader,
-            Loader,
+    loader::{
+        evm::{
+            loader::{EcPoint, EvmLoader, Pointer, Scalar},
+            u256_to_field,
         },
-        u256_to_field, Curve, Group, PrimeField, UncompressedEncoding,
+        native::NativeLoader,
+        Loader,
     },
+    util::{Curve, Group, PrimeField, Transcript, UncompressedEncoding},
     Error,
 };
 use ethereum_types::U256;

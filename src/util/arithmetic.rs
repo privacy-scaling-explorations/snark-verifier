@@ -75,29 +75,6 @@ pub fn batch_invert<F: PrimeField>(values: &mut [F]) {
     batch_invert_and_mul(values, &F::one())
 }
 
-#[cfg(feature = "evm")]
-pub fn field_to_u256<F: PrimeField>(f: &F) -> ethereum_types::U256 {
-    let value = ethereum_types::U256::from_little_endian(f.to_repr().as_ref());
-    // Assert F::Repr in little-endian
-    assert_eq!(
-        {
-            let mut repr = F::Repr::default();
-            value.to_little_endian(repr.as_mut());
-            F::from_repr(repr).unwrap()
-        },
-        *f
-    );
-    value
-}
-
-#[cfg(feature = "evm")]
-pub fn u256_to_field<F: PrimeField>(value: ethereum_types::U256) -> F {
-    let value = value % (field_to_u256(&-F::one()) + 1u64);
-    let mut repr = F::Repr::default();
-    value.to_little_endian(repr.as_mut());
-    F::from_repr(repr).unwrap()
-}
-
 pub trait UncompressedEncoding: Sized {
     type Uncompressed: AsRef<[u8]> + AsMut<[u8]>;
 

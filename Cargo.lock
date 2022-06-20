@@ -1617,7 +1617,7 @@ dependencies = [
 [[package]]
 name = "halo2curves"
 version = "0.2.0"
-source = "git+https://github.com/privacy-scaling-explorations/halo2curves?tag=v0.2.0#bbd4cee10dbf9c51e0456ea67ec2b894b49f688c"
+source = "git+https://github.com/han0110/halo2curves?branch=fix/impl-fq2-to-repr#1053d844df428a9c59d3e945f31aae4dc712b0e9"
 dependencies = [
  "ff 0.12.0",
  "group 0.12.0",
@@ -2506,6 +2506,7 @@ dependencies = [
  "foundry-evm",
  "group 0.12.0",
  "halo2_proofs",
+ "halo2curves",
  "hex",
  "lazy_static",
  "rand",

@@ -1,6 +1,6 @@
-use crate::util::{
+use crate::{
     loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
-    Curve, FieldOps, PrimeField,
+    util::{Curve, FieldOps, PrimeField},
 };
 use lazy_static::lazy_static;
 use std::fmt::Debug;

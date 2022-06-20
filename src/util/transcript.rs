@@ -1,6 +1,6 @@
 use crate::{
-    util::{loader::Loader, Curve},
-    Error,
+    loader::Loader,
+    {util::Curve, Error},
 };
 
 pub trait Transcript<C, L>

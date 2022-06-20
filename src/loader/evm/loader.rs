@@ -1,11 +1,9 @@
 use crate::{
     hex,
-    util::{
-        loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
-        Curve, FieldOps, PrimeField, UncompressedEncoding,
-    },
+    loader::evm::{Code, Precompiled},
+    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
+    util::{Curve, FieldOps, PrimeField, UncompressedEncoding},
 };
-use code::{Code, Precompiled};
 use ethereum_types::{U256, U512};
 use std::{
     borrow::Borrow,
@@ -15,11 +13,6 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     rc::Rc,
 };
-
-pub mod code;
-
-#[cfg(test)]
-pub(crate) mod tui;
 
 pub fn modulus<F: PrimeField<Repr = [u8; 32]>>() -> U256 {
     U256::from_little_endian((-F::one()).to_repr().as_ref()) + 1
@@ -63,7 +56,13 @@ pub struct EvmLoader {
 }
 
 impl EvmLoader {
-    pub fn new(base_modulus: U256, scalar_modulus: U256) -> Rc<Self> {
+    pub fn new<Fq, Fr>() -> Rc<Self>
+    where
+        Fq: PrimeField<Repr = [u8; 32]>,
+        Fr: PrimeField<Repr = [u8; 32]>,
+    {
+        let base_modulus = modulus::<Fq>();
+        let scalar_modulus = modulus::<Fr>();
         let code = Code::new([1.into(), base_modulus, scalar_modulus - 1, scalar_modulus])
             .push(1)
             .to_owned();
@@ -904,8 +903,8 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
 }
 
 #[cfg(test)]
-pub(crate) mod test {
-    use super::tui::Tui;
+pub mod test {
+    use crate::loader::evm::Tui;
     use foundry_evm::{
         executor::{builder::Backend, ExecutorBuilder},
         revm::AccountInfo,

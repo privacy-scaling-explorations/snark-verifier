@@ -1,14 +1,13 @@
 mod arithmetic;
 mod expression;
+mod transcript;
 
-pub mod loader;
 pub use arithmetic::{
     batch_invert, batch_invert_and_mul, Curve, Domain, Field, FieldOps, Fraction, Group,
     GroupEncoding, GroupOps, PrimeCurveAffine, PrimeField, Rotation, UncompressedEncoding,
 };
-#[cfg(feature = "evm")]
-pub use arithmetic::{field_to_u256, u256_to_field};
 pub use expression::{CommonPolynomial, CommonPolynomialEvaluation, Expression, Query};
+pub use transcript::Transcript;
 
 #[macro_export]
 macro_rules! hex {
