@@ -548,56 +548,80 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
 mod test {
     use super::verify_proof;
     use crate::{
-        protocol::halo2::verifier::kzg::SingleProofVerifier, util::loader::native::NativeLoader,
+        collect_slice,
+        protocol::halo2::{
+            compile,
+            test::{gen_vk_and_proof, read_srs, BigCircuit},
+            transcript::native::Blake2bTranscript,
+            verifier::kzg::NativeDecider,
+        },
+        util::loader::native::NativeLoader,
     };
-    use halo2_proofs::poly::kzg::{
-        multiopen::{ProverSHPLONK, VerifierSHPLONK},
-        strategy::BatchVerifier,
+    use halo2_proofs::{
+        halo2curves::bn256::{Bn256, Fr},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG},
+                multiopen::{ProverSHPLONK, VerifierSHPLONK},
+                strategy::BatchVerifier,
+            },
+        },
     };
 
     #[test]
     fn test_shplonk_native() {
-        use crate::protocol::halo2::{
-            compile,
-            test::{gen_vk_and_proof, read_srs},
-            transcript::native::Blake2bTranscript,
-        };
-        use halo2_proofs::{
-            halo2curves::bn256::Bn256,
-            poly::{
-                commitment::ParamsProver,
-                kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
-            },
-        };
-        use rand::rngs::OsRng;
+        use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha20Rng;
+        use std::iter;
 
+        const K: u32 = 9;
         const N: usize = 2;
 
-        let params = read_srs::<_, ParamsKZG<Bn256>>("test_shplonk_native", 9);
-        let (vk, instance, proof) = gen_vk_and_proof::<
-            KZGCommitmentScheme<_>,
-            ProverSHPLONK<_>,
-            VerifierSHPLONK<_>,
-            BatchVerifier<_, _>,
-            _,
-        >(&params, N, OsRng);
+        let params = read_srs::<_, ParamsKZG<Bn256>>("kzg", K);
+
+        let mut rng = ChaCha20Rng::from_seed(Default::default());
+        let circuits = iter::repeat_with(|| BigCircuit::<Fr>::rand(&mut rng))
+            .take(N)
+            .collect::<Vec<_>>();
+        let instances = circuits
+            .iter()
+            .map(BigCircuit::instances)
+            .collect::<Vec<_>>();
+
+        let (vk, proof) = {
+            collect_slice!(instances, 2);
+            gen_vk_and_proof::<
+                KZGCommitmentScheme<_>,
+                _,
+                ProverSHPLONK<_>,
+                VerifierSHPLONK<_>,
+                BatchVerifier<_, _>,
+                Blake2bWrite<_, _, _>,
+                Blake2bRead<_, _, _>,
+                Challenge255<_>,
+                _,
+            >(&params, &circuits, &instances, &mut rng)
+        };
 
         let protocol = compile(&vk, N);
         let loader = NativeLoader;
-        let statements = instance
-            .iter()
-            .flat_map(|instance| instance.iter().map(|instance| instance.as_slice()))
-            .collect::<Vec<_>>();
+        let statements = instances.into_iter().flatten().collect::<Vec<_>>();
         let mut transcript = Blake2bTranscript::init(proof.as_slice());
         let mut strategy =
-            SingleProofVerifier::<Bn256>::new(params.get_g()[0], params.g2(), params.s_g2());
-        assert!(verify_proof(
-            &protocol,
-            &loader,
-            &statements,
-            &mut transcript,
-            &mut strategy,
-        )
-        .unwrap());
+            NativeDecider::<Bn256>::new(params.get_g()[0], params.g2(), params.s_g2());
+        let accept = {
+            collect_slice!(statements);
+            verify_proof(
+                &protocol,
+                &loader,
+                &statements,
+                &mut transcript,
+                &mut strategy,
+            )
+            .unwrap()
+        };
+        assert!(accept);
     }
 }

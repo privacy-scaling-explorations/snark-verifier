@@ -6,11 +6,12 @@ use halo2_proofs::{
     arithmetic::{CurveAffine, CurveExt, FieldExt},
     plonk::{self, Advice, Any, ConstraintSystem, Fixed, Instance, VerifyingKey},
     poly,
-    transcript::{Challenge255, Transcript},
+    transcript::{EncodedChallenge, Transcript},
 };
 use std::{io, iter};
 
 pub mod transcript;
+pub mod util;
 pub mod verifier;
 
 impl From<poly::Rotation> for Rotation {
@@ -97,7 +98,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         Query::new(offset + column_index, rotation.into())
     }
 
-    // TODO: Enable this when using IPA
+    // TODO: Enable this when necessary
     // fn instance_queries(&'a self, t: usize) -> impl IntoIterator<Item = Query> + 'a {
     //     self.cs
     //         .instance_queries()
@@ -402,11 +403,25 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 }
 
+struct MockChallenge;
+
+impl<C: CurveAffine> EncodedChallenge<C> for MockChallenge {
+    type Input = ();
+
+    fn new(_: &Self::Input) -> Self {
+        unreachable!()
+    }
+
+    fn get_scalar(&self) -> C::Scalar {
+        unreachable!()
+    }
+}
+
 #[derive(Default)]
 struct MockTranscript<F: FieldExt>(F);
 
-impl<C: CurveAffine> Transcript<C, Challenge255<C>> for MockTranscript<C::Scalar> {
-    fn squeeze_challenge(&mut self) -> Challenge255<C> {
+impl<C: CurveAffine> Transcript<C, MockChallenge> for MockTranscript<C::Scalar> {
+    fn squeeze_challenge(&mut self) -> MockChallenge {
         unreachable!()
     }
 
@@ -502,9 +517,7 @@ pub(crate) mod test {
             commitment::{CommitmentScheme, Params, ParamsProver, Prover, Verifier},
             Rotation, VerificationStrategy,
         },
-        transcript::{
-            Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-        },
+        transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
     };
     use rand::RngCore;
     use std::fs;
@@ -530,7 +543,132 @@ pub(crate) mod test {
 
     #[allow(dead_code)]
     #[derive(Clone)]
-    pub struct TestConfig {
+    pub struct StandardPlonkConfig {
+        a: Column<Advice>,
+        b: Column<Advice>,
+        c: Column<Advice>,
+        q_a: Column<Fixed>,
+        q_b: Column<Fixed>,
+        q_c: Column<Fixed>,
+        q_ab: Column<Fixed>,
+        constant: Column<Fixed>,
+        instance: Column<Instance>,
+    }
+
+    impl StandardPlonkConfig {
+        pub fn configure<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
+            let a = meta.advice_column();
+            let b = meta.advice_column();
+            let c = meta.advice_column();
+
+            let q_a = meta.fixed_column();
+            let q_b = meta.fixed_column();
+            let q_c = meta.fixed_column();
+
+            let q_ab = meta.fixed_column();
+
+            let constant = meta.fixed_column();
+            let instance = meta.instance_column();
+
+            meta.enable_equality(a);
+            meta.enable_equality(b);
+            meta.enable_equality(c);
+
+            meta.create_gate("", |meta| {
+                let [a, b, c, q_a, q_b, q_c, q_ab, constant, instance] = [
+                    a.into(),
+                    b.into(),
+                    c.into(),
+                    q_a.into(),
+                    q_b.into(),
+                    q_c.into(),
+                    q_ab.into(),
+                    constant.into(),
+                    instance.into(),
+                ]
+                .map(|column: Column<Any>| meta.query_any(column, Rotation::cur()));
+
+                vec![
+                    q_a * a.clone()
+                        + q_b * b.clone()
+                        + q_c * c
+                        + q_ab * a * b
+                        + constant
+                        + instance,
+                ]
+            });
+
+            StandardPlonkConfig {
+                a,
+                b,
+                c,
+                q_a,
+                q_b,
+                q_c,
+                q_ab,
+                constant,
+                instance,
+            }
+        }
+    }
+
+    #[derive(Clone, Default)]
+    pub struct SmallCircuit<F>(F);
+
+    impl<F: FieldExt> SmallCircuit<F> {
+        #[allow(dead_code)]
+        pub fn rand<R: RngCore>(mut rng: R) -> Self {
+            Self(F::from(rng.next_u32() as u64))
+        }
+
+        #[allow(dead_code)]
+        pub fn instances(&self) -> Vec<Vec<F>> {
+            vec![vec![self.0]]
+        }
+    }
+
+    impl<F: FieldExt> Circuit<F> for SmallCircuit<F> {
+        type Config = StandardPlonkConfig;
+        type FloorPlanner = V1;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            StandardPlonkConfig::configure(meta)
+        }
+
+        fn synthesize(
+            &self,
+            config: Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                || "",
+                |mut region| {
+                    let a = if self.0 == F::zero() {
+                        Value::unknown()
+                    } else {
+                        Value::known(self.0)
+                    };
+                    let b = a.map(|value| value.invert().unwrap());
+                    region.assign_fixed(|| "", config.q_a, 0, || Value::known(-F::one()))?;
+                    region
+                        .assign_advice(|| "", config.a, 0, || a)?
+                        .copy_advice(|| "", &mut region, config.a, 1)?;
+                    region.assign_advice(|| "", config.b, 1, || b)?;
+                    region.assign_fixed(|| "", config.q_ab, 1, || Value::known(F::one()))?;
+                    region.assign_fixed(|| "", config.constant, 1, || Value::known(-F::one()))?;
+                    Ok(())
+                },
+            )
+        }
+    }
+
+    #[allow(dead_code)]
+    #[derive(Clone)]
+    pub struct ExtendedPlonkConfig {
         a: Column<Advice>,
         b: Column<Advice>,
         c: Column<Advice>,
@@ -550,7 +688,7 @@ pub(crate) mod test {
         instance: Column<Instance>,
     }
 
-    impl TestConfig {
+    impl ExtendedPlonkConfig {
         pub fn configure<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
             let a = meta.advice_column();
             let b = meta.advice_column();
@@ -663,31 +801,35 @@ pub(crate) mod test {
     }
 
     #[derive(Clone, Default)]
-    pub struct TestCircuit<F>(F);
+    pub struct BigCircuit<F>(F);
 
-    impl<F: FieldExt> TestCircuit<F> {
-        fn new() -> Self {
-            Self(F::from(u32::MAX as u64))
+    impl<F: FieldExt> BigCircuit<F> {
+        pub fn rand<R: RngCore>(mut rng: R) -> Self {
+            Self(F::from(rng.next_u32() as u64))
+        }
+
+        pub fn instances(&self) -> Vec<Vec<F>> {
+            vec![vec![self.0]]
         }
     }
 
-    impl<F: FieldExt> Circuit<F> for TestCircuit<F> {
-        type Config = TestConfig;
+    impl<F: FieldExt> Circuit<F> for BigCircuit<F> {
+        type Config = ExtendedPlonkConfig;
         type FloorPlanner = V1;
 
         fn without_witnesses(&self) -> Self {
-            Self::new()
+            Self::default()
         }
 
         fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-            TestConfig::configure(meta)
+            ExtendedPlonkConfig::configure(meta)
         }
 
         fn synthesize(
             &self,
             config: Self::Config,
             mut layouter: impl Layouter<F>,
-        ) -> Result<(), halo2_proofs::plonk::Error> {
+        ) -> Result<(), Error> {
             config.load_byte_table(&mut layouter)?;
 
             layouter.assign_region(
@@ -724,36 +866,45 @@ pub(crate) mod test {
         }
     }
 
-    pub fn gen_vk_and_proof<'a, S, P, V, VS, R>(
+    pub fn gen_vk_and_proof<'a, S, C, P, V, VS, TW, TR, E, R>(
         params: &'a S::ParamsProver,
-        n: usize,
-        rng: R,
-    ) -> (VerifyingKey<S::Curve>, Vec<Vec<Vec<S::Scalar>>>, Vec<u8>)
+        circuits: &[C],
+        instances: &[&[&[S::Scalar]]],
+        mut rng: R,
+    ) -> (VerifyingKey<S::Curve>, Vec<u8>)
     where
         S: CommitmentScheme,
         S::ParamsVerifier: 'a,
+        C: Circuit<S::Scalar>,
         P: Prover<'a, S>,
         V: Verifier<'a, S>,
         VS: VerificationStrategy<'a, S, V, R, Output = VS>,
-        R: RngCore + Copy,
+        TW: TranscriptWriterBuffer<Vec<u8>, S::Curve, E>,
+        TR: TranscriptReadBuffer<&'static [u8], S::Curve, E>,
+        E: EncodedChallenge<S::Curve>,
+        R: RngCore,
     {
-        let circuit = TestCircuit::<S::Scalar>::new();
-        let vk = keygen_vk::<S, _>(params, &circuit).unwrap();
-        let pk = keygen_pk::<S, _>(params, vk.clone(), &circuit).unwrap();
+        let vk = keygen_vk::<S, _>(params, &circuits[0]).unwrap();
+        let pk = keygen_pk::<S, _>(params, vk.clone(), &circuits[0]).unwrap();
 
-        let instance = vec![vec![circuit.0]];
-        MockProver::run(params.k(), &circuit, instance.clone())
+        for (circuit, instances) in circuits.iter().zip(instances.iter()) {
+            MockProver::run(
+                params.k(),
+                circuit,
+                instances.iter().map(|instance| instance.to_vec()).collect(),
+            )
             .unwrap()
             .assert_satisfied();
+        }
 
         let proof = {
-            let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(Vec::new());
+            let mut transcript = TW::init(Vec::new());
             create_proof::<S, P, _, _, _, _>(
                 params,
                 &pk,
-                &vec![circuit; n],
-                vec![[[instance[0][0]].as_slice()].as_slice(); n].as_slice(),
-                rng,
+                circuits,
+                instances,
+                &mut rng,
                 &mut transcript,
             )
             .unwrap();
@@ -763,19 +914,13 @@ pub(crate) mod test {
         let accept = {
             let params = params.verifier_params();
             let strategy = VS::new(params, rng);
-            let mut transcript = Blake2bRead::init(proof.as_slice());
-            verify_proof(
-                params,
-                &vk,
-                strategy,
-                vec![[[instance[0][0]].as_slice()].as_slice(); n].as_slice(),
-                &mut transcript,
-            )
-            .unwrap()
-            .finalize()
+            let mut transcript = TR::init(Box::leak(Box::new(proof.clone())));
+            verify_proof(params, &vk, strategy, instances, &mut transcript)
+                .unwrap()
+                .finalize()
         };
         assert!(accept);
 
-        (vk, vec![instance; n], proof)
+        (vk, proof)
     }
 }

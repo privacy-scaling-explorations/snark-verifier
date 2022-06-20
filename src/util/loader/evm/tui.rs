@@ -130,8 +130,13 @@ impl Tui {
                                     .len()
                                     / 32)
                                     .saturating_sub(1);
-                                if draw_memory.current_mem_startline < max_mem {
-                                    draw_memory.current_mem_startline += 1;
+                                let step = if event.modifiers.contains(KeyModifiers::ALT) {
+                                    20
+                                } else {
+                                    1
+                                };
+                                if draw_memory.current_mem_startline + step < max_mem {
+                                    draw_memory.current_mem_startline += step;
                                 }
                             } else if self.current_step < opcode_list.len() - 1 {
                                 self.current_step += 1;

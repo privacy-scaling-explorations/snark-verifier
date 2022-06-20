@@ -34,19 +34,19 @@ where
     fn finalize(self) -> bool;
 }
 
-pub struct SingleProofVerifier<M: MultiMillerLoop> {
+pub struct NativeDecider<M: MultiMillerLoop> {
     g1: M::G1Affine,
     g2: M::G2Affine,
     s_g2: M::G2Affine,
 }
 
-impl<M: MultiMillerLoop> SingleProofVerifier<M> {
+impl<M: MultiMillerLoop> NativeDecider<M> {
     pub fn new(g1: M::G1Affine, g2: M::G2Affine, s_g2: M::G2Affine) -> Self {
-        SingleProofVerifier { g1, g2, s_g2 }
+        NativeDecider { g1, g2, s_g2 }
     }
 }
 
-impl<M, L, P> VerificationStrategy<M::G1, L, P> for SingleProofVerifier<M>
+impl<M, L, P> VerificationStrategy<M::G1, L, P> for NativeDecider<M>
 where
     M: MultiMillerLoop,
     L: Loader<M::G1, LoadedEcPoint = M::G1, LoadedScalar = M::Scalar>,
@@ -60,14 +60,14 @@ where
         lhs: MSM<M::G1, L>,
         rhs: MSM<M::G1, L>,
     ) -> Result<Self::Output, Error> {
-        let minus_g2 = M::G2Prepared::from(-self.g2);
-        let s_g2 = M::G2Prepared::from(self.s_g2);
+        let g2 = M::G2Prepared::from(self.g2);
+        let minus_s_g2 = M::G2Prepared::from(-self.s_g2);
 
         let lhs = lhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
         let rhs = rhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
 
         Ok(
-            M::multi_miller_loop(&[(&lhs.into(), &minus_g2), (&rhs.into(), &s_g2)])
+            M::multi_miller_loop(&[(&lhs.into(), &g2), (&rhs.into(), &minus_s_g2)])
                 .final_exponentiation()
                 .is_identity()
                 .into(),

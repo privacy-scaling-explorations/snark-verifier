@@ -1602,14 +1602,16 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0"
-source = "git+https://github.com/han0110/halo2?branch=feature/abstraction-experiment#00262d36946b44d7679492e92fb31e667fdb8173"
+source = "git+https://github.com/han0110/halo2?branch=feature/abstraction-experiment#531eb9728f098a5699b9eaee17b7cb5619cec24e"
 dependencies = [
  "blake2b_simd",
  "ff 0.12.0",
  "group 0.12.0",
  "halo2curves",
+ "num-bigint",
  "rand_core",
  "rayon",
+ "sha3 0.10.1",
 ]
 
 [[package]]
@@ -2504,8 +2506,11 @@ dependencies = [
  "foundry-evm",
  "group 0.12.0",
  "halo2_proofs",
+ "hex",
  "lazy_static",
  "rand",
+ "rand_chacha",
+ "sha3 0.10.1",
  "tui",
 ]
 

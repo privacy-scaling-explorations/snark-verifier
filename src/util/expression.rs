@@ -106,8 +106,8 @@ impl Query {
     }
 }
 
-#[derive(Clone)]
-pub enum Expression<F: Clone> {
+#[derive(Clone, Debug)]
+pub enum Expression<F> {
     Constant(F),
     CommonPolynomial(CommonPolynomial),
     Polynomial(Query),

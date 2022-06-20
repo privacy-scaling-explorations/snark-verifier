@@ -340,58 +340,247 @@ fn rotation_sets<C: Curve>(protocol: &Protocol<C>) -> Vec<RotationSet> {
 
 #[cfg(test)]
 mod test {
-    use super::verify_proof;
+    use super::{verify_proof, Proof};
     use crate::{
-        protocol::halo2::verifier::kzg::SingleProofVerifier, util::loader::native::NativeLoader,
+        collect_slice,
+        protocol::halo2::{
+            compile,
+            test::{gen_vk_and_proof, read_srs},
+        },
     };
-    use halo2_proofs::poly::kzg::{
-        multiopen::{ProverGWC, VerifierGWC},
-        strategy::BatchVerifier,
+    use halo2_proofs::{
+        halo2curves::bn256::{Bn256, Fr},
+        poly::{
+            commitment::ParamsProver,
+            kzg::{
+                commitment::{KZGCommitmentScheme, ParamsKZG},
+                multiopen::{ProverGWC, VerifierGWC},
+                strategy::BatchVerifier,
+            },
+        },
     };
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+    use std::iter;
 
     #[test]
     fn test_plonk_native() {
-        use crate::protocol::halo2::{
-            compile,
-            test::{gen_vk_and_proof, read_srs},
-            transcript::native::Blake2bTranscript,
-        };
-        use halo2_proofs::{
-            halo2curves::bn256::Bn256,
-            poly::{
-                commitment::ParamsProver,
-                kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
+        use crate::{
+            protocol::halo2::{
+                test::BigCircuit, transcript::native::Blake2bTranscript,
+                verifier::kzg::NativeDecider,
             },
+            util::loader::native::NativeLoader,
         };
-        use rand::rngs::OsRng;
+        use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 
+        const K: u32 = 9;
         const N: usize = 2;
 
-        let params = read_srs::<_, ParamsKZG<Bn256>>("test_plonk_native", 9);
-        let (vk, instance, proof) = gen_vk_and_proof::<
-            KZGCommitmentScheme<_>,
-            ProverGWC<_>,
-            VerifierGWC<_>,
-            BatchVerifier<_, _>,
-            _,
-        >(&params, N, OsRng);
+        let params = read_srs::<_, ParamsKZG<Bn256>>("kzg", K);
+
+        let mut rng = ChaCha20Rng::from_seed(Default::default());
+        let circuits = iter::repeat_with(|| BigCircuit::<Fr>::rand(&mut rng))
+            .take(N)
+            .collect::<Vec<_>>();
+        let instances = circuits
+            .iter()
+            .map(BigCircuit::instances)
+            .collect::<Vec<_>>();
+
+        let (vk, proof) = {
+            collect_slice!(instances, 2);
+            gen_vk_and_proof::<
+                KZGCommitmentScheme<_>,
+                _,
+                ProverGWC<_>,
+                VerifierGWC<_>,
+                BatchVerifier<_, _>,
+                Blake2bWrite<_, _, _>,
+                Blake2bRead<_, _, _>,
+                Challenge255<_>,
+                _,
+            >(&params, &circuits, &instances, &mut rng)
+        };
 
         let protocol = compile(&vk, N);
         let loader = NativeLoader;
-        let statements = instance
-            .iter()
-            .flat_map(|instance| instance.iter().map(|instance| instance.as_slice()))
-            .collect::<Vec<_>>();
+        let statements = instances.into_iter().flatten().collect::<Vec<_>>();
         let mut transcript = Blake2bTranscript::init(proof.as_slice());
         let mut strategy =
-            SingleProofVerifier::<Bn256>::new(params.get_g()[0], params.g2(), params.s_g2());
-        assert!(verify_proof(
-            &protocol,
-            &loader,
-            &statements,
-            &mut transcript,
-            &mut strategy,
-        )
-        .unwrap());
+            NativeDecider::<Bn256>::new(params.get_g()[0], params.g2(), params.s_g2());
+        let accept = {
+            collect_slice!(statements);
+            verify_proof(
+                &protocol,
+                &loader,
+                &statements,
+                &mut transcript,
+                &mut strategy,
+            )
+            .unwrap()
+        };
+        assert!(accept);
+    }
+
+    #[test]
+    #[cfg(feature = "evm")]
+    fn test_plonk_evm() {
+        use crate::{
+            protocol::halo2::{
+                test::BigCircuit,
+                transcript::evm::EvmTranscript,
+                verifier::kzg::{NativeDecider, VerificationStrategy, MSM},
+            },
+            util::{
+                loader::{
+                    evm::{modulus, test::execute, EvmLoader},
+                    native::NativeLoader,
+                    EcPointLoader,
+                },
+                PrimeCurveAffine,
+            },
+            Error,
+        };
+        use ethereum_types::U256;
+        use halo2_proofs::{
+            arithmetic::CurveAffine,
+            halo2curves::bn256::{Fq, G1Affine, G2Affine, G1},
+            transcript::{ChallengeEvm, EvmRead, EvmWrite},
+        };
+        use std::{ops::Neg, rc::Rc};
+
+        pub struct EvmDecider {
+            g1: G1Affine,
+            g2: G2Affine,
+            s_g2: G2Affine,
+        }
+
+        impl EvmDecider {
+            pub fn new(g1: G1Affine, g2: G2Affine, s_g2: G2Affine) -> Self {
+                EvmDecider { g1, g2, s_g2 }
+            }
+        }
+
+        impl VerificationStrategy<G1, Rc<EvmLoader>, Proof<G1, Rc<EvmLoader>>> for EvmDecider {
+            type Output = Vec<u8>;
+
+            fn process(
+                &mut self,
+                loader: &Rc<EvmLoader>,
+                _: Proof<G1, Rc<EvmLoader>>,
+                lhs: MSM<G1, Rc<EvmLoader>>,
+                rhs: MSM<G1, Rc<EvmLoader>>,
+            ) -> Result<Self::Output, Error> {
+                let [g2, minus_s_g2] = [self.g2, self.s_g2.neg()].map(|ec_point| {
+                    let coordinates = ec_point.coordinates().unwrap();
+                    (
+                        U256::from_little_endian(&coordinates.x().c1.to_bytes()),
+                        U256::from_little_endian(&coordinates.x().c0.to_bytes()),
+                        U256::from_little_endian(&coordinates.y().c1.to_bytes()),
+                        U256::from_little_endian(&coordinates.y().c0.to_bytes()),
+                    )
+                });
+                let g1 = loader.ec_point_load_const(&self.g1.to_curve());
+                let lhs = lhs.evaluate(g1.clone());
+                let rhs = rhs.evaluate(g1);
+                loader.pairing(&lhs, g2, &rhs, minus_s_g2);
+                Ok(loader.code())
+            }
+
+            fn finalize(self) -> bool {
+                unreachable!()
+            }
+        }
+
+        const K: u32 = 9;
+        const N: usize = 1;
+
+        let params = read_srs::<_, ParamsKZG<Bn256>>("kzg", K);
+
+        let mut rng = ChaCha20Rng::from_seed(Default::default());
+        let circuits = iter::repeat_with(|| BigCircuit::<Fr>::rand(&mut rng))
+            .take(N)
+            .collect::<Vec<_>>();
+        let instances = circuits
+            .iter()
+            .map(BigCircuit::instances)
+            .collect::<Vec<_>>();
+
+        let (vk, proof) = {
+            collect_slice!(instances, 2);
+            gen_vk_and_proof::<
+                KZGCommitmentScheme<_>,
+                _,
+                ProverGWC<_>,
+                VerifierGWC<_>,
+                BatchVerifier<_, _>,
+                EvmWrite<_, _, _>,
+                EvmRead<_, _, _>,
+                ChallengeEvm<_>,
+                _,
+            >(&params, &circuits, &instances, &mut rng)
+        };
+
+        let protocol = compile(&vk, N);
+        {
+            let loader = NativeLoader;
+            let statements = instances.clone().into_iter().flatten().collect::<Vec<_>>();
+            let mut transcript = EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice());
+            let mut strategy =
+                NativeDecider::<Bn256>::new(params.get_g()[0], params.g2(), params.s_g2());
+            let accept = {
+                collect_slice!(statements);
+                verify_proof(
+                    &protocol,
+                    &loader,
+                    &statements,
+                    &mut transcript,
+                    &mut strategy,
+                )
+                .unwrap()
+            };
+            assert!(accept);
+        }
+        {
+            let loader = EvmLoader::new(modulus::<Fq>(), modulus::<Fr>());
+            let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
+            let statements = instances
+                .iter()
+                .flat_map(|instances| {
+                    instances
+                        .iter()
+                        .map(|instance| {
+                            iter::repeat_with(|| loader.calldataload_scalar())
+                                .take(instance.len())
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let mut strategy = EvmDecider::new(params.get_g()[0], params.g2(), params.s_g2());
+            let code = {
+                collect_slice!(statements);
+                verify_proof(
+                    &protocol,
+                    &loader,
+                    &statements,
+                    &mut transcript,
+                    &mut strategy,
+                )
+                .unwrap()
+            };
+            let calldata = iter::empty()
+                .chain(instances.into_iter().flatten().flatten().flat_map(|value| {
+                    let mut bytes = value.to_bytes();
+                    bytes.reverse();
+                    bytes
+                }))
+                .chain(proof)
+                .collect();
+            let (accept, gas) = execute(code, calldata);
+            dbg!(gas);
+            assert!(accept);
+        }
     }
 }
