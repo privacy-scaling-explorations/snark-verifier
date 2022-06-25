@@ -32,17 +32,20 @@ where
         lhs: MSM<M::G1, L>,
         rhs: MSM<M::G1, L>,
     ) -> Result<Self::Output, Error> {
+        let g1 = loader.ec_point_load_const(&self.g1.into());
+        let evaluated_lhs = lhs.evaluate(g1);
+        let evaluated_rhs = rhs.evaluate(g1);
+
         let g2 = M::G2Prepared::from(self.g2);
         let minus_s_g2 = M::G2Prepared::from(-self.s_g2);
 
-        let lhs = lhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
-        let rhs = rhs.evaluate(loader.ec_point_load_const(&self.g1.into()));
-
-        Ok(
-            M::multi_miller_loop(&[(&lhs.into(), &g2), (&rhs.into(), &minus_s_g2)])
-                .final_exponentiation()
-                .is_identity()
-                .into(),
-        )
+        let terms = [
+            (&evaluated_lhs.into(), &g2),
+            (&evaluated_rhs.into(), &minus_s_g2),
+        ];
+        Ok(M::multi_miller_loop(&terms)
+            .final_exponentiation()
+            .is_identity()
+            .into())
     }
 }

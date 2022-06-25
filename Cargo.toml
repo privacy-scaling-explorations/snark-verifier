@@ -12,8 +12,9 @@ rand_chacha = "0.3.1"
 halo2_curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "v0.2.0", package = "halo2curves" }
 
 # halo2
-halo2_proofs = { version = "0.1.0", optional = true }
 blake2b_simd = { version = "1.0.0", optional = true }
+halo2_proofs = { version = "0.1.0", optional = true }
+halo2_wrong_maingate = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", package = "maingate", optional = true }
 
 # evm
 ethereum_types = { package = "ethereum-types", version = "0.13.1", default-features = false, features = ["std"], optional = true }
@@ -27,7 +28,7 @@ rand = "0.8"
 
 [features]
 default = ["halo2", "evm"]
-halo2 = ["dep:halo2_proofs", "dep:blake2b_simd"]
+halo2 = ["dep:blake2b_simd", "dep:halo2_proofs", "dep:halo2_wrong_maingate"]
 evm = ["dep:foundry_evm", "dep:crossterm", "dep:tui", "dep:ethereum_types", "dep:sha3"]
 
 [patch.crates-io]
@@ -35,3 +36,6 @@ halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "feature/abs
 
 [patch."https://github.com/privacy-scaling-explorations/halo2curves"]
 halo2_curves = { git = "https://github.com/han0110/halo2curves", branch = "fix/impl-fq2-to-repr", package = "halo2curves" }
+
+[patch."https://github.com/privacy-scaling-explorations/halo2wrong"]
+halo2_wrong_maingate = { git = "https://github.com/han0110/halo2wrong", branch = "feature/value-api", package = "maingate" }

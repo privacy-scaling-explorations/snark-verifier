@@ -1,12 +1,12 @@
 use crate::util::{Curve, FieldOps, GroupOps, PrimeField};
 use std::{fmt::Debug, iter};
 
+pub mod native;
+
 #[cfg(feature = "evm")]
 pub mod evm;
 
-pub mod native;
-
-pub trait LoadedEcPoint<C: Curve>: 'static + Clone + Debug + GroupOps {
+pub trait LoadedEcPoint<C: Curve>: Clone + Debug + GroupOps + PartialEq {
     type Loader: Loader<C, LoadedEcPoint = Self>;
 
     fn loader(&self) -> &Self::Loader;
@@ -21,7 +21,7 @@ pub trait LoadedEcPoint<C: Curve>: 'static + Clone + Debug + GroupOps {
     ) -> Self;
 }
 
-pub trait LoadedScalar<F: PrimeField>: 'static + Clone + Debug + FieldOps {
+pub trait LoadedScalar<F: PrimeField>: Clone + Debug + FieldOps {
     type Loader: ScalarLoader<F, LoadedScalar = Self>;
 
     fn loader(&self) -> &Self::Loader;
@@ -66,11 +66,18 @@ pub trait LoadedScalar<F: PrimeField>: 'static + Clone + Debug + FieldOps {
         Self::sum_with_const(values, &F::zero())
     }
 
+    fn square(&self) -> Self {
+        self.clone() * self
+    }
+
     fn invert(&self) -> Option<Self> {
         FieldOps::invert(self)
     }
 
-    fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self>) {
+    fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self>)
+    where
+        Self: 'a,
+    {
         values
             .into_iter()
             .for_each(|value| *value = LoadedScalar::invert(value).unwrap_or_else(|| value.clone()))
@@ -82,14 +89,14 @@ pub trait LoadedScalar<F: PrimeField>: 'static + Clone + Debug + FieldOps {
         let mut base = self.clone();
 
         while exp & 1 == 0 {
-            base *= base.clone();
+            base = base.square();
             exp >>= 1;
         }
 
         let mut acc = base.clone();
         while exp > 1 {
             exp >>= 1;
-            base *= base.clone();
+            base = base.square();
             if exp & 1 == 1 {
                 acc *= &base;
             }
@@ -107,7 +114,7 @@ pub trait LoadedScalar<F: PrimeField>: 'static + Clone + Debug + FieldOps {
     }
 }
 
-pub trait EcPointLoader<C: Curve>: Debug {
+pub trait EcPointLoader<C: Curve> {
     type LoadedEcPoint: LoadedEcPoint<C, Loader = Self>;
 
     fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint;
@@ -121,7 +128,7 @@ pub trait EcPointLoader<C: Curve>: Debug {
     }
 }
 
-pub trait ScalarLoader<F: PrimeField>: Debug {
+pub trait ScalarLoader<F: PrimeField> {
     type LoadedScalar: LoadedScalar<F, Loader = Self>;
 
     fn load_const(&self, value: &F) -> Self::LoadedScalar;

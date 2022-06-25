@@ -13,10 +13,7 @@ use std::{io, iter};
 #[cfg(test)]
 mod test;
 
-mod transcript;
 mod util;
-
-pub use transcript::Blake2bTranscript;
 
 impl From<poly::Rotation> for Rotation {
     fn from(rotation: poly::Rotation) -> Rotation {

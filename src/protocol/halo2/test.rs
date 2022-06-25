@@ -4,7 +4,7 @@ use halo2_proofs::{
     dev::MockProver,
     plonk::{
         create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Any, Circuit, Column,
-        ConstraintSystem, Error, Fixed, Instance, TableColumn, VerifyingKey,
+        ConstraintSystem, Error, Fixed, Instance, VerifyingKey,
     },
     poly::{
         commitment::{CommitmentScheme, Params, ParamsProver, Prover, Verifier},
@@ -12,12 +12,17 @@ use halo2_proofs::{
     },
     transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
 };
+use halo2_wrong_maingate::{
+    MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
+    RegionCtx,
+};
 use rand::RngCore;
 use std::fs;
 
+mod native;
+
 #[cfg(feature = "evm")]
 mod evm;
-mod native;
 
 pub fn read_srs<'a, C, P>(name: &str, k: u32) -> P
 where
@@ -103,9 +108,9 @@ impl StandardPlonkConfig {
 }
 
 #[derive(Clone, Default)]
-pub struct SmallCircuit<F>(F);
+pub struct StandardPlonk<F>(F);
 
-impl<F: FieldExt> SmallCircuit<F> {
+impl<F: FieldExt> StandardPlonk<F> {
     #[allow(dead_code)]
     pub fn rand<R: RngCore>(mut rng: R) -> Self {
         Self(F::from(rng.next_u32() as u64))
@@ -117,7 +122,7 @@ impl<F: FieldExt> SmallCircuit<F> {
     }
 }
 
-impl<F: FieldExt> Circuit<F> for SmallCircuit<F> {
+impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
     type Config = StandardPlonkConfig;
     type FloorPlanner = V1;
 
@@ -156,144 +161,10 @@ impl<F: FieldExt> Circuit<F> for SmallCircuit<F> {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Clone)]
-pub struct ExtendedPlonkConfig {
-    a: Column<Advice>,
-    b: Column<Advice>,
-    c: Column<Advice>,
-    d: Column<Advice>,
-    e: Column<Advice>,
-    q_a: Column<Fixed>,
-    q_b: Column<Fixed>,
-    q_c: Column<Fixed>,
-    q_d: Column<Fixed>,
-    q_e: Column<Fixed>,
-    q_e_w: Column<Fixed>,
-    q_ab: Column<Fixed>,
-    q_cd: Column<Fixed>,
-    q_byte: Column<Fixed>,
-    byte: TableColumn,
-    constant: Column<Fixed>,
-    instance: Column<Instance>,
-}
-
-impl ExtendedPlonkConfig {
-    pub fn configure<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        let a = meta.advice_column();
-        let b = meta.advice_column();
-        let c = meta.advice_column();
-        let d = meta.advice_column();
-        let e = meta.advice_column();
-
-        let q_a = meta.fixed_column();
-        let q_b = meta.fixed_column();
-        let q_c = meta.fixed_column();
-        let q_d = meta.fixed_column();
-        let q_e = meta.fixed_column();
-        let q_e_w = meta.fixed_column();
-        let q_ab = meta.fixed_column();
-        let q_cd = meta.fixed_column();
-        let q_byte = meta.fixed_column();
-
-        let byte = meta.lookup_table_column();
-        let constant = meta.fixed_column();
-        let instance = meta.instance_column();
-
-        meta.enable_equality(a);
-        meta.enable_equality(b);
-        meta.enable_equality(c);
-        meta.enable_equality(d);
-        meta.enable_equality(e);
-        meta.enable_equality(instance);
-
-        meta.create_gate("", |meta| {
-            let e_next = meta.query_advice(e, Rotation::next());
-            let [a, b, c, d, e, q_a, q_b, q_c, q_d, q_e, q_e_w, q_ab, q_cd, constant] = [
-                a.into(),
-                b.into(),
-                c.into(),
-                d.into(),
-                e.into(),
-                q_a.into(),
-                q_b.into(),
-                q_c.into(),
-                q_d.into(),
-                q_e.into(),
-                q_e_w.into(),
-                q_ab.into(),
-                q_cd.into(),
-                constant.into(),
-            ]
-            .map(|column: Column<Any>| meta.query_any(column, Rotation::cur()));
-
-            vec![
-                q_a * a.clone()
-                    + q_b * b.clone()
-                    + q_c * c.clone()
-                    + q_d * d.clone()
-                    + q_e * e
-                    + q_ab * a * b
-                    + q_cd * c * d
-                    + q_e_w * e_next
-                    + constant,
-            ]
-        });
-
-        for column in [b, c, d, e] {
-            meta.lookup(|meta| {
-                let q_byte = meta.query_fixed(q_byte, Rotation::cur());
-                let column = meta.query_advice(column, Rotation::cur());
-                vec![(q_byte * column, byte)]
-            });
-        }
-
-        Self {
-            a,
-            b,
-            c,
-            d,
-            e,
-            q_a,
-            q_b,
-            q_c,
-            q_d,
-            q_e,
-            q_e_w,
-            q_ab,
-            q_cd,
-            q_byte,
-            byte,
-            constant,
-            instance,
-        }
-    }
-
-    pub fn load_byte_table<F: FieldExt>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-    ) -> Result<(), Error> {
-        layouter.assign_table(
-            || "",
-            |mut table| {
-                for byte in 0..256 {
-                    table.assign_cell(
-                        || "",
-                        self.byte,
-                        byte,
-                        || Value::known(F::from(byte as u64)),
-                    )?;
-                }
-                Ok(())
-            },
-        )
-    }
-}
-
 #[derive(Clone, Default)]
-pub struct BigCircuit<F>(F);
+pub struct MainGateWithRange<F>(F);
 
-impl<F: FieldExt> BigCircuit<F> {
+impl<F: FieldExt> MainGateWithRange<F> {
     pub fn rand<R: RngCore>(mut rng: R) -> Self {
         Self(F::from(rng.next_u32() as u64))
     }
@@ -303,8 +174,8 @@ impl<F: FieldExt> BigCircuit<F> {
     }
 }
 
-impl<F: FieldExt> Circuit<F> for BigCircuit<F> {
-    type Config = ExtendedPlonkConfig;
+impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
+    type Config = (MainGateConfig, RangeConfig);
     type FloorPlanner = V1;
 
     fn without_witnesses(&self) -> Self {
@@ -312,42 +183,33 @@ impl<F: FieldExt> Circuit<F> for BigCircuit<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        ExtendedPlonkConfig::configure(meta)
+        let main_gate_config = MainGate::configure(meta);
+        let range_config = RangeChip::configure(meta, &main_gate_config, Vec::new());
+        (main_gate_config, range_config)
     }
 
     fn synthesize(
         &self,
-        config: Self::Config,
+        (main_gate_config, range_config): Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        config.load_byte_table(&mut layouter)?;
+        let main_gate = MainGate::new(main_gate_config);
+        let range_chip = RangeChip::new(range_config, 8);
 
-        layouter.assign_region(
+        range_chip.load_limb_range_table(&mut layouter)?;
+
+        let a = layouter.assign_region(
             || "",
             |mut region| {
-                let a =
-                    region.assign_advice_from_instance(|| "", config.instance, 0, config.a, 0)?;
-                let a_le_byte = |i: usize| {
-                    let a = &a;
-                    move || {
-                        a.value()
-                            .map(|a| F::from(((a.get_lower_32() >> (8 * i)) & 0xff) as u64))
-                    }
-                };
-                region.assign_fixed(|| "", config.q_a, 1, || Value::known(-F::one()))?;
-                region.assign_fixed(|| "", config.q_b, 1, || Value::known(F::from(1 << 24)))?;
-                region.assign_fixed(|| "", config.q_c, 1, || Value::known(F::from(1 << 16)))?;
-                region.assign_fixed(|| "", config.q_d, 1, || Value::known(F::from(1 << 8)))?;
-                region.assign_fixed(|| "", config.q_e, 1, || Value::known(F::one()))?;
-                region.assign_fixed(|| "", config.q_byte, 1, || Value::known(F::one()))?;
-                a.copy_advice(|| "", &mut region, config.a, 1)?;
-                region.assign_advice(|| "", config.b, 1, a_le_byte(3))?;
-                region.assign_advice(|| "", config.c, 1, a_le_byte(2))?;
-                region.assign_advice(|| "", config.d, 1, a_le_byte(1))?;
-                region.assign_advice(|| "", config.e, 1, a_le_byte(0))?;
-                Ok(())
+                let mut offset = 1;
+                let mut ctx = RegionCtx::new(&mut region, &mut offset);
+                range_chip.range_value(&mut ctx, &Value::known(self.0).into(), 32)
             },
-        )
+        )?;
+
+        main_gate.expose_public(layouter, a, 0)?;
+
+        Ok(())
     }
 }
 
@@ -411,7 +273,7 @@ where
 
 #[macro_export]
 macro_rules! halo2_prepare {
-    ([kzg] $k:expr, $n:expr, $circuit:ty, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
+    ([kzg], $k:expr, $n:expr, $circuit:ty, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
         use halo2_curves::bn256::{Bn256, G1};
         use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG};
         use rand::SeedableRng;
@@ -456,7 +318,7 @@ macro_rules! halo2_prepare {
 
 #[macro_export]
 macro_rules! halo2_native_verify {
-    ($params:ident, $protocol:ident, $instances:ident, $accumulator:expr, $transcript:expr) => {{
+    ([kzg], $params:ident, $protocol:ident, $instances:ident, $accumulator:expr, $transcript:expr) => {{
         use halo2_curves::bn256::Bn256;
         use halo2_proofs::poly::commitment::ParamsProver;
         use $crate::{

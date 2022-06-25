@@ -9,22 +9,6 @@ use crate::{
 pub mod plonk;
 pub mod shplonk;
 
-pub trait AccumulationStrategy<C, L, P>
-where
-    C: Curve,
-    L: Loader<C>,
-{
-    type Output;
-
-    fn process(
-        &mut self,
-        loader: &L,
-        proof: P,
-        lhs: MSM<C, L>,
-        rhs: MSM<C, L>,
-    ) -> Result<Self::Output, Error>;
-}
-
 pub trait Accumulator<C, L, T, S>
 where
     C: Curve,
@@ -42,4 +26,20 @@ where
         transcript: &mut T,
         strategy: &mut S,
     ) -> Result<S::Output, Error>;
+}
+
+pub trait AccumulationStrategy<C, L, P>
+where
+    C: Curve,
+    L: Loader<C>,
+{
+    type Output;
+
+    fn process(
+        &mut self,
+        loader: &L,
+        proof: P,
+        lhs: MSM<C, L>,
+        rhs: MSM<C, L>,
+    ) -> Result<Self::Output, Error>;
 }

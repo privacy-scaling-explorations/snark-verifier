@@ -1,12 +1,13 @@
 use crate::{
-    hex,
-    loader::evm::{Code, Precompiled},
+    loader::evm::{
+        code::{Code, Precompiled},
+        modulus,
+    },
     loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
     util::{Curve, FieldOps, PrimeField, UncompressedEncoding},
 };
 use ethereum_types::{U256, U512};
 use std::{
-    borrow::Borrow,
     cell::RefCell,
     fmt::Debug,
     iter,
@@ -14,36 +15,10 @@ use std::{
     rc::Rc,
 };
 
-pub fn modulus<F: PrimeField<Repr = [u8; 32]>>() -> U256 {
-    U256::from_little_endian((-F::one()).to_repr().as_ref()) + 1
-}
-
-#[derive(Clone)]
-pub struct Pointer<const SIZE: usize> {
-    loader: Rc<EvmLoader>,
-    memory_address: Option<usize>,
-}
-
-impl<const SIZE: usize> Pointer<SIZE> {
-    pub const fn is_null(&self) -> bool {
-        self.memory_address.is_none()
-    }
-
-    pub fn memory_address(&self) -> usize {
-        self.memory_address.unwrap()
-    }
-}
-
-impl<const SIZE: usize> Debug for Pointer<SIZE> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Pointer")
-            .field("size", &SIZE)
-            .field(
-                "memory_address",
-                &hex!(self.memory_address.unwrap_or_default().to_be_bytes()),
-            )
-            .finish()
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Value<T> {
+    Constant(T),
+    Memory(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -51,18 +26,17 @@ pub struct EvmLoader {
     base_modulus: U256,
     scalar_modulus: U256,
     code: RefCell<Code>,
-    cd_offset: RefCell<usize>,
-    memory_offset: RefCell<usize>,
+    ptr: RefCell<usize>,
 }
 
 impl EvmLoader {
-    pub fn new<Fq, Fr>() -> Rc<Self>
+    pub fn new<Base, Scalar>() -> Rc<Self>
     where
-        Fq: PrimeField<Repr = [u8; 32]>,
-        Fr: PrimeField<Repr = [u8; 32]>,
+        Base: PrimeField<Repr = [u8; 32]>,
+        Scalar: PrimeField<Repr = [u8; 32]>,
     {
-        let base_modulus = modulus::<Fq>();
-        let scalar_modulus = modulus::<Fr>();
+        let base_modulus = modulus::<Base>();
+        let scalar_modulus = modulus::<Scalar>();
         let code = Code::new([1.into(), base_modulus, scalar_modulus - 1, scalar_modulus])
             .push(1)
             .to_owned();
@@ -70,8 +44,7 @@ impl EvmLoader {
             base_modulus,
             scalar_modulus,
             code: RefCell::new(code),
-            cd_offset: RefCell::new(0),
-            memory_offset: RefCell::new(0),
+            ptr: RefCell::new(0),
         })
     }
 
@@ -89,74 +62,72 @@ impl EvmLoader {
             .into()
     }
 
-    pub fn null_ptr<const SIZE: usize>(self: &Rc<Self>) -> Pointer<SIZE> {
-        Pointer {
+    pub fn allocate(self: &Rc<Self>, size: usize) -> usize {
+        let ptr = *self.ptr.borrow();
+        *self.ptr.borrow_mut() += size;
+        ptr
+    }
+
+    fn scalar(self: &Rc<Self>, value: Value<U256>) -> Scalar {
+        Scalar {
             loader: self.clone(),
-            memory_address: None,
+            value,
         }
     }
 
-    fn ptr<const SIZE: usize>(self: &Rc<Self>, memory_address: usize) -> Pointer<SIZE> {
-        Pointer {
+    fn ec_point(self: &Rc<Self>, value: Value<(U256, U256)>) -> EcPoint {
+        EcPoint {
             loader: self.clone(),
-            memory_address: Some(memory_address),
+            value,
         }
     }
 
-    pub fn allocate<const SIZE: usize>(self: &Rc<Self>) -> Pointer<SIZE> {
-        let memory_address = *self.memory_offset.borrow();
-        *self.memory_offset.borrow_mut() += SIZE;
-        self.ptr(memory_address)
-    }
-
-    fn push(self: &Rc<Self>, value: &Scalar) {
-        if let Some(constant) = value.constant {
-            self.code.borrow_mut().push(constant);
-        } else {
-            assert!(!value.ptr.is_null());
-            self.code.borrow_mut().push(value.memory_address()).mload();
+    fn push(self: &Rc<Self>, scalar: &Scalar) {
+        match scalar.value {
+            Value::Constant(constant) => {
+                self.code.borrow_mut().push(constant);
+            }
+            Value::Memory(ptr) => {
+                self.code.borrow_mut().push(ptr).mload();
+            }
         }
     }
 
-    pub fn calldataload_scalar(self: &Rc<Self>) -> Scalar {
-        let cd_offset = *self.cd_offset.borrow();
-        *self.cd_offset.borrow_mut() += 0x20;
-        let ptr = self.allocate();
+    pub fn calldataload_scalar(self: &Rc<Self>, offset: usize) -> Scalar {
+        let ptr = self.allocate(0x20);
         self.code
             .borrow_mut()
             .push(self.scalar_modulus)
-            .push(cd_offset)
+            .push(offset)
             .calldataload()
             .r#mod()
-            .push(ptr.memory_address())
+            .push(ptr)
             .mstore();
-        Scalar::variable(ptr)
+        self.scalar(Value::Memory(ptr))
     }
 
-    pub fn calldataload_ec_point(self: &Rc<Self>) -> EcPoint {
-        let cd_offset = *self.cd_offset.borrow();
-        *self.cd_offset.borrow_mut() += 0x40;
-        let ptr = self.allocate();
+    pub fn calldataload_ec_point(self: &Rc<Self>, offset: usize) -> EcPoint {
+        let ptr = self.allocate(0x40);
         self.code
             .borrow_mut()
             // [..., success]
-            .push(cd_offset)
+            .push(offset)
             // [..., success, x_cd_ptr]
             .calldataload()
             // [..., success, x]
             .dup(0)
             // [..., success, x, x]
-            .push(ptr.memory_address())
+            .push(ptr)
             // [..., success, x, x, x_ptr]
             .mstore()
             // [..., success, x]
-            .push(cd_offset + 0x20)
+            .push(offset + 0x20)
             // [..., success, x, y_cd_ptr]
             .calldataload()
             // [..., success, x, y]
             .dup(0)
             // [..., success, x, y, y]
-            .push(ptr.memory_address() + 0x20)
+            .push(ptr + 0x20)
             // [..., success, x, y, y, y_ptr]
             .mstore()
             // [..., success, x, y]
@@ -227,119 +198,87 @@ impl EvmLoader {
             .pop()
             // [..., success, valid]
             .and();
-        EcPoint::variable(ptr)
+        self.ec_point(Value::Memory(ptr))
     }
 
-    pub fn squeeze_challenge(
-        self: &Rc<Self>,
-        ptr: &mut Pointer<0x20>,
-        mut length: usize,
-    ) -> Scalar {
-        let challenge_ptr = self.allocate();
-        let hash_ptr = self.allocate::<32>();
+    pub fn squeeze_challenge(self: &Rc<Self>, ptr: usize, mut len: usize) -> (usize, Scalar) {
+        let challenge_ptr = self.allocate(0x20);
+        let hash_ptr = self.allocate(0x20);
 
-        if length == 0x20 {
-            self.code
-                .borrow_mut()
-                .push(1)
-                .push(ptr.memory_address() + 0x20)
-                .mstore8();
-            length += 1;
+        if len == 0x20 {
+            self.code.borrow_mut().push(1).push(ptr + 0x20).mstore8();
+            len += 1;
         }
 
         self.code
             .borrow_mut()
             .push(self.scalar_modulus)
-            .push(length)
-            .push(ptr.memory_address())
+            .push(len)
+            .push(ptr)
             .keccak256()
             .dup(0)
-            .push(hash_ptr.memory_address())
+            .push(hash_ptr)
             .mstore()
             .r#mod()
-            .push(challenge_ptr.memory_address())
+            .push(challenge_ptr)
             .mstore();
 
-        *ptr = hash_ptr;
-        Scalar::variable(challenge_ptr)
+        (hash_ptr, self.scalar(Value::Memory(challenge_ptr)))
     }
 
-    pub fn copy_scalar(self: &Rc<Self>, value: &Scalar, ptr: &Pointer<0x20>) {
-        match (value.constant, value.ptr.memory_address) {
-            (Some(constant), None) => {
-                self.code
-                    .borrow_mut()
-                    .push(constant)
-                    .push(ptr.memory_address())
-                    .mstore();
+    pub fn copy_scalar(self: &Rc<Self>, scalar: &Scalar, ptr: usize) {
+        match scalar.value {
+            Value::Constant(constant) => {
+                self.code.borrow_mut().push(constant).push(ptr).mstore();
             }
-            (None, Some(memory_address)) => {
+            Value::Memory(src_ptr) => {
                 self.code
                     .borrow_mut()
-                    .push(memory_address)
+                    .push(src_ptr)
                     .mload()
-                    .push(ptr.memory_address())
+                    .push(ptr)
                     .mstore();
             }
-            _ => unreachable!(),
         }
     }
 
-    pub fn dup_scalar(self: &Rc<Self>, value: &Scalar) -> Scalar {
-        let ptr = self.allocate();
-        match (value.constant, value.ptr.memory_address) {
-            (Some(constant), None) => {
-                self.code
-                    .borrow_mut()
-                    .push(constant)
-                    .push(ptr.memory_address())
-                    .mstore();
-            }
-            (None, Some(memory_address)) => {
-                self.code
-                    .borrow_mut()
-                    .push(memory_address)
-                    .mload()
-                    .push(ptr.memory_address())
-                    .mstore();
-            }
-            _ => unreachable!(),
-        }
-        Scalar::variable(ptr)
+    pub fn dup_scalar(self: &Rc<Self>, scalar: &Scalar) -> Scalar {
+        let ptr = self.allocate(0x20);
+        self.copy_scalar(scalar, ptr);
+        self.scalar(Value::Memory(ptr))
     }
 
     fn dup_ec_point(self: &Rc<Self>, value: &EcPoint) -> EcPoint {
-        let ptr = self.allocate();
-        match (value.constant, value.ptr.memory_address) {
-            (Some((x, y)), None) => {
+        let ptr = self.allocate(0x40);
+        match value.value {
+            Value::Constant((x, y)) => {
                 self.code
                     .borrow_mut()
                     .push(x)
-                    .push(ptr.memory_address())
+                    .push(ptr)
                     .mstore()
                     .push(y)
-                    .push(ptr.memory_address() + 0x20)
+                    .push(ptr + 0x20)
                     .mstore();
             }
-            (None, Some(memory_address)) => {
+            Value::Memory(src_ptr) => {
                 self.code
                     .borrow_mut()
-                    .push(memory_address)
+                    .push(src_ptr)
                     .mload()
-                    .push(ptr.memory_address())
+                    .push(ptr)
                     .mstore()
-                    .push(memory_address + 0x20)
+                    .push(src_ptr + 0x20)
                     .mload()
-                    .push(ptr.memory_address() + 0x20)
+                    .push(ptr + 0x20)
                     .mstore();
             }
-            _ => unreachable!(),
         }
-        EcPoint::variable(ptr)
+        self.ec_point(Value::Memory(ptr))
     }
 
-    fn staticcall(self: &Rc<Self>, precompile: Precompiled, cd_offset: usize, rd_offset: usize) {
-        let (cd_length, rd_length) = match precompile {
+    fn staticcall(self: &Rc<Self>, precompile: Precompiled, cd_ptr: usize, rd_ptr: usize) {
+        let (cd_len, rd_len) = match precompile {
             Precompiled::BigModExp => (0xc0, 0x20),
             Precompiled::Bn254Add => (0x80, 0x40),
             Precompiled::Bn254ScalarMul => (0x60, 0x40),
@@ -347,56 +286,51 @@ impl EvmLoader {
         };
         self.code
             .borrow_mut()
-            .push(rd_length)
-            .push(rd_offset)
-            .push(cd_length)
-            .push(cd_offset)
+            .push(rd_len)
+            .push(rd_ptr)
+            .push(cd_len)
+            .push(cd_ptr)
             .push(precompile as usize)
             .gas()
             .staticcall()
             .and();
     }
 
-    fn invert(self: &Rc<Self>, value: &Scalar) -> Scalar {
-        assert!(!value.ptr.is_null());
-        let rd_ptr = self.allocate();
+    fn invert(self: &Rc<Self>, scalar: &Scalar) -> Scalar {
+        let rd_ptr = self.allocate(0x20);
         let [cd_ptr, ..] = [
-            &Scalar::constant(self.null_ptr(), 0x20),
-            &Scalar::constant(self.null_ptr(), 0x20),
-            &Scalar::constant(self.null_ptr(), 0x20),
-            value,
-            &Scalar::constant(self.null_ptr(), self.scalar_modulus - 2),
-            &Scalar::constant(self.null_ptr(), self.scalar_modulus),
+            &self.scalar(Value::Constant(0x20.into())),
+            &self.scalar(Value::Constant(0x20.into())),
+            &self.scalar(Value::Constant(0x20.into())),
+            scalar,
+            &self.scalar(Value::Constant(self.scalar_modulus - 2)),
+            &self.scalar(Value::Constant(self.scalar_modulus)),
         ]
-        .map(|value| self.dup_scalar(value).ptr);
-        self.staticcall(
-            Precompiled::BigModExp,
-            cd_ptr.memory_address(),
-            rd_ptr.memory_address(),
-        );
-        Scalar::variable(rd_ptr)
+        .map(|value| self.dup_scalar(value).ptr());
+        self.staticcall(Precompiled::BigModExp, cd_ptr, rd_ptr);
+        self.scalar(Value::Memory(rd_ptr))
     }
 
     fn ec_point_add(self: &Rc<Self>, lhs: &EcPoint, rhs: &EcPoint) -> EcPoint {
-        let rd_ptr = self.dup_ec_point(lhs).ptr;
+        let rd_ptr = self.dup_ec_point(lhs).ptr();
         self.dup_ec_point(rhs);
-        self.staticcall(
-            Precompiled::Bn254Add,
-            rd_ptr.memory_address(),
-            rd_ptr.memory_address(),
-        );
-        EcPoint::variable(rd_ptr)
+        self.staticcall(Precompiled::Bn254Add, rd_ptr, rd_ptr);
+        self.ec_point(Value::Memory(rd_ptr))
+    }
+
+    fn ec_point_sub(self: &Rc<Self>, _: &EcPoint, _: &EcPoint) -> EcPoint {
+        unreachable!()
+    }
+
+    fn ec_point_neg(self: &Rc<Self>, _: &EcPoint) -> EcPoint {
+        unreachable!()
     }
 
     fn ec_point_scalar_mul(self: &Rc<Self>, ec_point: &EcPoint, scalar: &Scalar) -> EcPoint {
-        let rd_ptr = self.dup_ec_point(ec_point).ptr;
+        let rd_ptr = self.dup_ec_point(ec_point).ptr();
         self.dup_scalar(scalar);
-        self.staticcall(
-            Precompiled::Bn254ScalarMul,
-            rd_ptr.memory_address(),
-            rd_ptr.memory_address(),
-        );
-        EcPoint::variable(rd_ptr)
+        self.staticcall(Precompiled::Bn254ScalarMul, rd_ptr, rd_ptr);
+        self.ec_point(Value::Memory(rd_ptr))
     }
 
     pub fn pairing(
@@ -406,81 +340,56 @@ impl EvmLoader {
         rhs: &EcPoint,
         minus_s_g2: (U256, U256, U256, U256),
     ) {
-        let rd_ptr = self.dup_ec_point(lhs).ptr;
-        self.allocate::<0x80>();
+        let rd_ptr = self.dup_ec_point(lhs).ptr();
+        self.allocate(0x80);
         self.code
             .borrow_mut()
             .push(g2.0)
-            .push(rd_ptr.memory_address() + 0x40)
+            .push(rd_ptr + 0x40)
             .mstore()
             .push(g2.1)
-            .push(rd_ptr.memory_address() + 0x60)
+            .push(rd_ptr + 0x60)
             .mstore()
             .push(g2.2)
-            .push(rd_ptr.memory_address() + 0x80)
+            .push(rd_ptr + 0x80)
             .mstore()
             .push(g2.3)
-            .push(rd_ptr.memory_address() + 0xa0)
+            .push(rd_ptr + 0xa0)
             .mstore();
         self.dup_ec_point(rhs);
-        self.allocate::<0x80>();
+        self.allocate(0x80);
         self.code
             .borrow_mut()
             .push(minus_s_g2.0)
-            .push(rd_ptr.memory_address() + 0x100)
+            .push(rd_ptr + 0x100)
             .mstore()
             .push(minus_s_g2.1)
-            .push(rd_ptr.memory_address() + 0x120)
+            .push(rd_ptr + 0x120)
             .mstore()
             .push(minus_s_g2.2)
-            .push(rd_ptr.memory_address() + 0x140)
+            .push(rd_ptr + 0x140)
             .mstore()
             .push(minus_s_g2.3)
-            .push(rd_ptr.memory_address() + 0x160)
+            .push(rd_ptr + 0x160)
             .mstore();
-        self.staticcall(
-            Precompiled::Bn254Pairing,
-            rd_ptr.memory_address(),
-            rd_ptr.memory_address(),
-        );
-        self.code
-            .borrow_mut()
-            .push(rd_ptr.memory_address())
-            .mload()
-            .and();
-    }
-
-    fn ec_point_sub(self: &Rc<Self>, _: &EcPoint, _: &EcPoint) -> EcPoint {
-        todo!()
-    }
-
-    fn ec_point_neg(self: &Rc<Self>, _: &EcPoint) -> EcPoint {
-        todo!()
+        self.staticcall(Precompiled::Bn254Pairing, rd_ptr, rd_ptr);
+        self.code.borrow_mut().push(rd_ptr).mload().and();
     }
 
     fn add(self: &Rc<Self>, lhs: &Scalar, rhs: &Scalar) -> Scalar {
-        if let (Some(lhs), Some(rhs)) = (lhs.constant, rhs.constant) {
-            return Scalar::constant(
-                self.null_ptr(),
-                U256::try_from(
-                    (U512::from(lhs) + U512::from(rhs)) % U512::from(self.scalar_modulus),
-                )
-                .unwrap(),
-            );
+        if let (Value::Constant(lhs), Value::Constant(rhs)) = (lhs.value, rhs.value) {
+            let out = (U512::from(lhs) + U512::from(rhs)) % U512::from(self.scalar_modulus);
+            return self.scalar(Value::Constant(out.try_into().unwrap()));
         }
 
-        let ptr = self.allocate();
+        let ptr = self.allocate(0x20);
 
         self.code.borrow_mut().push(self.scalar_modulus);
         self.push(rhs);
         self.push(lhs);
-        self.code
-            .borrow_mut()
-            .addmod()
-            .push(ptr.memory_address())
-            .mstore();
+        self.code.borrow_mut().addmod().push(ptr).mstore();
 
-        Scalar::variable(ptr)
+        self.scalar(Value::Memory(ptr))
     }
 
     fn sub(self: &Rc<Self>, lhs: &Scalar, rhs: &Scalar) -> Scalar {
@@ -488,93 +397,72 @@ impl EvmLoader {
             return self.add(lhs, &self.neg(rhs));
         }
 
+        let ptr = self.allocate(0x20);
+
         self.code.borrow_mut().push(self.scalar_modulus);
         self.push(rhs);
         self.code.borrow_mut().push(self.scalar_modulus).sub();
-
-        let ptr = self.allocate();
-
         self.push(lhs);
-        self.code
-            .borrow_mut()
-            .addmod()
-            .push(ptr.memory_address())
-            .mstore();
+        self.code.borrow_mut().addmod().push(ptr).mstore();
 
-        Scalar::variable(ptr)
+        self.scalar(Value::Memory(ptr))
     }
 
     fn mul(self: &Rc<Self>, lhs: &Scalar, rhs: &Scalar) -> Scalar {
-        if let (Some(lhs), Some(rhs)) = (lhs.constant, rhs.constant) {
-            return Scalar::constant(
-                self.null_ptr(),
-                U256::try_from(
-                    (U512::from(lhs) * U512::from(rhs)) % U512::from(self.scalar_modulus),
-                )
-                .unwrap(),
-            );
+        if let (Value::Constant(lhs), Value::Constant(rhs)) = (lhs.value, rhs.value) {
+            let out = (U512::from(lhs) * U512::from(rhs)) % U512::from(self.scalar_modulus);
+            return self.scalar(Value::Constant(out.try_into().unwrap()));
         }
 
-        let ptr = self.allocate();
+        let ptr = self.allocate(0x20);
 
         self.code.borrow_mut().push(self.scalar_modulus);
         self.push(rhs);
         self.push(lhs);
-        self.code
-            .borrow_mut()
-            .mulmod()
-            .push(ptr.memory_address())
-            .mstore();
+        self.code.borrow_mut().mulmod().push(ptr).mstore();
 
-        Scalar::variable(ptr)
+        self.scalar(Value::Memory(ptr))
     }
 
-    fn neg(self: &Rc<Self>, value: &Scalar) -> Scalar {
-        if let Some(constant) = value.constant {
-            return Scalar::constant(self.null_ptr(), self.scalar_modulus - constant);
+    fn neg(self: &Rc<Self>, scalar: &Scalar) -> Scalar {
+        if let Value::Constant(constant) = scalar.value {
+            return self.scalar(Value::Constant(self.scalar_modulus - constant));
         }
 
-        let ptr = self.allocate();
+        let ptr = self.allocate(0x20);
 
-        self.push(value);
+        self.push(scalar);
         self.code
             .borrow_mut()
             .push(self.scalar_modulus)
             .sub()
-            .push(ptr.memory_address())
+            .push(ptr)
             .mstore();
 
-        Scalar::variable(ptr)
+        self.scalar(Value::Memory(ptr))
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct EcPoint {
-    ptr: Pointer<0x40>,
-    constant: Option<(U256, U256)>,
+    loader: Rc<EvmLoader>,
+    value: Value<(U256, U256)>,
 }
 
 impl EcPoint {
-    fn constant(ptr: Pointer<0x40>, value: (U256, U256)) -> Self {
-        Self {
-            ptr,
-            constant: Some(value),
+    pub fn value(&self) -> Value<(U256, U256)> {
+        self.value
+    }
+
+    pub fn is_const(&self) -> bool {
+        matches!(self.value, Value::Constant(_))
+    }
+
+    pub fn ptr(&self) -> usize {
+        match self.value {
+            Value::Memory(ptr) => ptr,
+            _ => unreachable!(),
         }
-    }
-
-    fn variable(ptr: Pointer<0x40>) -> Self {
-        Self {
-            ptr,
-            constant: None,
-        }
-    }
-
-    pub const fn is_const(&self) -> bool {
-        self.constant.is_some()
-    }
-
-    pub fn memory_address(&self) -> usize {
-        self.ptr.memory_address()
     }
 }
 
@@ -582,7 +470,7 @@ impl Add for EcPoint {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        self.ptr.loader.ec_point_add(&self, &rhs)
+        self.loader.ec_point_add(&self, &rhs)
     }
 }
 
@@ -590,7 +478,7 @@ impl Sub for EcPoint {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        self.ptr.loader.ec_point_sub(&self, &rhs)
+        self.loader.ec_point_sub(&self, &rhs)
     }
 }
 
@@ -598,7 +486,7 @@ impl Neg for EcPoint {
     type Output = Self;
 
     fn neg(self) -> Self {
-        self.ptr.loader.ec_point_neg(&self)
+        self.loader.ec_point_neg(&self)
     }
 }
 
@@ -606,7 +494,7 @@ impl<'a> Add<&'a Self> for EcPoint {
     type Output = Self;
 
     fn add(self, rhs: &'a Self) -> Self {
-        self.ptr.loader.ec_point_add(&self, rhs)
+        self.loader.ec_point_add(&self, rhs)
     }
 }
 
@@ -614,31 +502,37 @@ impl<'a> Sub<&'a Self> for EcPoint {
     type Output = Self;
 
     fn sub(self, rhs: &'a Self) -> Self {
-        self.ptr.loader.ec_point_sub(&self, rhs)
+        self.loader.ec_point_sub(&self, rhs)
     }
 }
 
 impl AddAssign for EcPoint {
     fn add_assign(&mut self, rhs: Self) {
-        *self = self.ptr.loader.ec_point_add(self, &rhs);
+        *self = self.loader.ec_point_add(self, &rhs);
     }
 }
 
 impl SubAssign for EcPoint {
     fn sub_assign(&mut self, rhs: Self) {
-        *self = self.ptr.loader.ec_point_sub(self, &rhs);
+        *self = self.loader.ec_point_sub(self, &rhs);
     }
 }
 
 impl<'a> AddAssign<&'a Self> for EcPoint {
     fn add_assign(&mut self, rhs: &'a Self) {
-        *self = self.ptr.loader.ec_point_add(self, rhs);
+        *self = self.loader.ec_point_add(self, rhs);
     }
 }
 
 impl<'a> SubAssign<&'a Self> for EcPoint {
     fn sub_assign(&mut self, rhs: &'a Self) {
-        *self = self.ptr.loader.ec_point_sub(self, rhs);
+        *self = self.loader.ec_point_sub(self, rhs);
+    }
+}
+
+impl PartialEq for EcPoint {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
     }
 }
 
@@ -650,15 +544,15 @@ where
     type Loader = Rc<EvmLoader>;
 
     fn loader(&self) -> &Rc<EvmLoader> {
-        self.ptr.loader.borrow()
+        &self.loader
     }
 
     fn multi_scalar_multiplication(pairs: impl IntoIterator<Item = (Scalar, EcPoint)>) -> Self {
         pairs
             .into_iter()
-            .map(|(scalar, ec_point)| match scalar.constant {
-                Some(constant) if constant == U256::one() => ec_point,
-                _ => ec_point.ptr.loader.ec_point_scalar_mul(&ec_point, &scalar),
+            .map(|(scalar, ec_point)| match scalar.value {
+                Value::Constant(constant) if constant == U256::one() => ec_point,
+                _ => ec_point.loader.ec_point_scalar_mul(&ec_point, &scalar),
             })
             .reduce(|acc, ec_point| acc + ec_point)
             .unwrap()
@@ -667,35 +561,24 @@ where
 
 #[derive(Clone, Debug)]
 pub struct Scalar {
-    ptr: Pointer<0x20>,
-    constant: Option<U256>,
+    loader: Rc<EvmLoader>,
+    value: Value<U256>,
 }
 
 impl Scalar {
-    fn constant<T: Into<U256>>(ptr: Pointer<0x20>, value: T) -> Self {
-        Self {
-            ptr,
-            constant: Some(value.into()),
+    pub fn value(&self) -> Value<U256> {
+        self.value
+    }
+
+    pub fn is_const(&self) -> bool {
+        matches!(self.value, Value::Constant(_))
+    }
+
+    pub fn ptr(&self) -> usize {
+        match self.value {
+            Value::Memory(ptr) => ptr,
+            _ => unreachable!(),
         }
-    }
-
-    fn variable(ptr: Pointer<0x20>) -> Self {
-        Self {
-            ptr,
-            constant: None,
-        }
-    }
-
-    pub fn ptr(&self) -> Pointer<0x20> {
-        self.ptr.clone()
-    }
-
-    pub const fn is_const(&self) -> bool {
-        self.constant.is_some()
-    }
-
-    pub fn memory_address(&self) -> usize {
-        self.ptr.memory_address()
     }
 }
 
@@ -703,7 +586,7 @@ impl Add for Scalar {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        self.ptr.loader.add(&self, &rhs)
+        self.loader.add(&self, &rhs)
     }
 }
 
@@ -711,7 +594,7 @@ impl Sub for Scalar {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        self.ptr.loader.sub(&self, &rhs)
+        self.loader.sub(&self, &rhs)
     }
 }
 
@@ -719,7 +602,7 @@ impl Mul for Scalar {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
-        self.ptr.loader.mul(&self, &rhs)
+        self.loader.mul(&self, &rhs)
     }
 }
 
@@ -727,7 +610,7 @@ impl Neg for Scalar {
     type Output = Self;
 
     fn neg(self) -> Self {
-        self.ptr.loader.neg(&self)
+        self.loader.neg(&self)
     }
 }
 
@@ -735,7 +618,7 @@ impl<'a> Add<&'a Self> for Scalar {
     type Output = Self;
 
     fn add(self, rhs: &'a Self) -> Self {
-        self.ptr.loader.add(&self, rhs)
+        self.loader.add(&self, rhs)
     }
 }
 
@@ -743,7 +626,7 @@ impl<'a> Sub<&'a Self> for Scalar {
     type Output = Self;
 
     fn sub(self, rhs: &'a Self) -> Self {
-        self.ptr.loader.sub(&self, rhs)
+        self.loader.sub(&self, rhs)
     }
 }
 
@@ -751,49 +634,55 @@ impl<'a> Mul<&'a Self> for Scalar {
     type Output = Self;
 
     fn mul(self, rhs: &'a Self) -> Self {
-        self.ptr.loader.mul(&self, rhs)
+        self.loader.mul(&self, rhs)
     }
 }
 
 impl AddAssign for Scalar {
     fn add_assign(&mut self, rhs: Self) {
-        *self = self.ptr.loader.add(self, &rhs);
+        *self = self.loader.add(self, &rhs);
     }
 }
 
 impl SubAssign for Scalar {
     fn sub_assign(&mut self, rhs: Self) {
-        *self = self.ptr.loader.sub(self, &rhs);
+        *self = self.loader.sub(self, &rhs);
     }
 }
 
 impl MulAssign for Scalar {
     fn mul_assign(&mut self, rhs: Self) {
-        *self = self.ptr.loader.mul(self, &rhs);
+        *self = self.loader.mul(self, &rhs);
     }
 }
 
 impl<'a> AddAssign<&'a Self> for Scalar {
     fn add_assign(&mut self, rhs: &'a Self) {
-        *self = self.ptr.loader.add(self, rhs);
+        *self = self.loader.add(self, rhs);
     }
 }
 
 impl<'a> SubAssign<&'a Self> for Scalar {
     fn sub_assign(&mut self, rhs: &'a Self) {
-        *self = self.ptr.loader.sub(self, rhs);
+        *self = self.loader.sub(self, rhs);
     }
 }
 
 impl<'a> MulAssign<&'a Self> for Scalar {
     fn mul_assign(&mut self, rhs: &'a Self) {
-        *self = self.ptr.loader.mul(self, rhs);
+        *self = self.loader.mul(self, rhs);
     }
 }
 
 impl FieldOps for Scalar {
     fn invert(&self) -> Option<Scalar> {
-        Some(self.ptr.loader.invert(self))
+        Some(self.loader.invert(self))
+    }
+}
+
+impl PartialEq for Scalar {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
     }
 }
 
@@ -801,16 +690,16 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> LoadedScalar<F> for Scalar {
     type Loader = Rc<EvmLoader>;
 
     fn loader(&self) -> &Rc<EvmLoader> {
-        self.ptr.loader.borrow()
+        &self.loader
     }
 
     fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self>) {
         let values = values.into_iter().collect::<Vec<_>>();
-        let loader = &values.first().unwrap().ptr.loader;
+        let loader = &values.first().unwrap().loader;
         let products = iter::once(values[0].clone())
             .chain(
-                iter::repeat_with(|| loader.allocate::<0x20>())
-                    .map(Scalar::variable)
+                iter::repeat_with(|| loader.allocate(0x20))
+                    .map(|ptr| loader.scalar(Value::Memory(ptr)))
                     .take(values.len() - 1),
             )
             .collect::<Vec<_>>();
@@ -827,11 +716,7 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> LoadedScalar<F> for Scalar {
             if idx < values.len() - 2 {
                 loader.code.borrow_mut().dup(0);
             }
-            loader
-                .code
-                .borrow_mut()
-                .push(product.memory_address())
-                .mstore();
+            loader.code.borrow_mut().push(product.ptr()).mstore();
         }
 
         let inv = loader.invert(products.last().unwrap());
@@ -857,18 +742,14 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> LoadedScalar<F> for Scalar {
                     .borrow_mut()
                     .dup(2)
                     .dup(2)
-                    .push(product.memory_address())
+                    .push(product.ptr())
                     .mload()
                     .mulmod()
-                    .push(value.memory_address())
+                    .push(value.ptr())
                     .mstore()
                     .mulmod();
             } else {
-                loader
-                    .code
-                    .borrow_mut()
-                    .push(value.memory_address())
-                    .mstore();
+                loader.code.borrow_mut().push(value.ptr()).mstore();
             }
         }
     }
@@ -887,7 +768,7 @@ where
             U256::from_little_endian(&bytes[..32]),
             U256::from_little_endian(&bytes[32..]),
         );
-        EcPoint::constant(self.null_ptr(), (x, y))
+        self.ec_point(Value::Constant((x, y)))
     }
 }
 
@@ -895,60 +776,8 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
     type LoadedScalar = Scalar;
 
     fn load_const(&self, value: &F) -> Scalar {
-        Scalar::constant(
-            self.null_ptr(),
-            U256::from_little_endian(value.to_repr().as_slice()),
-        )
-    }
-}
-
-#[cfg(test)]
-pub mod test {
-    use crate::loader::evm::Tui;
-    use foundry_evm::{
-        executor::{builder::Backend, ExecutorBuilder},
-        revm::AccountInfo,
-        Address,
-    };
-    use std::env::var_os;
-
-    fn small_address(lsb: u8) -> Address {
-        let mut address = Address::zero();
-        *address.0.last_mut().unwrap() = lsb;
-        address
-    }
-
-    fn debug() -> bool {
-        matches!(
-            var_os("DEBUG"),
-            Some(value) if value.to_str() == Some("1")
-        )
-    }
-
-    pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64) {
-        let debug = debug();
-        let caller = small_address(0xfe);
-        let callee = small_address(0xff);
-
-        let mut builder = ExecutorBuilder::new().with_gas_limit(u64::MAX.into());
-
-        if debug {
-            builder = builder.with_tracing().with_debugger();
-        }
-
-        let mut evm = builder.build(Backend::simple());
-
-        evm.db
-            .insert_cache(callee, AccountInfo::new(0.into(), 1, code.into()));
-
-        let result = evm
-            .call_raw(caller, callee, calldata.into(), 0.into())
-            .unwrap();
-
-        if debug {
-            Tui::new(result.debug.unwrap().flatten(0), 0).start();
-        }
-
-        (!result.reverted, result.gas)
+        self.scalar(Value::Constant(U256::from_little_endian(
+            value.to_repr().as_slice(),
+        )))
     }
 }

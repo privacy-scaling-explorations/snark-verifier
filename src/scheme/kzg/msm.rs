@@ -5,7 +5,7 @@ use crate::{
 use std::{
     default::Default,
     iter::{self, Sum},
-    ops::{Add, Mul, Neg, Sub},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
 #[derive(Clone, Debug)]
@@ -50,26 +50,33 @@ impl<C: Curve, L: Loader<C>> MSM<C, L> {
         )
     }
 
-    pub fn scale(&mut self, factor: L::LoadedScalar) {
-        self.scalar = self.scalar.clone().map(|scalar| scalar * factor.clone());
+    pub fn scale(&mut self, factor: &L::LoadedScalar) {
+        if let Some(scalar) = self.scalar.as_mut() {
+            *scalar *= factor;
+        }
         for scalar in self.scalars.iter_mut() {
-            *scalar *= factor.clone()
+            *scalar *= factor
         }
     }
 
     pub fn push(&mut self, scalar: L::LoadedScalar, base: L::LoadedEcPoint) {
-        self.scalars.push(scalar);
-        self.bases.push(base);
+        if let Some(pos) = self.bases.iter().position(|exist| exist.eq(&base)) {
+            self.scalars[pos] += scalar;
+        } else {
+            self.scalars.push(scalar);
+            self.bases.push(base);
+        }
     }
 
-    pub fn extend(&mut self, other: Self) {
-        self.scalar = match (self.scalar.clone(), other.scalar.clone()) {
-            (Some(lhs), Some(rhs)) => Some(lhs + rhs),
-            (Some(scalar), None) | (None, Some(scalar)) => Some(scalar),
-            (None, None) => None,
+    pub fn extend(&mut self, mut other: Self) {
+        match (self.scalar.as_mut(), other.scalar.as_ref()) {
+            (Some(lhs), Some(rhs)) => *lhs += rhs,
+            (None, Some(_)) => self.scalar = other.scalar.take(),
+            _ => {}
         };
-        self.scalars.extend(other.scalars);
-        self.bases.extend(other.bases);
+        for (scalar, base) in other.scalars.into_iter().zip(other.bases) {
+            self.push(scalar, base);
+        }
     }
 }
 
@@ -82,6 +89,12 @@ impl<C: Curve, L: Loader<C>> Add<MSM<C, L>> for MSM<C, L> {
     }
 }
 
+impl<C: Curve, L: Loader<C>> AddAssign<MSM<C, L>> for MSM<C, L> {
+    fn add_assign(&mut self, rhs: MSM<C, L>) {
+        self.extend(rhs);
+    }
+}
+
 impl<C: Curve, L: Loader<C>> Sub<MSM<C, L>> for MSM<C, L> {
     type Output = MSM<C, L>;
 
@@ -91,12 +104,24 @@ impl<C: Curve, L: Loader<C>> Sub<MSM<C, L>> for MSM<C, L> {
     }
 }
 
-impl<C: Curve, L: Loader<C>> Mul<L::LoadedScalar> for MSM<C, L> {
+impl<C: Curve, L: Loader<C>> SubAssign<MSM<C, L>> for MSM<C, L> {
+    fn sub_assign(&mut self, rhs: MSM<C, L>) {
+        self.extend(-rhs);
+    }
+}
+
+impl<C: Curve, L: Loader<C>> Mul<&L::LoadedScalar> for MSM<C, L> {
     type Output = MSM<C, L>;
 
-    fn mul(mut self, rhs: L::LoadedScalar) -> Self::Output {
+    fn mul(mut self, rhs: &L::LoadedScalar) -> Self::Output {
         self.scale(rhs);
         self
+    }
+}
+
+impl<C: Curve, L: Loader<C>> MulAssign<&L::LoadedScalar> for MSM<C, L> {
+    fn mul_assign(&mut self, rhs: &L::LoadedScalar) {
+        self.scale(rhs);
     }
 }
 

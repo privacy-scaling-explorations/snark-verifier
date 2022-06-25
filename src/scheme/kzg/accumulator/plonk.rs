@@ -4,7 +4,7 @@ use crate::{
     scheme::kzg::{AccumulationStrategy, Accumulator, MSM},
     util::{
         CommonPolynomial, CommonPolynomialEvaluation, Curve, Expression, Field, Query, Rotation,
-        Transcript,
+        TranscriptRead,
     },
     Error,
 };
@@ -27,10 +27,10 @@ impl<C, L, T, S> Accumulator<C, L, T, S> for PlonkAccumulator<C, L, T, S>
 where
     C: Curve,
     L: Loader<C>,
-    T: Transcript<C, L>,
-    S: AccumulationStrategy<C, L, Proof<C, L>>,
+    T: TranscriptRead<C, L>,
+    S: AccumulationStrategy<C, L, PlonkProof<C, L>>,
 {
-    type Proof = Proof<C, L>;
+    type Proof = PlonkProof<C, L>;
 
     fn accumulate(
         &mut self,
@@ -42,7 +42,7 @@ where
     ) -> Result<S::Output, Error> {
         transcript.common_scalar(&loader.load_const(&protocol.transcript_initial_state))?;
 
-        let proof = Proof::read(protocol, statements, transcript)?;
+        let proof = PlonkProof::read(protocol, statements, transcript)?;
 
         let common_poly_eval = {
             let mut common_poly_eval = CommonPolynomialEvaluation::new(
@@ -61,43 +61,42 @@ where
         let evaluations = proof.evaluations(protocol, loader, &common_poly_eval)?;
 
         let sets = rotation_sets(protocol);
-        let powers_of_v = &proof.v.powers(sets.len());
+        let powers_of_u = &proof.u.powers(sets.len());
         let f = {
-            let powers_of_u = proof
-                .u
+            let powers_of_v = proof
+                .v
                 .powers(sets.iter().map(|set| set.polys.len()).max().unwrap());
             sets.iter()
-                .map(|set| set.msm(&commitments, &evaluations, &powers_of_u))
-                .zip(powers_of_v.iter().rev())
-                .map(|(msm, power_of_v)| msm * power_of_v.clone())
+                .map(|set| set.msm(&commitments, &evaluations, &powers_of_v))
+                .zip(powers_of_u.iter().rev())
+                .map(|(msm, power_of_u)| msm * power_of_u)
                 .sum::<MSM<_, _>>()
         };
         let z_omegas = sets.iter().map(|set| {
-            proof.z.clone()
-                * loader.load_const(
-                    &protocol
-                        .domain
-                        .rotate_scalar(C::Scalar::one(), set.rotation),
-                )
+            loader.load_const(
+                &protocol
+                    .domain
+                    .rotate_scalar(C::Scalar::one(), set.rotation),
+            ) * &proof.z
         });
 
         let rhs = proof
             .ws
             .iter()
-            .zip(powers_of_v.iter().rev())
-            .map(|(w, power_of_v)| MSM::base(w.clone()) * power_of_v.clone())
+            .zip(powers_of_u.iter().rev())
+            .map(|(w, power_of_u)| MSM::base(w.clone()) * power_of_u)
             .collect::<Vec<_>>();
         let lhs = f + rhs
             .iter()
-            .zip(z_omegas.into_iter())
-            .map(|(uw, z_omega)| uw.clone() * z_omega)
+            .zip(z_omegas)
+            .map(|(uw, z_omega)| uw.clone() * &z_omega)
             .sum();
 
         strategy.process(loader, proof, lhs, rhs.into_iter().sum())
     }
 }
 
-pub struct Proof<C: Curve, L: Loader<C>> {
+pub struct PlonkProof<C: Curve, L: Loader<C>> {
     statements: Vec<Vec<L::LoadedScalar>>,
     auxiliaries: Vec<L::LoadedEcPoint>,
     challenges: Vec<L::LoadedScalar>,
@@ -105,13 +104,13 @@ pub struct Proof<C: Curve, L: Loader<C>> {
     quotients: Vec<L::LoadedEcPoint>,
     z: L::LoadedScalar,
     evaluations: Vec<L::LoadedScalar>,
-    u: L::LoadedScalar,
-    ws: Vec<L::LoadedEcPoint>,
     v: L::LoadedScalar,
+    ws: Vec<L::LoadedEcPoint>,
+    u: L::LoadedScalar,
 }
 
-impl<C: Curve, L: Loader<C>> Proof<C, L> {
-    fn read<T: Transcript<C, L>>(
+impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
+    fn read<T: TranscriptRead<C, L>>(
         protocol: &Protocol<C>,
         statements: &[&[L::LoadedScalar]],
         transcript: &mut T,
@@ -171,9 +170,9 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
         let z = transcript.squeeze_challenge();
         let evaluations = transcript.read_n_scalars(protocol.evaluations.len())?;
 
-        let u = transcript.squeeze_challenge();
-        let ws = transcript.read_n_ec_points(rotation_sets(protocol).len())?;
         let v = transcript.squeeze_challenge();
+        let ws = transcript.read_n_ec_points(rotation_sets(protocol).len())?;
+        let u = transcript.squeeze_challenge();
 
         Ok(Self {
             statements,
@@ -183,9 +182,9 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
             quotients,
             z,
             evaluations,
-            u,
-            ws,
             v,
+            ws,
+            u,
         })
     }
 
@@ -218,7 +217,7 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
                     .powers(self.quotients.len())
                     .into_iter()
                     .zip(self.quotients.iter().cloned().map(MSM::base))
-                    .map(|(coeff, piece)| piece * coeff)
+                    .map(|(coeff, piece)| piece * &coeff)
                     .sum(),
             )))
             .collect()
@@ -236,8 +235,7 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
                     .iter()
                     .enumerate()
                     .map(|(i, statement)| {
-                        statement.clone()
-                            * common_poly_eval.get(CommonPolynomial::Lagrange(i as i32))
+                        common_poly_eval.get(CommonPolynomial::Lagrange(i as i32)) * statement
                     })
                     .collect::<Vec<_>>(),
             )
@@ -322,7 +320,7 @@ impl RotationSet {
         &self,
         commitments: &HashMap<usize, MSM<C, L>>,
         evaluations: &HashMap<Query, L::LoadedScalar>,
-        powers_of_u: &[L::LoadedScalar],
+        powers_of_v: &[L::LoadedScalar],
     ) -> MSM<C, L> {
         self.polys
             .iter()
@@ -334,8 +332,8 @@ impl RotationSet {
                     .clone();
                 commitment - MSM::scalar(evalaution)
             })
-            .zip(powers_of_u.iter().take(self.polys.len()).rev())
-            .map(|(msm, power_of_u)| msm * power_of_u.clone())
+            .zip(powers_of_v.iter().take(self.polys.len()).rev())
+            .map(|(msm, power_of_v)| msm * power_of_v)
             .sum()
     }
 }

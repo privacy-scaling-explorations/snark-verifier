@@ -4,7 +4,7 @@ use crate::{
     scheme::kzg::{AccumulationStrategy, Accumulator, MSM},
     util::{
         CommonPolynomial, CommonPolynomialEvaluation, Curve, Domain, Expression, Field, Fraction,
-        Query, Rotation, Transcript,
+        Query, Rotation, TranscriptRead,
     },
     Error,
 };
@@ -31,10 +31,10 @@ impl<C, L, T, S> Accumulator<C, L, T, S> for ShplonkAccumulator<C, L, T, S>
 where
     C: Curve,
     L: Loader<C>,
-    T: Transcript<C, L>,
-    S: AccumulationStrategy<C, L, Proof<C, L>>,
+    T: TranscriptRead<C, L>,
+    S: AccumulationStrategy<C, L, ShplonkProof<C, L>>,
 {
-    type Proof = Proof<C, L>;
+    type Proof = ShplonkProof<C, L>;
 
     fn accumulate(
         &mut self,
@@ -46,7 +46,7 @@ where
     ) -> Result<S::Output, Error> {
         transcript.common_scalar(&loader.load_const(&protocol.transcript_initial_state))?;
 
-        let proof = Proof::read(protocol, statements, transcript)?;
+        let proof = ShplonkProof::read(protocol, statements, transcript)?;
 
         let (common_poly_eval, sets) = {
             let mut common_poly_eval = CommonPolynomialEvaluation::new(
@@ -79,19 +79,19 @@ where
                 .map(|set| set.msm(&commitments, &evaluations, &powers_of_mu));
 
             msms.zip(proof.gamma.powers(sets.len()).into_iter().rev())
-                .map(|(msm, power_of_gamma)| msm * power_of_gamma)
+                .map(|(msm, power_of_gamma)| msm * &power_of_gamma)
                 .sum::<MSM<_, _>>()
-                - MSM::base(proof.w.clone()) * sets[0].z_s.clone()
+                - MSM::base(proof.w.clone()) * &sets[0].z_s
         };
 
         let rhs = MSM::base(proof.w_prime.clone());
-        let lhs = f + rhs.clone() * proof.z_prime.clone();
+        let lhs = f + rhs.clone() * &proof.z_prime;
 
         strategy.process(loader, proof, lhs, rhs)
     }
 }
 
-pub struct Proof<C: Curve, L: Loader<C>> {
+pub struct ShplonkProof<C: Curve, L: Loader<C>> {
     statements: Vec<Vec<L::LoadedScalar>>,
     auxiliaries: Vec<L::LoadedEcPoint>,
     challenges: Vec<L::LoadedScalar>,
@@ -106,8 +106,8 @@ pub struct Proof<C: Curve, L: Loader<C>> {
     w_prime: L::LoadedEcPoint,
 }
 
-impl<C: Curve, L: Loader<C>> Proof<C, L> {
-    fn read<T: Transcript<C, L>>(
+impl<C: Curve, L: Loader<C>> ShplonkProof<C, L> {
+    fn read<T: TranscriptRead<C, L>>(
         protocol: &Protocol<C>,
         statements: &[&[L::LoadedScalar]],
         transcript: &mut T,
@@ -218,7 +218,7 @@ impl<C: Curve, L: Loader<C>> Proof<C, L> {
                     .powers(self.quotients.len())
                     .into_iter()
                     .zip(self.quotients.iter().cloned().map(MSM::base))
-                    .map(|(coeff, piece)| piece * coeff)
+                    .map(|(coeff, piece)| piece * &coeff)
                     .sum(),
             )))
             .collect()
@@ -444,7 +444,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                     .commitment_coeff
                     .as_ref()
                     .map(|commitment_coeff| {
-                        commitments.get(poly).unwrap().clone() * commitment_coeff.evaluate()
+                        commitments.get(poly).unwrap().clone() * &commitment_coeff.evaluate()
                     })
                     .unwrap_or_else(|| commitments.get(poly).unwrap().clone());
                 let remainder = self.remainder_coeff.as_ref().unwrap().evaluate()
@@ -464,7 +464,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                             })
                             .collect::<Vec<_>>(),
                     );
-                (commitment - MSM::scalar(remainder)) * power_of_mu.clone()
+                (commitment - MSM::scalar(remainder)) * power_of_mu
             })
             .sum()
     }

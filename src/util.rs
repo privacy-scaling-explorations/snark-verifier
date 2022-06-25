@@ -7,7 +7,7 @@ pub use arithmetic::{
     GroupEncoding, GroupOps, PrimeCurveAffine, PrimeField, Rotation, UncompressedEncoding,
 };
 pub use expression::{CommonPolynomial, CommonPolynomialEvaluation, Expression, Query};
-pub use transcript::Transcript;
+pub use transcript::{Transcript, TranscriptRead};
 
 #[macro_export]
 macro_rules! hex {
