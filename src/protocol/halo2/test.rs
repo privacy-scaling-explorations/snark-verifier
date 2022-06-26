@@ -19,6 +19,7 @@ use halo2_wrong_maingate::{
 use rand::RngCore;
 use std::fs;
 
+mod halo2;
 mod native;
 
 #[cfg(feature = "evm")]

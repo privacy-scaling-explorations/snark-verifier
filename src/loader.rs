@@ -6,6 +6,9 @@ pub mod native;
 #[cfg(feature = "evm")]
 pub mod evm;
 
+#[cfg(feature = "halo2")]
+pub mod halo2;
+
 pub trait LoadedEcPoint<C: Curve>: Clone + Debug + GroupOps + PartialEq {
     type Loader: Loader<C, LoadedEcPoint = Self>;
 

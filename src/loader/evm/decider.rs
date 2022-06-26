@@ -1,7 +1,7 @@
 use crate::{
-    loader::{evm::loader::EvmLoader, EcPointLoader},
+    loader::evm::loader::EvmLoader,
     scheme::kzg::{AccumulationStrategy, Accumulator},
-    util::{PrimeCurveAffine, PrimeField, Transcript, UncompressedEncoding},
+    util::{PrimeField, Transcript, UncompressedEncoding},
     Error,
 };
 use ethereum_types::U256;
@@ -39,12 +39,11 @@ where
     fn process(
         &mut self,
         loader: &Rc<EvmLoader>,
+        _: &mut T,
         _: P,
         accumulator: Accumulator<M::G1, Rc<EvmLoader>>,
     ) -> Result<Self::Output, Error> {
-        let g1 = loader.ec_point_load_const(&self.g1.to_curve());
-        let lhs = accumulator.lhs.evaluate(g1.clone());
-        let rhs = accumulator.rhs.evaluate(g1);
+        let (lhs, rhs) = accumulator.evaluate(self.g1.into());
 
         let [g2, minus_s_g2] = [self.g2, self.s_g2.neg()].map(|ec_point| {
             let coordinates = ec_point.coordinates().unwrap();

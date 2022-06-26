@@ -28,13 +28,12 @@ where
 
     fn process(
         &mut self,
-        loader: &L,
+        _: &L,
+        _: &mut T,
         _: P,
         accumulator: Accumulator<M::G1, L>,
     ) -> Result<Self::Output, Error> {
-        let g1 = loader.ec_point_load_const(&self.g1.into());
-        let lhs = accumulator.lhs.evaluate(g1);
-        let rhs = accumulator.rhs.evaluate(g1);
+        let (lhs, rhs) = accumulator.evaluate(self.g1.into());
 
         let g2 = M::G2Prepared::from(self.g2);
         let minus_s_g2 = M::G2Prepared::from(-self.s_g2);

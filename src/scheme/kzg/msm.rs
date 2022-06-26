@@ -42,7 +42,13 @@ impl<C: Curve, L: Loader<C>> MSM<C, L> {
         }
     }
 
-    pub fn evaluate(self, gen: L::LoadedEcPoint) -> L::LoadedEcPoint {
+    pub fn evaluate(self, gen: C) -> L::LoadedEcPoint {
+        let gen = self
+            .bases
+            .first()
+            .unwrap()
+            .loader()
+            .ec_point_load_const(&gen);
         L::LoadedEcPoint::multi_scalar_multiplication(
             iter::empty()
                 .chain(self.scalar.map(|scalar| (scalar, gen)))

@@ -39,7 +39,7 @@ where
     type Proof = ShplonkProof<C, L>;
 
     fn accumulate(
-        &mut self,
+        &self,
         protocol: &Protocol<C>,
         loader: &L,
         statements: &[&[L::LoadedScalar]],
@@ -89,7 +89,7 @@ where
         let rhs = MSM::base(proof.w_prime.clone());
         let lhs = f + rhs.clone() * &proof.z_prime;
 
-        strategy.process(loader, proof, Accumulator::new(lhs, rhs))
+        strategy.process(loader, transcript, proof, Accumulator::new(lhs, rhs))
     }
 }
 

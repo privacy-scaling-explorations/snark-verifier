@@ -14,6 +14,7 @@ pub struct Protocol<C: Curve> {
     pub queries: Vec<Query>,
     pub relations: Vec<Expression<C::Scalar>>,
     pub transcript_initial_state: C::Scalar,
+    pub accumulator_indices: Option<Vec<Vec<(usize, usize)>>>,
 }
 
 impl<C: Curve> Protocol<C> {

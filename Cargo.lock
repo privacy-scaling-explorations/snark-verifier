@@ -838,6 +838,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "453440c271cf5577fd2a40e4942540cb7d0d2f85e27c8d07dd0023c925a67541"
 
 [[package]]
+name = "ecc"
+version = "0.1.0"
+source = "git+https://github.com/han0110/halo2wrong?branch=feature/value-api#efdca1ca6f17cf8532a90d69bb384d7b0ed138cf"
+dependencies = [
+ "group 0.12.0",
+ "integer",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "subtle",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1883,6 +1897,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "integer"
+version = "0.1.0"
+source = "git+https://github.com/han0110/halo2wrong?branch=feature/value-api#efdca1ca6f17cf8532a90d69bb384d7b0ed138cf"
+dependencies = [
+ "group 0.12.0",
+ "maingate",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "subtle",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2525,19 +2553,33 @@ version = "0.1.0"
 dependencies = [
  "blake2b_simd",
  "crossterm 0.22.1",
+ "ecc",
  "ethereum-types",
  "ff 0.12.0",
  "foundry-evm",
  "group 0.12.0",
  "halo2_proofs",
  "halo2curves",
+ "halo2wrong",
  "hex",
  "lazy_static",
  "maingate",
+ "poseidon",
  "rand",
  "rand_chacha",
  "sha3 0.10.1",
+ "transcript",
  "tui",
+]
+
+[[package]]
+name = "poseidon"
+version = "0.2.0"
+source = "git+https://github.com/privacy-scaling-explorations/poseidon?branch=padding#6a305ac124810a1eaf83ae7fafd520b19bfa304e"
+dependencies = [
+ "group 0.12.0",
+ "halo2curves",
+ "subtle",
 ]
 
 [[package]]
@@ -3694,6 +3736,17 @@ dependencies = [
  "thread_local",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "transcript"
+version = "0.1.0"
+source = "git+https://github.com/han0110/halo2wrong?branch=feature/value-api#efdca1ca6f17cf8532a90d69bb384d7b0ed138cf"
+dependencies = [
+ "ecc",
+ "group 0.12.0",
+ "poseidon",
+ "subtle",
 ]
 
 [[package]]

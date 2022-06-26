@@ -501,5 +501,6 @@ pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, n: usize) -> Protoc
         queries,
         relations,
         transcript_initial_state,
+        accumulator_indices: None,
     }
 }

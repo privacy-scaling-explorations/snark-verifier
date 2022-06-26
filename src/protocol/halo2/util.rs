@@ -9,6 +9,8 @@ use halo2_proofs::{
 };
 use std::{io::Read, iter};
 
+pub mod halo2;
+
 #[cfg(feature = "evm")]
 pub mod evm;
 

@@ -35,7 +35,7 @@ where
     type Proof = PlonkProof<C, L>;
 
     fn accumulate(
-        &mut self,
+        &self,
         protocol: &Protocol<C>,
         loader: &L,
         statements: &[&[L::LoadedScalar]],
@@ -94,7 +94,12 @@ where
             .map(|(uw, z_omega)| uw.clone() * &z_omega)
             .sum();
 
-        strategy.process(loader, proof, Accumulator::new(lhs, rhs.into_iter().sum()))
+        strategy.process(
+            loader,
+            transcript,
+            proof,
+            Accumulator::new(lhs, rhs.into_iter().sum()),
+        )
     }
 }
 
