@@ -1,7 +1,10 @@
 use crate::{
     loader::{LoadedScalar, Loader},
     protocol::Protocol,
-    scheme::kzg::{AccumulationStrategy, Accumulator, MSM},
+    scheme::kzg::{
+        accumulation::{AccumulationScheme, AccumulationStrategy, Accumulator},
+        msm::MSM,
+    },
     util::{
         CommonPolynomial, CommonPolynomialEvaluation, Curve, Domain, Expression, Field, Fraction,
         Query, Rotation, TranscriptRead,
@@ -19,7 +22,6 @@ pub struct ShplonkAccumulator<C, L, T, S> {
 }
 
 impl<C, L, T, S> ShplonkAccumulator<C, L, T, S> {
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             _marker: PhantomData,
@@ -27,12 +29,12 @@ impl<C, L, T, S> ShplonkAccumulator<C, L, T, S> {
     }
 }
 
-impl<C, L, T, S> Accumulator<C, L, T, S> for ShplonkAccumulator<C, L, T, S>
+impl<C, L, T, S> AccumulationScheme<C, L, T, S> for ShplonkAccumulator<C, L, T, S>
 where
     C: Curve,
     L: Loader<C>,
     T: TranscriptRead<C, L>,
-    S: AccumulationStrategy<C, L, ShplonkProof<C, L>>,
+    S: AccumulationStrategy<C, L, T, ShplonkProof<C, L>>,
 {
     type Proof = ShplonkProof<C, L>;
 
@@ -87,7 +89,13 @@ where
         let rhs = MSM::base(proof.w_prime.clone());
         let lhs = f + rhs.clone() * &proof.z_prime;
 
-        strategy.process(loader, proof, lhs, rhs)
+        strategy.process(loader, proof, Accumulator::new(lhs, rhs))
+    }
+}
+
+impl<C, L, T, S> Default for ShplonkAccumulator<C, L, T, S> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

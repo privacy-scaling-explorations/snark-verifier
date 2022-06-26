@@ -7,7 +7,6 @@ use crate::{
     },
     scheme::kzg::PlonkAccumulator,
 };
-use halo2_curves::bn256::Fr;
 use halo2_proofs::poly::kzg::{
     multiopen::{ProverGWC, VerifierGWC},
     strategy::BatchVerifier,
@@ -21,7 +20,7 @@ macro_rules! halo2_evm_verify {
         use $crate::{
             collect_slice,
             loader::evm::{encode_calldata, execute, EvmDecider, EvmLoader, EvmTranscript},
-            scheme::kzg::Accumulator,
+            scheme::kzg::AccumulationScheme,
             util::TranscriptRead,
         };
 
@@ -29,7 +28,6 @@ macro_rules! halo2_evm_verify {
         let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
         let statements = $instances
             .iter()
-            .flatten()
             .map(|instance| {
                 iter::repeat_with(|| transcript.read_scalar().unwrap())
                     .take(instance.len())
@@ -63,7 +61,7 @@ fn test_plonk_evm_main_gate_with_range() {
 
     let (params, protocol, instances, proof) = halo2_prepare!(
         [kzg],
-        K, N, MainGateWithRange::<Fr>,
+        K, N, MainGateWithRange::<_>,
         ProverGWC<_>,
         VerifierGWC<_>,
         BatchVerifier<_, _>,
@@ -91,7 +89,7 @@ fn test_plonk_evm_standard_plonk() {
 
     let (params, protocol, instances, proof) = halo2_prepare!(
         [kzg],
-        K, N, StandardPlonk::<Fr>,
+        K, N, StandardPlonk::<_>,
         ProverGWC<_>,
         VerifierGWC<_>,
         BatchVerifier<_, _>,

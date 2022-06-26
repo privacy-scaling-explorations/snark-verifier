@@ -1,7 +1,7 @@
 use crate::{
     loader::{evm::loader::EvmLoader, EcPointLoader},
-    scheme::kzg::{AccumulationStrategy, MSM},
-    util::{PrimeCurveAffine, PrimeField, UncompressedEncoding},
+    scheme::kzg::{AccumulationStrategy, Accumulator},
+    util::{PrimeCurveAffine, PrimeField, Transcript, UncompressedEncoding},
     Error,
 };
 use ethereum_types::U256;
@@ -28,10 +28,11 @@ where
     }
 }
 
-impl<M: MultiMillerLoop, P> AccumulationStrategy<M::G1, Rc<EvmLoader>, P> for EvmDecider<M>
+impl<M: MultiMillerLoop, T, P> AccumulationStrategy<M::G1, Rc<EvmLoader>, T, P> for EvmDecider<M>
 where
     M::Scalar: PrimeField<Repr = [u8; 32]>,
     M::G1: UncompressedEncoding<Uncompressed = [u8; 64]>,
+    T: Transcript<M::G1, Rc<EvmLoader>>,
 {
     type Output = Vec<u8>;
 
@@ -39,12 +40,11 @@ where
         &mut self,
         loader: &Rc<EvmLoader>,
         _: P,
-        lhs: MSM<M::G1, Rc<EvmLoader>>,
-        rhs: MSM<M::G1, Rc<EvmLoader>>,
+        accumulator: Accumulator<M::G1, Rc<EvmLoader>>,
     ) -> Result<Self::Output, Error> {
         let g1 = loader.ec_point_load_const(&self.g1.to_curve());
-        let evaluated_lhs = lhs.evaluate(g1.clone());
-        let evaluated_rhs = rhs.evaluate(g1);
+        let lhs = accumulator.lhs.evaluate(g1.clone());
+        let rhs = accumulator.rhs.evaluate(g1);
 
         let [g2, minus_s_g2] = [self.g2, self.s_g2.neg()].map(|ec_point| {
             let coordinates = ec_point.coordinates().unwrap();
@@ -57,7 +57,7 @@ where
                 U256::from_little_endian(&y.as_ref()[..32]),
             )
         });
-        loader.pairing(&evaluated_lhs, g2, &evaluated_rhs, minus_s_g2);
+        loader.pairing(&lhs, g2, &rhs, minus_s_g2);
 
         Ok(loader.code())
     }

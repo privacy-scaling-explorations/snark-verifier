@@ -1,7 +1,10 @@
 use crate::{
     loader::{LoadedScalar, Loader},
     protocol::Protocol,
-    scheme::kzg::{AccumulationStrategy, Accumulator, MSM},
+    scheme::kzg::{
+        accumulation::{AccumulationScheme, AccumulationStrategy, Accumulator},
+        msm::MSM,
+    },
     util::{
         CommonPolynomial, CommonPolynomialEvaluation, Curve, Expression, Field, Query, Rotation,
         TranscriptRead,
@@ -15,7 +18,6 @@ pub struct PlonkAccumulator<C, L, T, S> {
 }
 
 impl<C, L, T, S> PlonkAccumulator<C, L, T, S> {
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             _marker: PhantomData,
@@ -23,12 +25,12 @@ impl<C, L, T, S> PlonkAccumulator<C, L, T, S> {
     }
 }
 
-impl<C, L, T, S> Accumulator<C, L, T, S> for PlonkAccumulator<C, L, T, S>
+impl<C, L, T, S> AccumulationScheme<C, L, T, S> for PlonkAccumulator<C, L, T, S>
 where
     C: Curve,
     L: Loader<C>,
     T: TranscriptRead<C, L>,
-    S: AccumulationStrategy<C, L, PlonkProof<C, L>>,
+    S: AccumulationStrategy<C, L, T, PlonkProof<C, L>>,
 {
     type Proof = PlonkProof<C, L>;
 
@@ -92,7 +94,13 @@ where
             .map(|(uw, z_omega)| uw.clone() * &z_omega)
             .sum();
 
-        strategy.process(loader, proof, lhs, rhs.into_iter().sum())
+        strategy.process(loader, proof, Accumulator::new(lhs, rhs.into_iter().sum()))
+    }
+}
+
+impl<C, L, T, S> Default for PlonkAccumulator<C, L, T, S> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -42,12 +42,12 @@ where
     U256::from_little_endian((-F::one()).to_repr().as_ref()) + 1
 }
 
-pub fn encode_calldata<F>(instances: Vec<Vec<Vec<F>>>, proof: Vec<u8>) -> Vec<u8>
+pub fn encode_calldata<F>(instances: Vec<Vec<F>>, proof: Vec<u8>) -> Vec<u8>
 where
     F: PrimeField<Repr = [u8; 32]>,
 {
     iter::empty()
-        .chain(instances.into_iter().flatten().flatten().flat_map(|value| {
+        .chain(instances.into_iter().flatten().flat_map(|value| {
             value
                 .to_repr()
                 .as_ref()

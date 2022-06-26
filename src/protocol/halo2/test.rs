@@ -14,7 +14,7 @@ use halo2_proofs::{
 };
 use halo2_wrong_maingate::{
     MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
-    RegionCtx,
+    RegionCtx, Term,
 };
 use rand::RngCore;
 use std::fs;
@@ -111,12 +111,10 @@ impl StandardPlonkConfig {
 pub struct StandardPlonk<F>(F);
 
 impl<F: FieldExt> StandardPlonk<F> {
-    #[allow(dead_code)]
     pub fn rand<R: RngCore>(mut rng: R) -> Self {
         Self(F::from(rng.next_u32() as u64))
     }
 
-    #[allow(dead_code)]
     pub fn instances(&self) -> Vec<Vec<F>> {
         vec![vec![self.0]]
     }
@@ -131,6 +129,7 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+        meta.set_minimum_degree(5);
         StandardPlonkConfig::configure(meta)
     }
 
@@ -142,19 +141,16 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
         layouter.assign_region(
             || "",
             |mut region| {
-                let a = if self.0 == F::zero() {
-                    Value::unknown()
-                } else {
-                    Value::known(self.0)
-                };
-                let b = a.map(|value| value.invert().unwrap());
+                region.assign_advice(|| "", config.a, 0, || Value::known(self.0 - F::one()))?;
+                region.assign_fixed(|| "", config.constant, 0, || Value::known(-F::one()))?;
                 region.assign_fixed(|| "", config.q_a, 0, || Value::known(-F::one()))?;
-                region
-                    .assign_advice(|| "", config.a, 0, || a)?
-                    .copy_advice(|| "", &mut region, config.a, 1)?;
-                region.assign_advice(|| "", config.b, 1, || b)?;
-                region.assign_fixed(|| "", config.q_ab, 1, || Value::known(F::one()))?;
-                region.assign_fixed(|| "", config.constant, 1, || Value::known(-F::one()))?;
+
+                for (column, idx) in [config.q_a, config.q_b, config.q_c, config.q_ab]
+                    .iter()
+                    .zip(1..)
+                {
+                    region.assign_fixed(|| "", *column, 1, || Value::known(F::from(idx)))?;
+                }
                 Ok(())
             },
         )
@@ -201,9 +197,27 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
         let a = layouter.assign_region(
             || "",
             |mut region| {
-                let mut offset = 1;
+                let mut offset = 0;
                 let mut ctx = RegionCtx::new(&mut region, &mut offset);
-                range_chip.range_value(&mut ctx, &Value::known(self.0).into(), 32)
+                let a = range_chip.range_value(&mut ctx, &Value::known(self.0).into(), 32)?;
+                let b = main_gate.sub_sub_with_constant(&mut ctx, &a, &a, &a, F::from(2))?;
+                let cond = main_gate.assign_value(&mut ctx, &Value::known(F::one()).into())?;
+                main_gate.select(&mut ctx, &a, &b, &cond.into())?;
+                main_gate.compose(
+                    &mut ctx,
+                    &[
+                        Term::Assigned(a, F::from(3)),
+                        Term::Assigned(a, F::from(4)),
+                        Term::Assigned(a, F::from(5)),
+                        Term::Assigned(a, F::from(6)),
+                        Term::Assigned(a, F::from(7)),
+                        Term::Assigned(a, F::from(8)),
+                        Term::Assigned(a, F::from(9)),
+                        Term::Assigned(a, F::from(10)),
+                    ],
+                    F::from(11),
+                )?;
+                Ok(a)
             },
         )?;
 
@@ -278,10 +292,13 @@ macro_rules! halo2_prepare {
         use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG};
         use rand::SeedableRng;
         use rand_chacha::ChaCha20Rng;
-        use std::iter;
-        use $crate::protocol::halo2::{
-            compile,
-            test::{gen_vk_and_proof, read_srs},
+        use std::{collections::BTreeSet, iter};
+        use $crate::{
+            protocol::halo2::{
+                compile,
+                test::{gen_vk_and_proof, read_srs},
+            },
+            util::GroupEncoding,
         };
 
         let params = read_srs::<_, ParamsKZG<Bn256>>("kzg", $k);
@@ -312,29 +329,46 @@ macro_rules! halo2_prepare {
 
         let protocol = compile::<G1>(&vk, N);
 
-        (params, protocol, instances, proof)
+        assert_eq!(
+            protocol.preprocessed.len(),
+            BTreeSet::<[u8; 32]>::from_iter(
+                protocol.preprocessed.iter().map(|ec_point| ec_point
+                    .to_bytes()
+                    .as_ref()
+                    .to_vec()
+                    .try_into()
+                    .unwrap())
+            )
+            .len()
+        );
+
+        (
+            params,
+            protocol,
+            instances.into_iter().flatten().collect::<Vec<_>>(),
+            proof,
+        )
     }};
 }
 
 #[macro_export]
 macro_rules! halo2_native_verify {
-    ([kzg], $params:ident, $protocol:ident, $instances:ident, $accumulator:expr, $transcript:expr) => {{
+    ([kzg], $params:ident, $protocol:ident, $statements:ident, $accumulator:expr, $transcript:expr) => {{
         use halo2_curves::bn256::Bn256;
         use halo2_proofs::poly::commitment::ParamsProver;
         use $crate::{
             loader::native::NativeLoader,
-            scheme::kzg::{Accumulator, NativeDecider},
+            scheme::kzg::{AccumulationScheme, NativeDecider},
         };
 
         let loader = NativeLoader;
-        let statements = $instances.clone().into_iter().flatten().collect::<Vec<_>>();
         let accept = {
-            collect_slice!(statements);
+            collect_slice!($statements);
             $accumulator
                 .accumulate(
                     &$protocol,
                     &loader,
-                    &statements,
+                    &$statements,
                     &mut $transcript,
                     &mut NativeDecider::<Bn256>::new(
                         $params.get_g()[0],
