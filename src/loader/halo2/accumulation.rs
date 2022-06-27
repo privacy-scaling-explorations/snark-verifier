@@ -71,7 +71,7 @@ where
         let challenges = transcript.squeeze_n_challenges(accumulators.len());
 
         Some(Accumulator::random_linear_combine(
-            challenges.into_iter().map(Option::Some).zip(accumulators),
+            challenges.into_iter().map(Some).zip(accumulators),
         ))
     }
 

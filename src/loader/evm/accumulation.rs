@@ -51,13 +51,14 @@ where
         transcript: &mut T,
         statements: &[Vec<Scalar>],
     ) -> Option<Accumulator<C, Rc<EvmLoader>>> {
+        let accumulator_indices = protocol.accumulator_indices.as_ref()?;
+        let challenges = transcript.squeeze_n_challenges(accumulator_indices.len());
+
         let num_statements = statements
             .iter()
             .map(|statements| statements.len())
             .collect::<Vec<_>>();
-        let accumulators = protocol
-            .accumulator_indices
-            .as_ref()?
+        let accumulators = accumulator_indices
             .iter()
             .map(|indices| {
                 assert_eq!(indices.len(), 4 * LIMBS);
@@ -65,13 +66,13 @@ where
                     .iter()
                     .enumerate()
                     .all(|(idx, index)| indices[0] == (index.0, index.1 - idx)));
-                let offset = num_statements[..indices[0].0].iter().sum::<usize>() + indices[0].1;
+                let offset =
+                    (num_statements[..indices[0].0].iter().sum::<usize>() + indices[0].1) * 0x20;
                 let lhs = loader.calldataload_ec_point_from_limbs::<LIMBS, BITS>(offset);
                 let rhs = loader.calldataload_ec_point_from_limbs::<LIMBS, BITS>(offset + 0x100);
                 Accumulator::new(MSM::base(lhs), MSM::base(rhs))
             })
             .collect::<Vec<_>>();
-        let challenges = transcript.squeeze_n_challenges(accumulators.len());
 
         Some(Accumulator::random_linear_combine(
             challenges.into_iter().map(Option::Some).zip(accumulators),

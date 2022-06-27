@@ -12,14 +12,14 @@ use crate::{
     Error,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     iter,
 };
 
 #[derive(Default)]
-pub struct ShplonkAccumulator;
+pub struct ShplonkAccumulationScheme;
 
-impl<C, L, T, S> AccumulationScheme<C, L, T, S> for ShplonkAccumulator
+impl<C, L, T, S> AccumulationScheme<C, L, T, S> for ShplonkAccumulationScheme
 where
     C: Curve,
     L: Loader<C>,
@@ -463,9 +463,9 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
     z: &L::LoadedScalar,
     z_prime: &L::LoadedScalar,
 ) -> Vec<IntermediateSet<C, L>> {
-    let mut superset = HashSet::new();
+    let mut superset = BTreeSet::new();
     let poly_rotations = protocol.queries.iter().fold(
-        Vec::<(usize, Vec<Rotation>, HashSet<Rotation>)>::new(),
+        Vec::<(usize, Vec<Rotation>, BTreeSet<Rotation>)>::new(),
         |mut poly_rotations, query| {
             superset.insert(query.rotation);
 
@@ -482,7 +482,7 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
                 poly_rotations.push((
                     query.poly,
                     vec![query.rotation],
-                    HashSet::from_iter([query.rotation]),
+                    BTreeSet::from_iter([query.rotation]),
                 ));
             }
             poly_rotations
@@ -518,7 +518,7 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
         Vec::<IntermediateSet<_, _>>::new(),
         |mut intermediate_sets, (poly, rotations, set)| {
             if let Some(pos) = intermediate_sets.iter().position(|intermediate_set| {
-                HashSet::from_iter(intermediate_set.rotations.iter().cloned()) == set
+                BTreeSet::from_iter(intermediate_set.rotations.iter().cloned()) == set
             }) {
                 let intermediate_set = &mut intermediate_sets[pos];
                 if !intermediate_set.polys.contains(&poly) {

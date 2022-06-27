@@ -451,6 +451,12 @@ impl<C: CurveAffine> Transcript<C, MockChallenge> for MockTranscript<C::Scalar> 
     }
 }
 
+pub fn transcript_initial_state<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>) -> C::ScalarExt {
+    let mut transcript = MockTranscript::default();
+    vk.hash_into(&mut transcript).unwrap();
+    transcript.0
+}
+
 pub fn compile<C: CurveExt>(
     vk: &VerifyingKey<C::AffineExt>,
     n: usize,
@@ -504,11 +510,7 @@ pub fn compile<C: CurveExt>(
         })
         .collect();
 
-    let transcript_initial_state = {
-        let mut transcript = MockTranscript::default();
-        vk.hash_into(&mut transcript).unwrap();
-        transcript.0
-    };
+    let transcript_initial_state = transcript_initial_state::<C>(vk);
 
     let accumulator_indices = accumulator_indices
         .map(|accumulator_indices| polynomials.accumulator_indices(accumulator_indices));

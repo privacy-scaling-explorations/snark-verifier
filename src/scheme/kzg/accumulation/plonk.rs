@@ -14,9 +14,9 @@ use crate::{
 use std::{collections::HashMap, iter};
 
 #[derive(Default)]
-pub struct PlonkAccumulator;
+pub struct PlonkAccumulationScheme;
 
-impl<C, L, T, S> AccumulationScheme<C, L, T, S> for PlonkAccumulator
+impl<C, L, T, S> AccumulationScheme<C, L, T, S> for PlonkAccumulationScheme
 where
     C: Curve,
     L: Loader<C>,

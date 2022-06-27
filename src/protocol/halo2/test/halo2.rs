@@ -8,7 +8,7 @@ use crate::{
         },
         Protocol,
     },
-    scheme::kzg::{self, AccumulationScheme, ShplonkAccumulator},
+    scheme::kzg::{self, AccumulationScheme, ShplonkAccumulationScheme},
     util::{fe_to_limbs, Curve, PrimeCurveAffine},
 };
 use halo2_curves::{
@@ -119,7 +119,7 @@ impl OneLayerAccumulation {
             [kzg],
             protocol1,
             instances1.clone(),
-            ShplonkAccumulator::default(),
+            ShplonkAccumulationScheme::default(),
             PoseidonTranscript::<G1Affine, _, _, _>::init(proof1.as_slice()),
             strategy
         );
@@ -127,7 +127,7 @@ impl OneLayerAccumulation {
             [kzg],
             protocol2,
             instances2.clone(),
-            ShplonkAccumulator::default(),
+            ShplonkAccumulationScheme::default(),
             PoseidonTranscript::<G1Affine, _, _, _>::init(proof2.as_slice()),
             strategy
         );
@@ -176,7 +176,7 @@ impl OneLayerAccumulation {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        ShplonkAccumulator::default()
+        ShplonkAccumulationScheme::default()
             .accumulate(
                 &snark.protocol,
                 loader,
@@ -184,7 +184,8 @@ impl OneLayerAccumulation {
                 &mut transcript,
                 stretagy,
             )
-            .map_err(|_| plonk::Error::Synthesis)
+            .map_err(|_| plonk::Error::Synthesis)?;
+        Ok(())
     }
 }
 
@@ -264,7 +265,7 @@ fn test_shplonk_halo2_one_layer_accumulation() {
         params,
         protocol,
         instances,
-        ShplonkAccumulator::default(),
+        ShplonkAccumulationScheme::default(),
         Blake2bRead::<_, G1Affine, _>::init(proof.as_slice())
     );
 }

@@ -141,12 +141,12 @@ impl EvmLoader {
     ) -> EcPoint {
         let ptr = self.allocate(0x40);
         for (ptr, offset) in [(ptr, offset), (ptr + 0x20, offset + LIMBS * 0x20)] {
-            for (idx, shift) in (0..).step_by(BITS).take(LIMBS).enumerate() {
-                if shift == 0 {
+            for idx in 0..LIMBS {
+                if idx == 0 {
                     self.code
                         .borrow_mut()
                         // [..., success]
-                        .push(offset + idx * 0x20)
+                        .push(offset)
                         // [..., success, x_limb_0_ptr]
                         .calldataload();
                     // [..., success, x_limb_0]
@@ -158,7 +158,7 @@ impl EvmLoader {
                         // [..., success, x_acc, x_limb_i_ptr]
                         .calldataload()
                         // [..., success, x_acc, x_limb_i]
-                        .push(shift)
+                        .push(idx * BITS)
                         // [..., success, x_acc, x_limb_i, shift]
                         .shl()
                         // [..., success, x_acc, x_limb_i << shift]
@@ -255,6 +255,19 @@ impl EvmLoader {
     }
 
     pub fn squeeze_challenge(self: &Rc<Self>, ptr: usize, mut len: usize) -> (usize, Scalar) {
+        assert!(len > 0 && len % 0x20 == 0);
+        let ptr = if ptr + len != *self.ptr.borrow() {
+            (ptr..ptr + len)
+                .step_by(0x20)
+                .map(|ptr| self.dup_scalar(&self.scalar(Value::Memory(ptr))))
+                .collect::<Vec<_>>()
+                .first()
+                .unwrap()
+                .ptr()
+        } else {
+            ptr
+        };
+
         let challenge_ptr = self.allocate(0x20);
         let hash_ptr = self.allocate(0x20);
 
@@ -789,7 +802,7 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> LoadedScalar<F> for Scalar {
                 .iter()
                 .rev()
                 .skip(1)
-                .map(Option::Some)
+                .map(Some)
                 .chain(iter::once(None)),
         ) {
             if let Some(product) = product {

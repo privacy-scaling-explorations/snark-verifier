@@ -1,5 +1,5 @@
 use halo2_proofs::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::FieldExt,
     circuit::{floor_planner::V1, Layouter, Value},
     dev::MockProver,
     plonk::{
@@ -18,8 +18,8 @@ use halo2_wrong_maingate::{
     RegionCtx, Term,
 };
 use rand::RngCore;
-use rand_chacha::ChaCha20Rng;
 use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 use std::fs;
 
 mod halo2;
@@ -31,18 +31,14 @@ mod evm;
 pub const LIMBS: usize = 4;
 pub const BITS: usize = 68;
 
-pub fn read_srs<'a, C, P>(name: &str, k: u32) -> P
-where
-    C: CurveAffine,
-    P: ParamsProver<'a, C>,
-{
-    const DIR: &str = "./srs/halo2";
-    let path = format!("{}/{}-{}", DIR, name, k);
+pub fn read_or_create_srs<S: CommitmentScheme>(scheme: &str, k: u32) -> S::ParamsProver {
+    const DIR: &str = "./src/protocol/halo2/test/fixture";
+    let path = format!("{}/{}_{}.srs", DIR, scheme, k);
     match fs::File::open(path.as_str()) {
-        Ok(mut file) => P::read(&mut file).unwrap(),
+        Ok(mut file) => S::ParamsProver::read(&mut file).unwrap(),
         Err(_) => {
             fs::create_dir_all(DIR).unwrap();
-            let params = P::new(k, ChaCha20Rng::from_seed(Default::default()));
+            let params = S::new_params(k, ChaCha20Rng::from_seed(Default::default()));
             let mut file = fs::File::create(path.as_str()).unwrap();
             params.write(&mut file).unwrap();
             params
@@ -285,9 +281,6 @@ where
     E: EncodedChallenge<S::Curve>,
     R: RngCore,
 {
-    let vk = keygen_vk::<S, _>(params, &circuits[0]).unwrap();
-    let pk = keygen_pk::<S, _>(params, vk.clone(), &circuits[0]).unwrap();
-
     for (circuit, instances) in circuits.iter().zip(instances.iter()) {
         MockProver::run(
             params.k(),
@@ -297,6 +290,9 @@ where
         .unwrap()
         .assert_satisfied();
     }
+
+    let vk = keygen_vk::<S, _>(params, &circuits[0]).unwrap();
+    let pk = keygen_pk::<S, _>(params, vk.clone(), &circuits[0]).unwrap();
 
     let proof = {
         let mut transcript = TW::init(Vec::new());
@@ -329,19 +325,19 @@ where
 macro_rules! halo2_prepare {
     ([kzg], $k:expr, $n:expr, $accumulator_indices:expr, $circuit:ty, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
         use halo2_curves::bn256::{Bn256, G1};
-        use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG};
+        use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
         use rand::SeedableRng;
         use rand_chacha::ChaCha20Rng;
         use std::{collections::BTreeSet, iter};
         use $crate::{
             protocol::halo2::{
                 compile,
-                test::{gen_vk_and_proof, read_srs},
+                test::{gen_vk_and_proof, read_or_create_srs},
             },
             util::GroupEncoding,
         };
 
-        let params = read_srs::<_, ParamsKZG<Bn256>>("kzg", $k);
+        let params = read_or_create_srs::<KZGCommitmentScheme<Bn256>>("kzg", $k);
 
         let mut rng = ChaCha20Rng::from_seed(Default::default());
         let circuits = iter::repeat_with(|| <$circuit>::rand(&mut rng))

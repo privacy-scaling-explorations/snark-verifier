@@ -4,7 +4,7 @@ use crate::{
 };
 use std::{
     cmp::max,
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     fmt::Debug,
     iter::{self, Sum},
     ops::{Add, Mul, Neg, Sub},
@@ -25,7 +25,7 @@ where
     zn: L::LoadedScalar,
     zn_minus_one_inv: Fraction<L::LoadedScalar>,
     identity: L::LoadedScalar,
-    lagrange: HashMap<i32, Fraction<L::LoadedScalar>>,
+    lagrange: BTreeMap<i32, Fraction<L::LoadedScalar>>,
 }
 
 impl<C, L> CommonPolynomialEvaluation<C, L>
@@ -63,7 +63,7 @@ where
             zn,
             zn_minus_one_inv: Fraction::one_over(zn_minus_one),
             identity: z.clone(),
-            lagrange: HashMap::from_iter(langranges.into_iter().zip(lagrange_evals)),
+            lagrange: BTreeMap::from_iter(langranges.into_iter().zip(lagrange_evals)),
         }
     }
 

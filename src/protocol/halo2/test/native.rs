@@ -1,7 +1,7 @@
 use crate::{
     collect_slice, halo2_native_verify, halo2_prepare,
     protocol::halo2::test::MainGateWithRange,
-    scheme::kzg::{PlonkAccumulator, ShplonkAccumulator},
+    scheme::kzg::{PlonkAccumulationScheme, ShplonkAccumulationScheme},
 };
 use halo2_curves::bn256::G1Affine;
 use halo2_proofs::{
@@ -33,7 +33,7 @@ fn test_shplonk_native_main_gate_with_range() {
         params,
         protocol,
         instances,
-        ShplonkAccumulator::default(),
+        ShplonkAccumulationScheme::default(),
         Blake2bRead::<_, G1Affine, _>::init(proof.as_slice())
     );
 }
@@ -59,7 +59,7 @@ fn test_plonk_native_main_gate_with_range() {
         params,
         protocol,
         instances,
-        PlonkAccumulator::default(),
+        PlonkAccumulationScheme::default(),
         Blake2bRead::<_, G1Affine, _>::init(proof.as_slice())
     );
 }

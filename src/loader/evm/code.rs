@@ -15,7 +15,6 @@ pub struct Code {
     stack_len: usize,
 }
 
-#[allow(dead_code)]
 impl Code {
     pub fn new(constants: impl IntoIterator<Item = U256>) -> Self {
         let mut code = Self {

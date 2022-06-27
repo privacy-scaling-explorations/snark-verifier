@@ -5,7 +5,7 @@ use crate::{
         test::{halo2::OneLayerAccumulation, MainGateWithRange, StandardPlonk, LIMBS},
         util::evm::ChallengeEvm,
     },
-    scheme::kzg::PlonkAccumulator,
+    scheme::kzg::PlonkAccumulationScheme,
 };
 use halo2_proofs::poly::kzg::{
     multiopen::{ProverGWC, VerifierGWC},
@@ -34,7 +34,7 @@ macro_rules! halo2_evm_verify {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        let mut strategy = SameCurveAccumulation::<_, _, BITS, LIMBS>::default();
+        let mut strategy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
         $accumulator
             .accumulate(
                 &$protocol,
@@ -72,7 +72,7 @@ fn test_plonk_evm_main_gate_with_range() {
         params,
         protocol,
         instances.clone(),
-        PlonkAccumulator::default(),
+        PlonkAccumulationScheme::default(),
         EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
     );
 
@@ -81,7 +81,7 @@ fn test_plonk_evm_main_gate_with_range() {
         protocol,
         instances,
         proof,
-        PlonkAccumulator::default()
+        PlonkAccumulationScheme::default()
     );
 }
 
@@ -106,7 +106,7 @@ fn test_plonk_evm_standard_plonk() {
         params,
         protocol,
         instances.clone(),
-        PlonkAccumulator::default(),
+        PlonkAccumulationScheme::default(),
         EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
     );
 
@@ -115,7 +115,7 @@ fn test_plonk_evm_standard_plonk() {
         protocol,
         instances,
         proof,
-        PlonkAccumulator::default()
+        PlonkAccumulationScheme::default()
     );
 }
 
@@ -142,7 +142,7 @@ fn test_plonk_evm_one_layer_accumulation() {
         params,
         protocol,
         instances.clone(),
-        PlonkAccumulator::default(),
+        PlonkAccumulationScheme::default(),
         EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
     );
 
@@ -151,6 +151,6 @@ fn test_plonk_evm_one_layer_accumulation() {
         protocol,
         instances,
         proof,
-        PlonkAccumulator::default()
+        PlonkAccumulationScheme::default()
     );
 }

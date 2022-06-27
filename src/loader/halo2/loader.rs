@@ -229,8 +229,17 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
     ) -> Scalar<'a, 'b, C, LIMBS, BITS> {
         let output = match (&lhs.value, &rhs.value) {
             (Value::Constant(lhs), Value::Constant(rhs)) => Value::Constant(*lhs - rhs),
-            (Value::Assigned(assigned), Value::Constant(constant))
-            | (Value::Constant(constant), Value::Assigned(assigned)) => {
+            (Value::Constant(constant), Value::Assigned(assigned)) => {
+                MainGateInstructions::neg_with_constant(
+                    &self.main_gate,
+                    &mut self.ctx.borrow_mut(),
+                    assigned,
+                    *constant,
+                )
+                .map(Value::Assigned)
+                .unwrap()
+            }
+            (Value::Assigned(assigned), Value::Constant(constant)) => {
                 MainGateInstructions::add_constant(
                     &self.main_gate,
                     &mut self.ctx.borrow_mut(),
@@ -260,10 +269,8 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
             | (Value::Constant(constant), Value::Assigned(assigned)) => {
                 let mut terms = [(); MAIN_GATE_WIDTH].map(|_| Term::Zero);
                 terms[0] = Term::Assigned(*assigned, *constant);
-                terms[1] = Term::Unassigned(
-                    assigned.value().map(|assigned| assigned * constant),
-                    -C::Scalar::one(),
-                );
+                terms[1] =
+                    Term::unassigned_to_sub(assigned.value().map(|assigned| assigned * constant));
                 MainGateInstructions::apply(
                     &self.main_gate,
                     &mut self.ctx.borrow_mut(),
