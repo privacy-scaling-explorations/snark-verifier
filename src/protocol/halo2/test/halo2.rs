@@ -119,7 +119,7 @@ impl OneLayerAccumulation {
             [kzg],
             protocol1,
             instances1.clone(),
-            ShplonkAccumulator::new(),
+            ShplonkAccumulator::default(),
             PoseidonTranscript::<G1Affine, _, _, _>::init(proof1.as_slice()),
             strategy
         );
@@ -127,7 +127,7 @@ impl OneLayerAccumulation {
             [kzg],
             protocol2,
             instances2.clone(),
-            ShplonkAccumulator::new(),
+            ShplonkAccumulator::default(),
             PoseidonTranscript::<G1Affine, _, _, _>::init(proof2.as_slice()),
             strategy
         );
@@ -176,7 +176,7 @@ impl OneLayerAccumulation {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        ShplonkAccumulator::new()
+        ShplonkAccumulator::default()
             .accumulate(
                 &snark.protocol,
                 loader,
@@ -264,7 +264,7 @@ fn test_shplonk_halo2_one_layer_accumulation() {
         params,
         protocol,
         instances,
-        ShplonkAccumulator::new(),
+        ShplonkAccumulator::default(),
         Blake2bRead::<_, G1Affine, _>::init(proof.as_slice())
     );
 }

@@ -14,22 +14,12 @@ use crate::{
 use std::{
     collections::{HashMap, HashSet},
     iter,
-    marker::PhantomData,
 };
 
-pub struct ShplonkAccumulator<C, L, T, S> {
-    _marker: PhantomData<(C, L, T, S)>,
-}
+#[derive(Default)]
+pub struct ShplonkAccumulator;
 
-impl<C, L, T, S> ShplonkAccumulator<C, L, T, S> {
-    pub fn new() -> Self {
-        Self {
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<C, L, T, S> AccumulationScheme<C, L, T, S> for ShplonkAccumulator<C, L, T, S>
+impl<C, L, T, S> AccumulationScheme<C, L, T, S> for ShplonkAccumulator
 where
     C: Curve,
     L: Loader<C>,
@@ -96,12 +86,6 @@ where
             accumulator += old_accumulator;
         }
         strategy.process(loader, transcript, proof, accumulator)
-    }
-}
-
-impl<C, L, T, S> Default for ShplonkAccumulator<C, L, T, S> {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

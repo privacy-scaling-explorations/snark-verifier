@@ -72,11 +72,17 @@ fn test_plonk_evm_main_gate_with_range() {
         params,
         protocol,
         instances.clone(),
-        PlonkAccumulator::new(),
+        PlonkAccumulator::default(),
         EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
     );
 
-    halo2_evm_verify!(params, protocol, instances, proof, PlonkAccumulator::new());
+    halo2_evm_verify!(
+        params,
+        protocol,
+        instances,
+        proof,
+        PlonkAccumulator::default()
+    );
 }
 
 #[test]
@@ -100,11 +106,17 @@ fn test_plonk_evm_standard_plonk() {
         params,
         protocol,
         instances.clone(),
-        PlonkAccumulator::new(),
+        PlonkAccumulator::default(),
         EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
     );
 
-    halo2_evm_verify!(params, protocol, instances, proof, PlonkAccumulator::new());
+    halo2_evm_verify!(
+        params,
+        protocol,
+        instances,
+        proof,
+        PlonkAccumulator::default()
+    );
 }
 
 #[test]
@@ -130,9 +142,15 @@ fn test_plonk_evm_one_layer_accumulation() {
         params,
         protocol,
         instances.clone(),
-        PlonkAccumulator::new(),
+        PlonkAccumulator::default(),
         EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
     );
 
-    halo2_evm_verify!(params, protocol, instances, proof, PlonkAccumulator::new());
+    halo2_evm_verify!(
+        params,
+        protocol,
+        instances,
+        proof,
+        PlonkAccumulator::default()
+    );
 }

@@ -18,6 +18,8 @@ use halo2_wrong_maingate::{
     RegionCtx, Term,
 };
 use rand::RngCore;
+use rand_chacha::ChaCha20Rng;
+use rand::SeedableRng;
 use std::fs;
 
 mod halo2;
@@ -40,7 +42,7 @@ where
         Ok(mut file) => P::read(&mut file).unwrap(),
         Err(_) => {
             fs::create_dir_all(DIR).unwrap();
-            let params = P::new(k);
+            let params = P::new(k, ChaCha20Rng::from_seed(Default::default()));
             let mut file = fs::File::create(path.as_str()).unwrap();
             params.write(&mut file).unwrap();
             params

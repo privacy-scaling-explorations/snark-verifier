@@ -11,21 +11,12 @@ use crate::{
     },
     Error,
 };
-use std::{collections::HashMap, iter, marker::PhantomData};
+use std::{collections::HashMap, iter};
 
-pub struct PlonkAccumulator<C, L, T, S> {
-    _marker: PhantomData<(C, L, T, S)>,
-}
+#[derive(Default)]
+pub struct PlonkAccumulator;
 
-impl<C, L, T, S> PlonkAccumulator<C, L, T, S> {
-    pub fn new() -> Self {
-        Self {
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<C, L, T, S> AccumulationScheme<C, L, T, S> for PlonkAccumulator<C, L, T, S>
+impl<C, L, T, S> AccumulationScheme<C, L, T, S> for PlonkAccumulator
 where
     C: Curve,
     L: Loader<C>,
@@ -101,12 +92,6 @@ where
             accumulator += old_accumulator;
         }
         strategy.process(loader, transcript, proof, accumulator)
-    }
-}
-
-impl<C, L, T, S> Default for PlonkAccumulator<C, L, T, S> {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
