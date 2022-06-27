@@ -402,6 +402,21 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             )
             .collect::<Vec<_>>()
     }
+
+    fn accumulator_indices(
+        &self,
+        accumulator_indices: Vec<(usize, usize)>,
+    ) -> Vec<Vec<(usize, usize)>> {
+        (0..self.n)
+            .map(|t| {
+                accumulator_indices
+                    .iter()
+                    .cloned()
+                    .map(|(poly, row)| (poly + t * self.num_instance, row))
+                    .collect()
+            })
+            .collect()
+    }
 }
 
 struct MockChallenge;
@@ -436,7 +451,11 @@ impl<C: CurveAffine> Transcript<C, MockChallenge> for MockTranscript<C::Scalar> 
     }
 }
 
-pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, n: usize) -> Protocol<C> {
+pub fn compile<C: CurveExt>(
+    vk: &VerifyingKey<C::AffineExt>,
+    n: usize,
+    accumulator_indices: Option<Vec<(usize, usize)>>,
+) -> Protocol<C> {
     let cs = vk.cs();
 
     let k = vk.get_domain().empty_lagrange().len().log2();
@@ -491,6 +510,9 @@ pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, n: usize) -> Protoc
         transcript.0
     };
 
+    let accumulator_indices = accumulator_indices
+        .map(|accumulator_indices| polynomials.accumulator_indices(accumulator_indices));
+
     Protocol {
         domain,
         preprocessed,
@@ -501,6 +523,6 @@ pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, n: usize) -> Protoc
         queries,
         relations,
         transcript_initial_state,
-        accumulator_indices: None,
+        accumulator_indices,
     }
 }

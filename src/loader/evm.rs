@@ -2,15 +2,14 @@ use crate::util::PrimeField;
 use ethereum_types::U256;
 use std::iter;
 
+mod accumulation;
 mod code;
-mod decider;
 mod loader;
 mod transcript;
 
 #[cfg(test)]
 mod test;
 
-pub use decider::EvmDecider;
 pub use loader::EvmLoader;
 pub use transcript::EvmTranscript;
 

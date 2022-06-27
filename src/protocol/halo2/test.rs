@@ -12,6 +12,7 @@ use halo2_proofs::{
     },
     transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
 };
+use halo2_wrong_ecc::EccConfig;
 use halo2_wrong_maingate::{
     MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
     RegionCtx, Term,
@@ -24,6 +25,9 @@ mod native;
 
 #[cfg(feature = "evm")]
 mod evm;
+
+pub const LIMBS: usize = 4;
+pub const BITS: usize = 68;
 
 pub fn read_srs<'a, C, P>(name: &str, k: u32) -> P
 where
@@ -158,6 +162,42 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
     }
 }
 
+#[derive(Clone)]
+pub struct MainGateWithRangeConfig {
+    main_gate_config: MainGateConfig,
+    range_config: RangeConfig,
+}
+
+impl MainGateWithRangeConfig {
+    fn ecc_config(&self) -> EccConfig {
+        EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+    }
+
+    fn configure<F: FieldExt>(
+        meta: &mut ConstraintSystem<F>,
+        fine_tune_bit_lengths: Vec<usize>,
+    ) -> Self {
+        let main_gate_config = MainGate::<F>::configure(meta);
+        let range_config =
+            RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bit_lengths);
+        MainGateWithRangeConfig {
+            main_gate_config,
+            range_config,
+        }
+    }
+
+    fn load_table<F: FieldExt>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        base_bit_len: usize,
+    ) -> Result<(), Error> {
+        let range_chip = RangeChip::<F>::new(self.range_config.clone(), base_bit_len);
+        range_chip.load_limb_range_table(layouter)?;
+        range_chip.load_overflow_range_tables(layouter)?;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct MainGateWithRange<F>(F);
 
@@ -172,7 +212,7 @@ impl<F: FieldExt> MainGateWithRange<F> {
 }
 
 impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
-    type Config = (MainGateConfig, RangeConfig);
+    type Config = MainGateWithRangeConfig;
     type FloorPlanner = V1;
 
     fn without_witnesses(&self) -> Self {
@@ -180,19 +220,16 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let main_gate_config = MainGate::configure(meta);
-        let range_config = RangeChip::configure(meta, &main_gate_config, Vec::new());
-        (main_gate_config, range_config)
+        MainGateWithRangeConfig::configure(meta, Vec::new())
     }
 
     fn synthesize(
         &self,
-        (main_gate_config, range_config): Self::Config,
+        config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let main_gate = MainGate::new(main_gate_config);
-        let range_chip = RangeChip::new(range_config, 8);
-
+        let main_gate = MainGate::new(config.main_gate_config);
+        let range_chip = RangeChip::new(config.range_config, 8);
         range_chip.load_limb_range_table(&mut layouter)?;
 
         let a = layouter.assign_region(
@@ -288,7 +325,7 @@ where
 
 #[macro_export]
 macro_rules! halo2_prepare {
-    ([kzg], $k:expr, $n:expr, $circuit:ty, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
+    ([kzg], $k:expr, $n:expr, $accumulator_indices:expr, $circuit:ty, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
         use halo2_curves::bn256::{Bn256, G1};
         use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG};
         use rand::SeedableRng;
@@ -328,7 +365,7 @@ macro_rules! halo2_prepare {
             >(&params, &circuits, &instances, &mut rng)
         };
 
-        let protocol = compile::<G1>(&vk, N);
+        let protocol = compile::<G1>(&vk, N, $accumulator_indices);
 
         assert_eq!(
             protocol.preprocessed.len(),
@@ -353,32 +390,43 @@ macro_rules! halo2_prepare {
 }
 
 #[macro_export]
+macro_rules! halo2_native_accumulate {
+    ([kzg], $protocol:ident, $statements:expr, $scheme:expr, $transcript:expr, $stretagy:expr) => {{
+        use $crate::{loader::native::NativeLoader, scheme::kzg::AccumulationScheme};
+
+        $scheme
+            .accumulate(
+                &$protocol,
+                &NativeLoader,
+                $statements,
+                &mut $transcript,
+                &mut $stretagy,
+            )
+            .unwrap();
+    }};
+}
+
+#[macro_export]
 macro_rules! halo2_native_verify {
-    ([kzg], $params:ident, $protocol:ident, $statements:ident, $accumulator:expr, $transcript:expr) => {{
+    ([kzg], $params:ident, $protocol:ident, $statements:expr, $scheme:expr, $transcript:expr) => {{
         use halo2_curves::bn256::Bn256;
         use halo2_proofs::poly::commitment::ParamsProver;
         use $crate::{
-            loader::native::NativeLoader,
-            scheme::kzg::{AccumulationScheme, NativeDecider},
+            halo2_native_accumulate,
+            protocol::halo2::test::{BITS, LIMBS},
+            scheme::kzg::SameCurveAccumulation,
         };
 
-        let loader = NativeLoader;
-        let accept = {
-            collect_slice!($statements);
-            $accumulator
-                .accumulate(
-                    &$protocol,
-                    &loader,
-                    &$statements,
-                    &mut $transcript,
-                    &mut NativeDecider::<Bn256>::new(
-                        $params.get_g()[0],
-                        $params.g2(),
-                        $params.s_g2(),
-                    ),
-                )
-                .unwrap()
-        };
-        assert!(accept);
+        let mut stretagy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
+        halo2_native_accumulate!(
+            [kzg],
+            $protocol,
+            $statements,
+            $scheme,
+            $transcript,
+            stretagy
+        );
+
+        assert!(stretagy.decide::<Bn256>($params.get_g()[0], $params.g2(), $params.s_g2()));
     }};
 }

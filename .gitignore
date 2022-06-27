@@ -1,3 +1,5 @@
-/target
 .vscode
-srs
+.DS_Store
+
+/target
+/srs

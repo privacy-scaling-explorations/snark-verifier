@@ -4,7 +4,13 @@ use crate::{
 };
 use halo2_curves::CurveAffine;
 use halo2_proofs::circuit;
-use halo2_wrong_ecc::{AssignedPoint, BaseFieldEccChip, EccConfig};
+use halo2_wrong_ecc::{
+    integer::{
+        rns::{Integer, Rns},
+        IntegerInstructions, Range,
+    },
+    AssignedPoint, BaseFieldEccChip, EccConfig,
+};
 use halo2_wrong_maingate::{
     Assigned, AssignedValue, CombinationOptionCommon, MainGate, MainGateInstructions, RegionCtx,
     Term,
@@ -18,6 +24,7 @@ use std::{
     rc::Rc,
 };
 
+const MAIN_GATE_WIDTH: usize = 5;
 const WINDOW_SIZE: usize = 3;
 
 #[derive(Clone, Debug)]
@@ -26,9 +33,8 @@ pub enum Value<T, L> {
     Assigned(L),
 }
 
-const MAIN_GATE_WIDTH: usize = 5;
-
 pub struct Halo2Loader<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize> {
+    rns: Rc<Rns<C::Base, C::Scalar, LIMBS, BITS>>,
     ecc_chip: RefCell<BaseFieldEccChip<C, LIMBS, BITS>>,
     main_gate: MainGate<C::Scalar>,
     ctx: RefCell<RegionCtx<'a, 'b, C::Scalar>>,
@@ -42,11 +48,16 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         let ecc_chip = BaseFieldEccChip::new(ecc_config);
         let main_gate = ecc_chip.main_gate();
         Self {
+            rns: Rc::new(Rns::construct()),
             ecc_chip: RefCell::new(ecc_chip),
             main_gate,
             ctx: RefCell::new(ctx),
             num_ec_point: RefCell::new(0),
         }
+    }
+
+    pub fn rns(&self) -> Rc<Rns<C::Base, C::Scalar, LIMBS, BITS>> {
+        self.rns.clone()
     }
 
     pub fn ecc_chip(&self) -> impl Deref<Target = BaseFieldEccChip<C, LIMBS, BITS>> + '_ {
@@ -110,6 +121,58 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         self.ec_point(assigned)
     }
 
+    pub fn assign_ec_point_from_limbs(
+        self: &Rc<Self>,
+        x_limbs: [AssignedValue<C::Scalar>; LIMBS],
+        y_limbs: [AssignedValue<C::Scalar>; LIMBS],
+    ) -> EcPoint<'a, 'b, C, LIMBS, BITS> {
+        let [x, y] = [x_limbs, y_limbs]
+            .map(|limbs| {
+                limbs.iter().enumerate().fold(
+                    circuit::Value::known([C::Scalar::zero(); LIMBS]),
+                    |acc, (idx, limb)| {
+                        acc.zip(limb.value()).map(|(mut acc, limb)| {
+                            acc[idx] = limb;
+                            acc
+                        })
+                    },
+                )
+            })
+            .map(|limbs| {
+                self.ecc_chip
+                    .borrow()
+                    .integer_chip()
+                    .assign_integer(
+                        &mut self.ctx().borrow_mut(),
+                        limbs
+                            .map(|limbs| Integer::from_limbs(&limbs, self.rns.clone()))
+                            .into(),
+                        Range::Remainder,
+                    )
+                    .unwrap()
+            });
+
+        let ec_point = AssignedPoint::new(x, y);
+        self.ecc_chip()
+            .assert_is_on_curve(&mut self.ctx().borrow_mut(), &ec_point)
+            .unwrap();
+
+        for (src, dst) in x_limbs.iter().chain(y_limbs.iter()).zip(
+            ec_point
+                .get_x()
+                .limbs()
+                .iter()
+                .chain(ec_point.get_y().limbs().iter()),
+        ) {
+            self.ctx
+                .borrow_mut()
+                .constrain_equal(src.cell(), dst.cell())
+                .unwrap();
+        }
+
+        self.ec_point(ec_point)
+    }
+
     pub fn ec_point(
         self: &Rc<Self>,
         assigned: AssignedPoint<C::Base, C::Scalar, LIMBS, BITS>,
@@ -121,6 +184,15 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
             index,
             assigned,
         }
+    }
+
+    pub fn ec_point_nomalize(
+        self: &Rc<Self>,
+        assigned: &AssignedPoint<C::Base, C::Scalar, LIMBS, BITS>,
+    ) -> AssignedPoint<C::Base, C::Scalar, LIMBS, BITS> {
+        self.ecc_chip()
+            .normalize(&mut self.ctx.borrow_mut(), assigned)
+            .unwrap()
     }
 
     fn add(
@@ -492,7 +564,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize> LoadedEcPoin
             })
             .chain(non_scaled)
             .reduce(|acc, ec_point| {
-                (loader.ecc_chip.borrow().deref())
+                (loader.ecc_chip().deref())
                     .add(&mut loader.ctx.borrow_mut(), &acc, &ec_point)
                     .unwrap()
             })

@@ -129,7 +129,61 @@ impl EvmLoader {
             // [..., success, x, y, y]
             .push(ptr + 0x20)
             // [..., success, x, y, y, y_ptr]
-            .mstore()
+            .mstore();
+        // [..., success, x, y]
+        self.validate_ec_point();
+        self.ec_point(Value::Memory(ptr))
+    }
+
+    pub fn calldataload_ec_point_from_limbs<const LIMBS: usize, const BITS: usize>(
+        self: &Rc<Self>,
+        offset: usize,
+    ) -> EcPoint {
+        let ptr = self.allocate(0x40);
+        for (ptr, offset) in [(ptr, offset), (ptr + 0x20, offset + LIMBS * 0x20)] {
+            for (idx, shift) in (0..).step_by(BITS).take(LIMBS).enumerate() {
+                if shift == 0 {
+                    self.code
+                        .borrow_mut()
+                        // [..., success]
+                        .push(offset + idx * 0x20)
+                        // [..., success, x_limb_0_ptr]
+                        .calldataload();
+                    // [..., success, x_limb_0]
+                } else {
+                    self.code
+                        .borrow_mut()
+                        // [..., success, x_acc]
+                        .push(offset + idx * 0x20)
+                        // [..., success, x_acc, x_limb_i_ptr]
+                        .calldataload()
+                        // [..., success, x_acc, x_limb_i]
+                        .push(shift)
+                        // [..., success, x_acc, x_limb_i, shift]
+                        .shl()
+                        // [..., success, x_acc, x_limb_i << shift]
+                        .add();
+                    // [..., success, x_acc]
+                }
+            }
+            self.code
+                .borrow_mut()
+                // [..., success, x]
+                .dup(0)
+                // [..., success, x, x]
+                .push(ptr)
+                // [..., success, x, x, x_ptr]
+                .mstore();
+            // [..., success, x]
+        }
+        // [..., success, x, y]
+        self.validate_ec_point();
+        self.ec_point(Value::Memory(ptr))
+    }
+
+    fn validate_ec_point(self: &Rc<Self>) {
+        self.code
+            .borrow_mut()
             // [..., success, x, y]
             .push(self.base_modulus)
             // [..., success, x, y, p]
@@ -198,7 +252,6 @@ impl EvmLoader {
             .pop()
             // [..., success, valid]
             .and();
-        self.ec_point(Value::Memory(ptr))
     }
 
     pub fn squeeze_challenge(self: &Rc<Self>, ptr: usize, mut len: usize) -> (usize, Scalar) {
@@ -450,6 +503,10 @@ pub struct EcPoint {
 }
 
 impl EcPoint {
+    pub(super) fn loader(&self) -> &Rc<EvmLoader> {
+        &self.loader
+    }
+
     pub fn value(&self) -> Value<(U256, U256)> {
         self.value
     }

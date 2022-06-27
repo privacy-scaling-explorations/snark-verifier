@@ -22,7 +22,7 @@ impl<C: Curve> Protocol<C> {
         self.preprocessed.len() + self.num_statement + self.num_auxiliary.iter().sum::<usize>()
     }
 
-    pub fn langranges<T>(&self, statements: &[&[T]]) -> impl IntoIterator<Item = i32> {
+    pub fn langranges<T>(&self, statements: &[Vec<T>]) -> impl IntoIterator<Item = i32> {
         self.relations
             .iter()
             .cloned()

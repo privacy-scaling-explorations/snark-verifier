@@ -19,7 +19,7 @@ fn test_shplonk_native_main_gate_with_range() {
 
     let (params, protocol, instances, proof) = halo2_prepare!(
         [kzg],
-        K, N, MainGateWithRange::<_>,
+        K, N, None, MainGateWithRange::<_>,
         ProverSHPLONK<_>,
         VerifierSHPLONK<_>,
         BatchVerifier<_, _>,
@@ -45,7 +45,7 @@ fn test_plonk_native_main_gate_with_range() {
 
     let (params, protocol, instances, proof) = halo2_prepare!(
         [kzg],
-        K, N, MainGateWithRange::<_>,
+        K, N, None, MainGateWithRange::<_>,
         ProverGWC<_>,
         VerifierGWC<_>,
         BatchVerifier<_, _>,

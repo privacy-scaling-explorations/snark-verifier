@@ -2564,6 +2564,8 @@ dependencies = [
  "hex",
  "lazy_static",
  "maingate",
+ "num-bigint",
+ "num-traits",
  "poseidon",
  "rand",
  "rand_chacha",

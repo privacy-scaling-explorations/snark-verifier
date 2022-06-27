@@ -1,10 +1,8 @@
-pub mod accumulation;
-mod decider;
+mod accumulation;
 mod msm;
 
 pub use accumulation::{
     plonk::PlonkAccumulator, shplonk::ShplonkAccumulator, AccumulationScheme, AccumulationStrategy,
-    Accumulator,
+    Accumulator, SameCurveAccumulation,
 };
-pub use decider::NativeDecider;
 pub use msm::MSM;

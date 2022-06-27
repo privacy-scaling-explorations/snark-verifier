@@ -1,3 +1,5 @@
+use num_bigint::BigUint;
+use num_traits::One;
 use std::{
     cmp::Ordering,
     fmt::Debug,
@@ -199,4 +201,40 @@ impl<F: FieldOps + Clone> Fraction<F> {
             .map(|numer| numer * &denom)
             .unwrap_or(denom)
     }
+}
+
+pub fn big_to_fe<F: PrimeField>(big: BigUint) -> F {
+    let bytes = big.to_bytes_le();
+    let mut repr = F::Repr::default();
+    assert!(bytes.len() <= repr.as_ref().len());
+    repr.as_mut()[..bytes.len()].clone_from_slice(bytes.as_slice());
+    F::from_repr(repr).unwrap()
+}
+
+pub fn fe_from_limbs<F1: PrimeField, F2: PrimeField, const LIMBS: usize, const BITS: usize>(
+    limbs: [F1; LIMBS],
+) -> F2 {
+    big_to_fe(
+        limbs
+            .iter()
+            .map(|limb| BigUint::from_bytes_le(limb.to_repr().as_ref()))
+            .zip((0usize..).step_by(BITS))
+            .map(|(limb, shift)| limb << shift)
+            .reduce(|acc, shifted| acc + shifted)
+            .unwrap(),
+    )
+}
+
+pub fn fe_to_limbs<F1: PrimeField, F2: PrimeField, const LIMBS: usize, const BITS: usize>(
+    fe: F1,
+) -> [F2; LIMBS] {
+    let big = BigUint::from_bytes_le(fe.to_repr().as_ref());
+    let mask = (BigUint::one() << BITS) - 1usize;
+    (0usize..)
+        .step_by(BITS)
+        .take(LIMBS)
+        .map(move |shift| big_to_fe((&big >> shift) & &mask))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap()
 }

@@ -38,19 +38,21 @@ where
         &self,
         protocol: &Protocol<C>,
         loader: &L,
-        statements: &[&[L::LoadedScalar]],
+        statements: Vec<Vec<L::LoadedScalar>>,
         transcript: &mut T,
         strategy: &mut S,
     ) -> Result<S::Output, Error> {
         transcript.common_scalar(&loader.load_const(&protocol.transcript_initial_state))?;
 
         let proof = PlonkProof::read(protocol, statements, transcript)?;
+        let old_accumulator =
+            strategy.extract_accumulator(protocol, loader, transcript, &proof.statements);
 
         let common_poly_eval = {
             let mut common_poly_eval = CommonPolynomialEvaluation::new(
                 &protocol.domain,
                 loader,
-                protocol.langranges(statements),
+                protocol.langranges(&proof.statements),
                 &proof.z,
             );
 
@@ -94,12 +96,11 @@ where
             .map(|(uw, z_omega)| uw.clone() * &z_omega)
             .sum();
 
-        strategy.process(
-            loader,
-            transcript,
-            proof,
-            Accumulator::new(lhs, rhs.into_iter().sum()),
-        )
+        let mut accumulator = Accumulator::new(lhs, rhs.into_iter().sum());
+        if let Some(old_accumulator) = old_accumulator {
+            accumulator += old_accumulator;
+        }
+        strategy.process(loader, transcript, proof, accumulator)
     }
 }
 
@@ -125,28 +126,17 @@ pub struct PlonkProof<C: Curve, L: Loader<C>> {
 impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
     fn read<T: TranscriptRead<C, L>>(
         protocol: &Protocol<C>,
-        statements: &[&[L::LoadedScalar]],
+        statements: Vec<Vec<L::LoadedScalar>>,
         transcript: &mut T,
     ) -> Result<Self, Error> {
-        let statements = {
-            if statements.len() != protocol.num_statement {
-                return Err(Error::InvalidInstances);
+        if statements.len() != protocol.num_statement {
+            return Err(Error::InvalidInstances);
+        }
+        for statements in statements.iter() {
+            for statement in statements.iter() {
+                transcript.common_scalar(statement)?;
             }
-
-            statements
-                .iter()
-                .map(|statements| {
-                    statements
-                        .iter()
-                        .cloned()
-                        .map(|statement| {
-                            transcript.common_scalar(&statement)?;
-                            Ok(statement)
-                        })
-                        .collect::<Result<Vec<_>, Error>>()
-                })
-                .collect::<Result<Vec<_>, Error>>()?
-        };
+        }
 
         let (auxiliaries, challenges) = {
             let (auxiliaries, challenges) = protocol
