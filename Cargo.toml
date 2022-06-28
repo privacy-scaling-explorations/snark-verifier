@@ -38,6 +38,9 @@ evm = ["dep:foundry_evm", "dep:crossterm", "dep:tui", "dep:ethereum_types", "dep
 [patch.crates-io]
 halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "feature/abstraction-experiment", package = "halo2_proofs" }
 
+[patch."https://github.com/privacy-scaling-explorations/halo2"]
+halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "feature/abstraction-experiment", package = "halo2_proofs" }
+
 [patch."https://github.com/privacy-scaling-explorations/halo2curves"]
 halo2_curves = { git = "https://github.com/han0110/halo2curves", branch = "fix/impl-fq2-to-repr", package = "halo2curves" }
 

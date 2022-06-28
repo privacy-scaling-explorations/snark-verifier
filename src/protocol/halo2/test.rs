@@ -173,20 +173,19 @@ impl MainGateWithRangeConfig {
 
     fn configure<F: FieldExt>(
         meta: &mut ConstraintSystem<F>,
-        lookup_all_bit: usize,
-        lookup_b_bits: Vec<usize>,
+        fine_tune_bits: Vec<usize>,
     ) -> Self {
         let main_gate_config = MainGate::<F>::configure(meta);
         let range_config =
-            RangeChip::<F>::configure(meta, &main_gate_config, lookup_all_bit, lookup_b_bits);
+            RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bits);
         MainGateWithRangeConfig {
             main_gate_config,
             range_config,
         }
     }
 
-    fn load_table<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        let range_chip = RangeChip::<F>::new(self.range_config.clone());
+    fn load_table<F: FieldExt>(&self, layouter: &mut impl Layouter<F>, dense_limb_bits: usize) -> Result<(), Error> {
+        let range_chip = RangeChip::<F>::new(self.range_config.clone(), dense_limb_bits);
         range_chip.load_table(layouter)?;
         Ok(())
     }
@@ -214,7 +213,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        MainGateWithRangeConfig::configure(meta, 8, vec![1])
+        MainGateWithRangeConfig::configure(meta, vec![1])
     }
 
     fn synthesize(
@@ -223,7 +222,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let main_gate = MainGate::new(config.main_gate_config);
-        let range_chip = RangeChip::new(config.range_config);
+        let range_chip = RangeChip::new(config.range_config, 8);
         range_chip.load_table(&mut layouter)?;
 
         let a = layouter.assign_region(

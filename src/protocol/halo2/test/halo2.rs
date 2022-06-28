@@ -204,7 +204,6 @@ impl Circuit<Fr> for OneLayerAccumulation {
     fn configure(meta: &mut plonk::ConstraintSystem<Fr>) -> Self::Config {
         MainGateWithRangeConfig::configure::<Fr>(
             meta,
-            BITS / LIMBS,
             BaseFieldEccChip::<G1Affine>::rns().overflow_lengths(),
         )
     }
@@ -214,7 +213,7 @@ impl Circuit<Fr> for OneLayerAccumulation {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), plonk::Error> {
-        config.load_table(&mut layouter)?;
+        config.load_table(&mut layouter, BITS / LIMBS)?;
 
         let (lhs, rhs) = layouter.assign_region(
             || "",
