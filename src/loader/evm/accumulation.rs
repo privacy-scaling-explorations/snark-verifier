@@ -52,12 +52,13 @@ where
         statements: &[Vec<Scalar>],
     ) -> Option<Accumulator<C, Rc<EvmLoader>>> {
         let accumulator_indices = protocol.accumulator_indices.as_ref()?;
-        let challenges = transcript.squeeze_n_challenges(accumulator_indices.len());
 
         let num_statements = statements
             .iter()
             .map(|statements| statements.len())
             .collect::<Vec<_>>();
+
+        let challenges = transcript.squeeze_n_challenges(accumulator_indices.len());
         let accumulators = accumulator_indices
             .iter()
             .map(|indices| {

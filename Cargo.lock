@@ -879,7 +879,7 @@ checksum = "453440c271cf5577fd2a40e4942540cb7d0d2f85e27c8d07dd0023c925a67541"
 [[package]]
 name = "ecc"
 version = "0.1.0"
-source = "git+https://github.com/han0110/halo2wrong?branch=feature/value-api#efdca1ca6f17cf8532a90d69bb384d7b0ed138cf"
+source = "git+https://github.com/han0110/halo2wrong?branch=feature/range-chip-with-tagged-table#16573ea0ef50daa10603dd61537f292972e580aa"
 dependencies = [
  "group 0.12.0",
  "integer",
@@ -1700,7 +1700,7 @@ dependencies = [
 [[package]]
 name = "halo2wrong"
 version = "0.1.0"
-source = "git+https://github.com/han0110/halo2wrong?branch=feature/value-api#efdca1ca6f17cf8532a90d69bb384d7b0ed138cf"
+source = "git+https://github.com/han0110/halo2wrong?branch=feature/range-chip-with-tagged-table#16573ea0ef50daa10603dd61537f292972e580aa"
 dependencies = [
  "group 0.12.0",
  "halo2_proofs",
@@ -1948,7 +1948,7 @@ dependencies = [
 [[package]]
 name = "integer"
 version = "0.1.0"
-source = "git+https://github.com/han0110/halo2wrong?branch=feature/value-api#efdca1ca6f17cf8532a90d69bb384d7b0ed138cf"
+source = "git+https://github.com/han0110/halo2wrong?branch=feature/range-chip-with-tagged-table#16573ea0ef50daa10603dd61537f292972e580aa"
 dependencies = [
  "group 0.12.0",
  "maingate",
@@ -2087,7 +2087,7 @@ dependencies = [
 [[package]]
 name = "maingate"
 version = "0.1.0"
-source = "git+https://github.com/han0110/halo2wrong?branch=feature/value-api#efdca1ca6f17cf8532a90d69bb384d7b0ed138cf"
+source = "git+https://github.com/han0110/halo2wrong?branch=feature/range-chip-with-tagged-table#16573ea0ef50daa10603dd61537f292972e580aa"
 dependencies = [
  "group 0.12.0",
  "halo2wrong",
@@ -3855,7 +3855,7 @@ dependencies = [
 [[package]]
 name = "transcript"
 version = "0.1.0"
-source = "git+https://github.com/han0110/halo2wrong?branch=feature/value-api#efdca1ca6f17cf8532a90d69bb384d7b0ed138cf"
+source = "git+https://github.com/han0110/halo2wrong?branch=feature/range-chip-with-tagged-table#16573ea0ef50daa10603dd61537f292972e580aa"
 dependencies = [
  "ecc",
  "group 0.12.0",

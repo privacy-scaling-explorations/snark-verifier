@@ -173,25 +173,21 @@ impl MainGateWithRangeConfig {
 
     fn configure<F: FieldExt>(
         meta: &mut ConstraintSystem<F>,
-        fine_tune_bit_lengths: Vec<usize>,
+        lookup_all_bit: usize,
+        lookup_b_bits: Vec<usize>,
     ) -> Self {
         let main_gate_config = MainGate::<F>::configure(meta);
         let range_config =
-            RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bit_lengths);
+            RangeChip::<F>::configure(meta, &main_gate_config, lookup_all_bit, lookup_b_bits);
         MainGateWithRangeConfig {
             main_gate_config,
             range_config,
         }
     }
 
-    fn load_table<F: FieldExt>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        base_bit_len: usize,
-    ) -> Result<(), Error> {
-        let range_chip = RangeChip::<F>::new(self.range_config.clone(), base_bit_len);
-        range_chip.load_limb_range_table(layouter)?;
-        range_chip.load_overflow_range_tables(layouter)?;
+    fn load_table<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        let range_chip = RangeChip::<F>::new(self.range_config.clone());
+        range_chip.load_table(layouter)?;
         Ok(())
     }
 }
@@ -218,7 +214,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        MainGateWithRangeConfig::configure(meta, Vec::new())
+        MainGateWithRangeConfig::configure(meta, 8, vec![1])
     }
 
     fn synthesize(
@@ -227,15 +223,15 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let main_gate = MainGate::new(config.main_gate_config);
-        let range_chip = RangeChip::new(config.range_config, 8);
-        range_chip.load_limb_range_table(&mut layouter)?;
+        let range_chip = RangeChip::new(config.range_config);
+        range_chip.load_table(&mut layouter)?;
 
         let a = layouter.assign_region(
             || "",
             |mut region| {
                 let mut offset = 0;
                 let mut ctx = RegionCtx::new(&mut region, &mut offset);
-                let a = range_chip.range_value(&mut ctx, &Value::known(self.0).into(), 32)?;
+                let a = range_chip.range_value(&mut ctx, &Value::known(self.0).into(), 33)?;
                 let b = main_gate.sub_sub_with_constant(&mut ctx, &a, &a, &a, F::from(2))?;
                 let cond = main_gate.assign_value(&mut ctx, &Value::known(F::one()).into())?;
                 main_gate.select(&mut ctx, &a, &b, &cond.into())?;

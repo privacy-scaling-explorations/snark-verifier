@@ -42,7 +42,7 @@ halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "feature/abs
 halo2_curves = { git = "https://github.com/han0110/halo2curves", branch = "fix/impl-fq2-to-repr", package = "halo2curves" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2wrong"]
-halo2_wrong = { git = "https://github.com/han0110/halo2wrong", branch = "feature/value-api", package = "halo2wrong" }
-halo2_wrong_ecc = { git = "https://github.com/han0110/halo2wrong", branch = "feature/value-api", package = "ecc" }
-halo2_wrong_maingate = { git = "https://github.com/han0110/halo2wrong", branch = "feature/value-api", package = "maingate" }
-halo2_wrong_transcript = { git = "https://github.com/han0110/halo2wrong", branch = "feature/value-api", package = "transcript" }
+halo2_wrong = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "halo2wrong" }
+halo2_wrong_ecc = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "ecc" }
+halo2_wrong_maingate = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "maingate" }
+halo2_wrong_transcript = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "transcript" }

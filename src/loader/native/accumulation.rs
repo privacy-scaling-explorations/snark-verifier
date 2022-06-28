@@ -55,9 +55,10 @@ where
         transcript: &mut T,
         statements: &[Vec<C::ScalarExt>],
     ) -> Option<Accumulator<C, NativeLoader>> {
-        let accumulators = protocol
-            .accumulator_indices
-            .as_ref()?
+        let accumulator_indices = protocol.accumulator_indices.as_ref()?;
+
+        let challenges = transcript.squeeze_n_challenges(accumulator_indices.len());
+        let accumulators = accumulator_indices
             .iter()
             .map(|indices| {
                 assert_eq!(indices.len(), 4 * LIMBS);
@@ -86,7 +87,6 @@ where
                 Accumulator::new(MSM::base(lhs), MSM::base(rhs))
             })
             .collect::<Vec<_>>();
-        let challenges = transcript.squeeze_n_challenges(accumulators.len());
 
         Some(Accumulator::random_linear_combine(
             challenges.into_iter().map(Some).zip(accumulators),

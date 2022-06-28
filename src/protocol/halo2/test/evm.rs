@@ -120,7 +120,7 @@ fn test_plonk_evm_standard_plonk() {
 }
 
 #[test]
-#[ignore]
+#[ignore = "cause it requires 64GB ram to run"]
 fn test_plonk_evm_one_layer_accumulation() {
     const K: u32 = 21;
     const N: usize = 1;

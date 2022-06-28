@@ -204,6 +204,7 @@ impl Circuit<Fr> for OneLayerAccumulation {
     fn configure(meta: &mut plonk::ConstraintSystem<Fr>) -> Self::Config {
         MainGateWithRangeConfig::configure::<Fr>(
             meta,
+            BITS / LIMBS,
             BaseFieldEccChip::<G1Affine>::rns().overflow_lengths(),
         )
     }
@@ -213,7 +214,7 @@ impl Circuit<Fr> for OneLayerAccumulation {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), plonk::Error> {
-        config.load_table(&mut layouter, BITS / LIMBS)?;
+        config.load_table(&mut layouter)?;
 
         let (lhs, rhs) = layouter.assign_region(
             || "",
@@ -243,7 +244,7 @@ impl Circuit<Fr> for OneLayerAccumulation {
 }
 
 #[test]
-#[ignore]
+#[ignore = "cause it requires 64GB ram to run"]
 fn test_shplonk_halo2_one_layer_accumulation() {
     const K: u32 = 21;
     const N: usize = 1;
