@@ -26,7 +26,6 @@ where
     type Proof = PlonkProof<C, L>;
 
     fn accumulate(
-        &self,
         protocol: &Protocol<C>,
         loader: &L,
         statements: Vec<Vec<L::LoadedScalar>>,

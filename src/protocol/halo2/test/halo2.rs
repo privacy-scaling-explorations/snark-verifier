@@ -1,20 +1,17 @@
 use crate::{
-    collect_slice, halo2_native_accumulate, halo2_native_verify, halo2_prepare,
+    collect_slice, halo2_create_snark, halo2_native_accumulate, halo2_native_verify, halo2_prepare,
     loader::{halo2, native::NativeLoader},
     protocol::{
         halo2::{
-            test::{MainGateWithRange, StandardPlonk, BITS, LIMBS},
+            test::{MainGateWithRange, MainGateWithRangeConfig, Snark, StandardPlonk, BITS, LIMBS},
             util::halo2::ChallengeScalar,
         },
         Protocol,
     },
     scheme::kzg::{self, AccumulationScheme, ShplonkAccumulationScheme},
-    util::{fe_to_limbs, Curve, PrimeCurveAffine},
+    util::{fe_to_limbs, Curve, Group, PrimeCurveAffine},
 };
-use halo2_curves::{
-    bn256::{Fr, G1Affine, G1},
-    CurveAffine,
-};
+use halo2_curves::bn256::{Fr, G1Affine, G1};
 use halo2_proofs::{
     circuit::{floor_planner::V1, Layouter, Value},
     plonk,
@@ -31,10 +28,8 @@ use halo2_proofs::{
 use halo2_wrong_ecc;
 use halo2_wrong_maingate::RegionCtx;
 use halo2_wrong_transcript::NativeRepresentation;
-use rand::RngCore;
+use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use std::rc::Rc;
-
-use super::MainGateWithRangeConfig;
 
 const T: usize = 5;
 const RATE: usize = 4;
@@ -47,30 +42,29 @@ type PoseidonTranscript<C, L, S, B> =
     halo2::PoseidonTranscript<C, L, S, B, NativeRepresentation, LIMBS, BITS, T, RATE, R_F, R_P>;
 type SameCurveAccumulation<C, L> = kzg::SameCurveAccumulation<C, L, LIMBS, BITS>;
 
-pub struct Snark<C: CurveAffine> {
-    protocol: Protocol<C::CurveExt>,
-    statements: Vec<Vec<Value<C::Scalar>>>,
+pub struct SnarkWitness<C: Curve> {
+    protocol: Protocol<C>,
+    statements: Vec<Vec<Value<<C as Group>::Scalar>>>,
     proof: Value<Vec<u8>>,
 }
 
-impl<C: CurveAffine> Snark<C> {
-    pub fn new(
-        protocol: Protocol<C::CurveExt>,
-        instances: Vec<Vec<C::Scalar>>,
-        proof: Vec<u8>,
-    ) -> Self {
-        Snark {
-            protocol,
-            statements: instances
+impl<C: Curve> From<Snark<C>> for SnarkWitness<C> {
+    fn from(snark: Snark<C>) -> Self {
+        Self {
+            protocol: snark.protocol,
+            statements: snark
+                .statements
                 .into_iter()
-                .map(|instances| instances.into_iter().map(Value::known).collect::<Vec<_>>())
+                .map(|statements| statements.into_iter().map(Value::known).collect::<Vec<_>>())
                 .collect(),
-            proof: Value::known(proof),
+            proof: Value::known(snark.proof),
         }
     }
+}
 
+impl<C: Curve> SnarkWitness<C> {
     pub fn without_witnesses(&self) -> Self {
-        Snark {
+        SnarkWitness {
             protocol: self.protocol.clone(),
             statements: self
                 .statements
@@ -82,54 +76,109 @@ impl<C: CurveAffine> Snark<C> {
     }
 }
 
+pub fn accumulate<'a, 'b>(
+    loader: &Rc<Halo2Loader<'a, 'b, G1Affine>>,
+    stretagy: &mut SameCurveAccumulation<G1, Rc<Halo2Loader<'a, 'b, G1Affine>>>,
+    snark: &SnarkWitness<G1>,
+) -> Result<(), plonk::Error> {
+    let mut transcript = PoseidonTranscript::<_, Rc<Halo2Loader<G1Affine>>, _, _>::new(
+        loader,
+        snark.proof.as_ref().map(|proof| proof.as_slice()),
+    );
+    let statements = snark
+        .statements
+        .iter()
+        .map(|statements| {
+            statements
+                .iter()
+                .map(|statement| loader.assign_scalar(*statement))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    ShplonkAccumulationScheme::accumulate(
+        &snark.protocol,
+        loader,
+        statements,
+        &mut transcript,
+        stretagy,
+    )
+    .map_err(|_| plonk::Error::Synthesis)?;
+    Ok(())
+}
+
 pub struct OneLayerAccumulation {
     g1: G1Affine,
-    snarks: Vec<Snark<G1Affine>>,
+    snarks: Vec<SnarkWitness<G1>>,
     instances: Vec<Fr>,
 }
 
 impl OneLayerAccumulation {
-    pub fn rand<R: RngCore>(_: R) -> Self {
+    pub fn two_snark() -> Self {
         const K: u32 = 9;
         const N: usize = 1;
 
-        let (params, protocol1, instances1, proof1) = halo2_prepare!(
-            [kzg],
-            K, N, None, StandardPlonk::<_>,
-            ProverSHPLONK<_>,
-            VerifierSHPLONK<_>,
-            BatchVerifier<_, _>,
-            PoseidonTranscript<_, _, _, _>,
-            PoseidonTranscript<_, _, _, _>,
-            ChallengeScalar<_>
-        );
-        let (_, protocol2, instances2, proof2) = halo2_prepare!(
-            [kzg],
-            K, N, None, MainGateWithRange::<_>,
-            ProverSHPLONK<_>,
-            VerifierSHPLONK<_>,
-            BatchVerifier<_, _>,
-            PoseidonTranscript<_, _, _, _>,
-            PoseidonTranscript<_, _, _, _>,
-            ChallengeScalar<_>
-        );
+        let (params, snark1) = {
+            let (params, pk, protocol, circuits) = halo2_prepare!(
+                [kzg],
+                K,
+                N,
+                None,
+                StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+            );
+            let snark = halo2_create_snark!(
+                [kzg],
+                &params,
+                &pk,
+                &protocol,
+                &circuits,
+                ProverSHPLONK<_>,
+                VerifierSHPLONK<_>,
+                BatchVerifier<_, _>,
+                PoseidonTranscript<_, _, _, _>,
+                PoseidonTranscript<_, _, _, _>,
+                ChallengeScalar<_>
+            );
+            (params, snark)
+        };
+        let snark2 = {
+            let (params, pk, protocol, circuits) = halo2_prepare!(
+                [kzg],
+                K,
+                N,
+                None,
+                MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+            );
+            halo2_create_snark!(
+                [kzg],
+                &params,
+                &pk,
+                &protocol,
+                &circuits,
+                ProverSHPLONK<_>,
+                VerifierSHPLONK<_>,
+                BatchVerifier<_, _>,
+                PoseidonTranscript<_, _, _, _>,
+                PoseidonTranscript<_, _, _, _>,
+                ChallengeScalar<_>
+            )
+        };
 
         let mut strategy = SameCurveAccumulation::<G1, NativeLoader>::default();
         halo2_native_accumulate!(
             [kzg],
-            protocol1,
-            instances1.clone(),
-            ShplonkAccumulationScheme::default(),
-            PoseidonTranscript::<G1Affine, _, _, _>::init(proof1.as_slice()),
-            strategy
+            &snark1.protocol,
+            snark1.statements.clone(),
+            ShplonkAccumulationScheme,
+            &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark1.proof.as_slice()),
+            &mut strategy
         );
         halo2_native_accumulate!(
             [kzg],
-            protocol2,
-            instances2.clone(),
-            ShplonkAccumulationScheme::default(),
-            PoseidonTranscript::<G1Affine, _, _, _>::init(proof2.as_slice()),
-            strategy
+            &snark2.protocol,
+            snark2.statements.clone(),
+            ShplonkAccumulationScheme,
+            &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark2.proof.as_slice()),
+            &mut strategy
         );
 
         let g1 = params.get_g()[0];
@@ -145,47 +194,13 @@ impl OneLayerAccumulation {
 
         Self {
             g1,
-            snarks: vec![
-                Snark::new(protocol1, instances1, proof1),
-                Snark::new(protocol2, instances2, proof2),
-            ],
+            snarks: vec![snark1.into(), snark2.into()],
             instances,
         }
     }
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.instances.clone()]
-    }
-
-    fn accumulate<'a, 'b>(
-        loader: &Rc<Halo2Loader<'a, 'b, G1Affine>>,
-        stretagy: &mut SameCurveAccumulation<G1, Rc<Halo2Loader<'a, 'b, G1Affine>>>,
-        snark: &Snark<G1Affine>,
-    ) -> Result<(), plonk::Error> {
-        let mut transcript = PoseidonTranscript::<_, Rc<Halo2Loader<G1Affine>>, _, _>::new(
-            loader,
-            snark.proof.as_ref().map(|proof| proof.as_slice()),
-        );
-        let statements = snark
-            .statements
-            .iter()
-            .map(|statements| {
-                statements
-                    .iter()
-                    .map(|statement| loader.assign_scalar(*statement))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        ShplonkAccumulationScheme::default()
-            .accumulate(
-                &snark.protocol,
-                loader,
-                statements,
-                &mut transcript,
-                stretagy,
-            )
-            .map_err(|_| plonk::Error::Synthesis)?;
-        Ok(())
     }
 }
 
@@ -196,7 +211,11 @@ impl Circuit<Fr> for OneLayerAccumulation {
     fn without_witnesses(&self) -> Self {
         Self {
             g1: self.g1,
-            snarks: self.snarks.iter().map(Snark::without_witnesses).collect(),
+            snarks: self
+                .snarks
+                .iter()
+                .map(SnarkWitness::without_witnesses)
+                .collect(),
             instances: Vec::new(),
         }
     }
@@ -221,10 +240,10 @@ impl Circuit<Fr> for OneLayerAccumulation {
                 let mut offset = 0;
                 let ctx = RegionCtx::new(&mut region, &mut offset);
 
-                let loader = Rc::new(Halo2Loader::<G1Affine>::new(config.ecc_config(), ctx));
+                let loader = Halo2Loader::<G1Affine>::new(config.ecc_config(), ctx);
                 let mut stretagy = SameCurveAccumulation::default();
                 for snark in self.snarks.iter() {
-                    Self::accumulate(&loader, &mut stretagy, snark)?;
+                    accumulate(&loader, &mut stretagy, snark)?;
                 }
                 let (lhs, rhs) = stretagy.finalize(self.g1);
 
@@ -249,9 +268,19 @@ fn test_shplonk_halo2_one_layer_accumulation() {
     const N: usize = 1;
 
     let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx)).collect();
-    let (params, protocol, instances, proof) = halo2_prepare!(
+    let (params, pk, protocol, circuits) = halo2_prepare!(
         [kzg],
-        K, N, Some(accumulator_indices), OneLayerAccumulation,
+        K,
+        N,
+        Some(accumulator_indices),
+        OneLayerAccumulation::two_snark()
+    );
+    let snark = halo2_create_snark!(
+        [kzg],
+        &params,
+        &pk,
+        &protocol,
+        &circuits,
         ProverSHPLONK<_>,
         VerifierSHPLONK<_>,
         BatchVerifier<_, _>,
@@ -259,13 +288,12 @@ fn test_shplonk_halo2_one_layer_accumulation() {
         Blake2bRead<_, _, _>,
         Challenge255<_>
     );
-
     halo2_native_verify!(
         [kzg],
         params,
-        protocol,
-        instances,
-        ShplonkAccumulationScheme::default(),
-        Blake2bRead::<_, G1Affine, _>::init(proof.as_slice())
+        &snark.protocol,
+        snark.statements,
+        ShplonkAccumulationScheme,
+        &mut Blake2bRead::<_, G1Affine, _>::init(snark.proof.as_slice())
     );
 }

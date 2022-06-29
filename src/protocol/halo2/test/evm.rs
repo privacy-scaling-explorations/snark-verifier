@@ -1,5 +1,5 @@
 use crate::{
-    collect_slice, halo2_native_verify, halo2_prepare,
+    collect_slice, halo2_create_snark, halo2_native_verify, halo2_prepare,
     loader::evm::EvmTranscript,
     protocol::halo2::{
         test::{halo2::OneLayerAccumulation, MainGateWithRange, StandardPlonk, LIMBS},
@@ -11,9 +11,10 @@ use halo2_proofs::poly::kzg::{
     multiopen::{ProverGWC, VerifierGWC},
     strategy::BatchVerifier,
 };
+use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 macro_rules! halo2_evm_verify {
-    ($params:expr, $protocol:expr, $instances:expr, $proof:expr, $accumulator:expr) => {{
+    ($params:expr, $protocol:expr, $statements:expr, $proof:expr, $scheme:ty) => {{
         use halo2_curves::bn256::{Fq, Fr};
         use halo2_proofs::poly::commitment::ParamsProver;
         use std::{iter, rc::Rc};
@@ -26,7 +27,7 @@ macro_rules! halo2_evm_verify {
 
         let loader = EvmLoader::new::<Fq, Fr>();
         let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
-        let statements = $instances
+        let statements = $statements
             .iter()
             .map(|instance| {
                 iter::repeat_with(|| transcript.read_scalar().unwrap())
@@ -35,17 +36,16 @@ macro_rules! halo2_evm_verify {
             })
             .collect::<Vec<_>>();
         let mut strategy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
-        $accumulator
-            .accumulate(
-                &$protocol,
-                &loader,
-                statements,
-                &mut transcript,
-                &mut strategy,
-            )
-            .unwrap();
+        <$scheme>::accumulate(
+            $protocol,
+            &loader,
+            statements,
+            &mut transcript,
+            &mut strategy,
+        )
+        .unwrap();
         let code = strategy.code($params.get_g()[0], $params.g2(), $params.s_g2());
-        let (accept, gas) = execute(code, encode_calldata($instances, $proof));
+        let (accept, gas) = execute(code, encode_calldata($statements, $proof));
         dbg!(gas);
         assert!(accept);
     }};
@@ -56,9 +56,19 @@ fn test_plonk_evm_main_gate_with_range() {
     const K: u32 = 9;
     const N: usize = 1;
 
-    let (params, protocol, instances, proof) = halo2_prepare!(
+    let (params, pk, protocol, circuits) = halo2_prepare!(
         [kzg],
-        K, N, None, MainGateWithRange::<_>,
+        K,
+        N,
+        None,
+        MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+    );
+    let snark = halo2_create_snark!(
+        [kzg],
+        &params,
+        &pk,
+        &protocol,
+        &circuits,
         ProverGWC<_>,
         VerifierGWC<_>,
         BatchVerifier<_, _>,
@@ -66,22 +76,20 @@ fn test_plonk_evm_main_gate_with_range() {
         EvmTranscript<_, _, _, _>,
         ChallengeEvm<_>
     );
-
     halo2_native_verify!(
         [kzg],
         params,
-        protocol,
-        instances.clone(),
-        PlonkAccumulationScheme::default(),
-        EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
+        &snark.protocol,
+        snark.statements.clone(),
+        PlonkAccumulationScheme,
+        &mut EvmTranscript::<_, NativeLoader, _, _>::new(snark.proof.as_slice())
     );
-
     halo2_evm_verify!(
         params,
-        protocol,
-        instances,
-        proof,
-        PlonkAccumulationScheme::default()
+        &snark.protocol,
+        snark.statements,
+        snark.proof,
+        PlonkAccumulationScheme
     );
 }
 
@@ -90,9 +98,19 @@ fn test_plonk_evm_standard_plonk() {
     const K: u32 = 9;
     const N: usize = 1;
 
-    let (params, protocol, instances, proof) = halo2_prepare!(
+    let (params, pk, protocol, circuits) = halo2_prepare!(
         [kzg],
-        K, N, None, StandardPlonk::<_>,
+        K,
+        N,
+        None,
+        StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+    );
+    let snark = halo2_create_snark!(
+        [kzg],
+        &params,
+        &pk,
+        &protocol,
+        &circuits,
         ProverGWC<_>,
         VerifierGWC<_>,
         BatchVerifier<_, _>,
@@ -100,22 +118,20 @@ fn test_plonk_evm_standard_plonk() {
         EvmTranscript<_, _, _, _>,
         ChallengeEvm<_>
     );
-
     halo2_native_verify!(
         [kzg],
         params,
-        protocol,
-        instances.clone(),
-        PlonkAccumulationScheme::default(),
-        EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
+        &snark.protocol,
+        snark.statements.clone(),
+        PlonkAccumulationScheme,
+        &mut EvmTranscript::<_, NativeLoader, _, _>::new(snark.proof.as_slice())
     );
-
     halo2_evm_verify!(
         params,
-        protocol,
-        instances,
-        proof,
-        PlonkAccumulationScheme::default()
+        &snark.protocol,
+        snark.statements,
+        snark.proof,
+        PlonkAccumulationScheme
     );
 }
 
@@ -126,9 +142,19 @@ fn test_plonk_evm_one_layer_accumulation() {
     const N: usize = 1;
 
     let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx)).collect();
-    let (params, protocol, instances, proof) = halo2_prepare!(
+    let (params, pk, protocol, circuits) = halo2_prepare!(
         [kzg],
-        K, N, Some(accumulator_indices), OneLayerAccumulation,
+        K,
+        N,
+        Some(accumulator_indices),
+        OneLayerAccumulation::two_snark()
+    );
+    let snark = halo2_create_snark!(
+        [kzg],
+        &params,
+        &pk,
+        &protocol,
+        &circuits,
         ProverGWC<_>,
         VerifierGWC<_>,
         BatchVerifier<_, _>,
@@ -136,21 +162,19 @@ fn test_plonk_evm_one_layer_accumulation() {
         EvmTranscript<_, _, _, _>,
         ChallengeEvm<_>
     );
-
     halo2_native_verify!(
         [kzg],
         params,
-        protocol,
-        instances.clone(),
-        PlonkAccumulationScheme::default(),
-        EvmTranscript::<_, NativeLoader, _, _>::new(proof.as_slice())
+        &snark.protocol,
+        snark.statements.clone(),
+        PlonkAccumulationScheme,
+        &mut EvmTranscript::<_, NativeLoader, _, _>::new(snark.proof.as_slice())
     );
-
     halo2_evm_verify!(
         params,
-        protocol,
-        instances,
-        proof,
-        PlonkAccumulationScheme::default()
+        &snark.protocol,
+        snark.statements,
+        snark.proof,
+        PlonkAccumulationScheme
     );
 }

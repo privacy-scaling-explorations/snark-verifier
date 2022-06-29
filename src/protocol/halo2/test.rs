@@ -1,10 +1,14 @@
+use crate::{
+    protocol::Protocol,
+    util::{Curve, Group},
+};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{floor_planner::V1, Layouter, Value},
     dev::MockProver,
     plonk::{
-        create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Any, Circuit, Column,
-        ConstraintSystem, Error, Fixed, Instance, VerifyingKey,
+        create_proof, verify_proof, Advice, Any, Circuit, Column, ConstraintSystem, Error, Fixed,
+        Instance, ProvingKey,
     },
     poly::{
         commitment::{CommitmentScheme, Params, ParamsProver, Prover, Verifier},
@@ -171,20 +175,20 @@ impl MainGateWithRangeConfig {
         EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
 
-    fn configure<F: FieldExt>(
-        meta: &mut ConstraintSystem<F>,
-        fine_tune_bits: Vec<usize>,
-    ) -> Self {
+    fn configure<F: FieldExt>(meta: &mut ConstraintSystem<F>, fine_tune_bits: Vec<usize>) -> Self {
         let main_gate_config = MainGate::<F>::configure(meta);
-        let range_config =
-            RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bits);
+        let range_config = RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bits);
         MainGateWithRangeConfig {
             main_gate_config,
             range_config,
         }
     }
 
-    fn load_table<F: FieldExt>(&self, layouter: &mut impl Layouter<F>, dense_limb_bits: usize) -> Result<(), Error> {
+    fn load_table<F: FieldExt>(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        dense_limb_bits: usize,
+    ) -> Result<(), Error> {
         let range_chip = RangeChip::<F>::new(self.range_config.clone(), dense_limb_bits);
         range_chip.load_table(layouter)?;
         Ok(())
@@ -258,12 +262,33 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
     }
 }
 
-pub fn gen_vk_and_proof<'a, S, C, P, V, VS, TW, TR, E, R>(
+pub struct Snark<C: Curve> {
+    protocol: Protocol<C>,
+    statements: Vec<Vec<<C as Group>::Scalar>>,
+    proof: Vec<u8>,
+}
+
+impl<C: Curve> Snark<C> {
+    pub fn new(
+        protocol: Protocol<C>,
+        statements: Vec<Vec<<C as Group>::Scalar>>,
+        proof: Vec<u8>,
+    ) -> Self {
+        Snark {
+            protocol,
+            statements,
+            proof,
+        }
+    }
+}
+
+pub fn create_proof_checked<'a, S, C, P, V, VS, TW, TR, E, R>(
     params: &'a S::ParamsProver,
+    pk: &ProvingKey<S::Curve>,
     circuits: &[C],
     instances: &[&[&[S::Scalar]]],
     mut rng: R,
-) -> (VerifyingKey<S::Curve>, Vec<u8>)
+) -> Vec<u8>
 where
     S: CommitmentScheme,
     S::ParamsVerifier: 'a,
@@ -286,14 +311,11 @@ where
         .assert_satisfied();
     }
 
-    let vk = keygen_vk::<S, _>(params, &circuits[0]).unwrap();
-    let pk = keygen_pk::<S, _>(params, vk.clone(), &circuits[0]).unwrap();
-
     let proof = {
         let mut transcript = TW::init(Vec::new());
         create_proof::<S, P, _, _, _, _>(
             params,
-            &pk,
+            pk,
             circuits,
             instances,
             &mut rng,
@@ -307,58 +329,38 @@ where
         let params = params.verifier_params();
         let strategy = VS::new(params, rng);
         let mut transcript = TR::init(Box::leak(Box::new(proof.clone())));
-        verify_proof(params, &vk, strategy, instances, &mut transcript)
+        verify_proof(params, pk.get_vk(), strategy, instances, &mut transcript)
             .unwrap()
             .finalize()
     };
     assert!(accept);
 
-    (vk, proof)
+    proof
 }
 
 #[macro_export]
 macro_rules! halo2_prepare {
-    ([kzg], $k:expr, $n:expr, $accumulator_indices:expr, $circuit:ty, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
+    ([kzg], $k:ident, $n:ident, $accumulator_indices:expr, $create_circuit:expr) => {{
         use halo2_curves::bn256::{Bn256, G1};
-        use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
-        use rand::SeedableRng;
-        use rand_chacha::ChaCha20Rng;
+        use halo2_proofs::{
+            plonk::{keygen_pk, keygen_vk},
+            poly::kzg::commitment::KZGCommitmentScheme,
+        };
         use std::{collections::BTreeSet, iter};
         use $crate::{
-            protocol::halo2::{
-                compile,
-                test::{gen_vk_and_proof, read_or_create_srs},
-            },
+            protocol::halo2::{compile, test::read_or_create_srs},
             util::GroupEncoding,
         };
 
-        let params = read_or_create_srs::<KZGCommitmentScheme<Bn256>>("kzg", $k);
-
-        let mut rng = ChaCha20Rng::from_seed(Default::default());
-        let circuits = iter::repeat_with(|| <$circuit>::rand(&mut rng))
+        let circuits = iter::repeat_with(|| $create_circuit)
             .take($n)
             .collect::<Vec<_>>();
-        let instances = circuits
-            .iter()
-            .map(<$circuit>::instances)
-            .collect::<Vec<_>>();
 
-        let (vk, proof) = {
-            collect_slice!(instances, 2);
-            gen_vk_and_proof::<
-                KZGCommitmentScheme<_>,
-                _,
-                $prover,
-                $verifier,
-                $verification_strategy,
-                $transcript_read,
-                $transcript_write,
-                $encoded_challenge,
-                _,
-            >(&params, &circuits, &instances, &mut rng)
-        };
+        let params = read_or_create_srs::<KZGCommitmentScheme<Bn256>>("kzg", $k);
+        let vk = keygen_vk::<KZGCommitmentScheme<_>, _>(&params, &circuits[0]).unwrap();
+        let pk = keygen_pk::<KZGCommitmentScheme<_>, _>(&params, vk, &circuits[0]).unwrap();
 
-        let protocol = compile::<G1>(&vk, N, $accumulator_indices);
+        let protocol = compile::<G1>(pk.get_vk(), N, $accumulator_indices);
 
         assert_eq!(
             protocol.preprocessed.len(),
@@ -373,9 +375,45 @@ macro_rules! halo2_prepare {
             .len()
         );
 
-        (
-            params,
-            protocol,
+        (params, pk, protocol, circuits)
+    }};
+}
+
+#[macro_export]
+macro_rules! halo2_create_snark {
+    ([kzg], $params:expr, $pk:expr, $protocol:expr, $circuits:expr, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
+        use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha20Rng;
+        use $crate::protocol::halo2::test::{create_proof_checked, Snark};
+
+        let instances = $circuits
+            .iter()
+            .map(|circuit| circuit.instances())
+            .collect::<Vec<_>>();
+        let proof = {
+            collect_slice!(instances, 2);
+            create_proof_checked::<
+                KZGCommitmentScheme<_>,
+                _,
+                $prover,
+                $verifier,
+                $verification_strategy,
+                $transcript_read,
+                $transcript_write,
+                $encoded_challenge,
+                _,
+            >(
+                $params,
+                $pk,
+                $circuits,
+                &instances,
+                &mut ChaCha20Rng::from_seed(Default::default()),
+            )
+        };
+
+        Snark::new(
+            $protocol.clone(),
             instances.into_iter().flatten().collect::<Vec<_>>(),
             proof,
         )
@@ -384,24 +422,23 @@ macro_rules! halo2_prepare {
 
 #[macro_export]
 macro_rules! halo2_native_accumulate {
-    ([kzg], $protocol:ident, $statements:expr, $scheme:expr, $transcript:expr, $stretagy:expr) => {{
+    ([kzg], $protocol:expr, $statements:expr, $scheme:ty, $transcript:expr, $stretagy:expr) => {{
         use $crate::{loader::native::NativeLoader, scheme::kzg::AccumulationScheme};
 
-        $scheme
-            .accumulate(
-                &$protocol,
-                &NativeLoader,
-                $statements,
-                &mut $transcript,
-                &mut $stretagy,
-            )
-            .unwrap();
+        <$scheme>::accumulate(
+            $protocol,
+            &NativeLoader,
+            $statements,
+            $transcript,
+            $stretagy,
+        )
+        .unwrap();
     }};
 }
 
 #[macro_export]
 macro_rules! halo2_native_verify {
-    ([kzg], $params:ident, $protocol:ident, $statements:expr, $scheme:expr, $transcript:expr) => {{
+    ([kzg], $params:ident, $protocol:expr, $statements:expr, $scheme:ty, $transcript:expr) => {{
         use halo2_curves::bn256::Bn256;
         use halo2_proofs::poly::commitment::ParamsProver;
         use $crate::{
@@ -417,7 +454,7 @@ macro_rules! halo2_native_verify {
             $statements,
             $scheme,
             $transcript,
-            stretagy
+            &mut stretagy
         );
 
         assert!(stretagy.decide::<Bn256>($params.get_g()[0], $params.g2(), $params.s_g2()));

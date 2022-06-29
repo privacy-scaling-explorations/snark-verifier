@@ -44,16 +44,16 @@ pub struct Halo2Loader<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: u
 impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
     Halo2Loader<'a, 'b, C, LIMBS, BITS>
 {
-    pub fn new(ecc_config: EccConfig, ctx: RegionCtx<'a, 'b, C::Scalar>) -> Self {
+    pub fn new(ecc_config: EccConfig, ctx: RegionCtx<'a, 'b, C::Scalar>) -> Rc<Self> {
         let ecc_chip = BaseFieldEccChip::new(ecc_config);
         let main_gate = ecc_chip.main_gate();
-        Self {
+        Rc::new(Self {
             rns: Rc::new(Rns::construct()),
             ecc_chip: RefCell::new(ecc_chip),
             main_gate,
             ctx: RefCell::new(ctx),
             num_ec_point: RefCell::new(0),
-        }
+        })
     }
 
     pub fn rns(&self) -> Rc<Rns<C::Base, C::Scalar, LIMBS, BITS>> {

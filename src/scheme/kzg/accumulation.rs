@@ -20,7 +20,6 @@ where
     type Proof;
 
     fn accumulate(
-        &self,
         protocol: &Protocol<C>,
         loader: &L,
         statements: Vec<Vec<L::LoadedScalar>>,
