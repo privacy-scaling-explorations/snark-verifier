@@ -2,7 +2,7 @@ use crate::{
     collect_slice, halo2_create_snark, halo2_native_verify, halo2_prepare,
     loader::evm::EvmTranscript,
     protocol::halo2::{
-        test::{halo2::OneLayerAccumulation, MainGateWithRange, StandardPlonk, LIMBS},
+        test::{halo2::Accumulation, MainGateWithRange, StandardPlonk, LIMBS},
         util::evm::ChallengeEvm,
     },
     scheme::kzg::PlonkAccumulationScheme,
@@ -137,7 +137,7 @@ fn test_plonk_evm_standard_plonk() {
 
 #[test]
 #[ignore = "cause it requires 64GB ram to run"]
-fn test_plonk_evm_one_layer_accumulation() {
+fn test_plonk_evm_accumulation_two_snark() {
     const K: u32 = 21;
     const N: usize = 1;
 
@@ -147,7 +147,51 @@ fn test_plonk_evm_one_layer_accumulation() {
         K,
         N,
         Some(accumulator_indices),
-        OneLayerAccumulation::two_snark()
+        Accumulation::two_snark()
+    );
+    let snark = halo2_create_snark!(
+        [kzg],
+        &params,
+        &pk,
+        &protocol,
+        &circuits,
+        ProverGWC<_>,
+        VerifierGWC<_>,
+        BatchVerifier<_, _>,
+        EvmTranscript<_, _, _, _>,
+        EvmTranscript<_, _, _, _>,
+        ChallengeEvm<_>
+    );
+    halo2_native_verify!(
+        [kzg],
+        params,
+        &snark.protocol,
+        snark.statements.clone(),
+        PlonkAccumulationScheme,
+        &mut EvmTranscript::<_, NativeLoader, _, _>::new(snark.proof.as_slice())
+    );
+    halo2_evm_verify!(
+        params,
+        &snark.protocol,
+        snark.statements,
+        snark.proof,
+        PlonkAccumulationScheme
+    );
+}
+
+#[test]
+#[ignore = "cause it requires 128GB ram to run"]
+fn test_plonk_evm_accumulation_two_snark_with_accumulator() {
+    const K: u32 = 22;
+    const N: usize = 1;
+
+    let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx)).collect();
+    let (params, pk, protocol, circuits) = halo2_prepare!(
+        [kzg],
+        K,
+        N,
+        Some(accumulator_indices),
+        Accumulation::two_snark_with_accumulator()
     );
     let snark = halo2_create_snark!(
         [kzg],

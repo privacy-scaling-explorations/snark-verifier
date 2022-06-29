@@ -106,13 +106,13 @@ pub fn accumulate<'a, 'b>(
     Ok(())
 }
 
-pub struct OneLayerAccumulation {
+pub struct Accumulation {
     g1: G1Affine,
     snarks: Vec<SnarkWitness<G1>>,
     instances: Vec<Fr>,
 }
 
-impl OneLayerAccumulation {
+impl Accumulation {
     pub fn two_snark() -> Self {
         const K: u32 = 9;
         const N: usize = 1;
@@ -199,12 +199,61 @@ impl OneLayerAccumulation {
         }
     }
 
+    pub fn two_snark_with_accumulator() -> Self {
+        const K: u32 = 21;
+        const N: usize = 2;
+
+        let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx)).collect();
+        let (params, pk, protocol, circuits) =
+            halo2_prepare!([kzg], K, N, Some(accumulator_indices), Self::two_snark());
+        let snark = halo2_create_snark!(
+            [kzg],
+            &params,
+            &pk,
+            &protocol,
+            &circuits,
+            ProverSHPLONK<_>,
+            VerifierSHPLONK<_>,
+            BatchVerifier<_, _>,
+            PoseidonTranscript<_, _, _, _>,
+            PoseidonTranscript<_, _, _, _>,
+            ChallengeScalar<_>
+        );
+
+        let mut strategy = SameCurveAccumulation::<G1, NativeLoader>::default();
+        halo2_native_accumulate!(
+            [kzg],
+            &snark.protocol,
+            snark.statements.clone(),
+            ShplonkAccumulationScheme,
+            &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark.proof.as_slice()),
+            &mut strategy
+        );
+
+        let g1 = params.get_g()[0];
+        let accumulator = strategy.finalize(g1.to_curve());
+        let instances = [
+            accumulator.0.to_affine().x,
+            accumulator.0.to_affine().y,
+            accumulator.1.to_affine().x,
+            accumulator.1.to_affine().y,
+        ]
+        .map(fe_to_limbs::<_, _, LIMBS, BITS>)
+        .concat();
+
+        Self {
+            g1,
+            snarks: vec![snark.into()],
+            instances,
+        }
+    }
+
     pub fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.instances.clone()]
     }
 }
 
-impl Circuit<Fr> for OneLayerAccumulation {
+impl Circuit<Fr> for Accumulation {
     type Config = MainGateWithRangeConfig;
     type FloorPlanner = V1;
 
@@ -263,7 +312,7 @@ impl Circuit<Fr> for OneLayerAccumulation {
 
 #[test]
 #[ignore = "cause it requires 64GB ram to run"]
-fn test_shplonk_halo2_one_layer_accumulation() {
+fn test_shplonk_halo2_accumulation_two_snark() {
     const K: u32 = 21;
     const N: usize = 1;
 
@@ -273,7 +322,44 @@ fn test_shplonk_halo2_one_layer_accumulation() {
         K,
         N,
         Some(accumulator_indices),
-        OneLayerAccumulation::two_snark()
+        Accumulation::two_snark()
+    );
+    let snark = halo2_create_snark!(
+        [kzg],
+        &params,
+        &pk,
+        &protocol,
+        &circuits,
+        ProverSHPLONK<_>,
+        VerifierSHPLONK<_>,
+        BatchVerifier<_, _>,
+        Blake2bWrite<_, _, _>,
+        Blake2bRead<_, _, _>,
+        Challenge255<_>
+    );
+    halo2_native_verify!(
+        [kzg],
+        params,
+        &snark.protocol,
+        snark.statements,
+        ShplonkAccumulationScheme,
+        &mut Blake2bRead::<_, G1Affine, _>::init(snark.proof.as_slice())
+    );
+}
+
+#[test]
+#[ignore = "cause it requires 128GB ram to run"]
+fn test_shplonk_halo2_accumulation_two_snark_with_accumulator() {
+    const K: u32 = 22;
+    const N: usize = 1;
+
+    let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx)).collect();
+    let (params, pk, protocol, circuits) = halo2_prepare!(
+        [kzg],
+        K,
+        N,
+        Some(accumulator_indices),
+        Accumulation::two_snark_with_accumulator()
     );
     let snark = halo2_create_snark!(
         [kzg],
