@@ -1,5 +1,5 @@
 use crate::{
-    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
+    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
     util::{Curve, FieldOps, PrimeField},
 };
 use lazy_static::lazy_static;
@@ -57,3 +57,5 @@ impl<F: PrimeField> ScalarLoader<F> for NativeLoader {
         *value
     }
 }
+
+impl<C: Curve> Loader<C> for NativeLoader {}

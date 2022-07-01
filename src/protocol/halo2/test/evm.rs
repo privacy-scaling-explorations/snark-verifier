@@ -2,14 +2,19 @@ use crate::{
     collect_slice, halo2_create_snark, halo2_native_verify, halo2_prepare,
     loader::evm::EvmTranscript,
     protocol::halo2::{
-        test::{halo2::Accumulation, MainGateWithRange, StandardPlonk, LIMBS},
+        test::{halo2::Accumulation, read_or_create_srs, MainGateWithRange, StandardPlonk, LIMBS},
         util::evm::ChallengeEvm,
     },
     scheme::kzg::PlonkAccumulationScheme,
 };
-use halo2_proofs::poly::kzg::{
-    multiopen::{ProverGWC, VerifierGWC},
-    strategy::BatchVerifier,
+use halo2_curves::bn256::Bn256;
+use halo2_proofs::poly::{
+    commitment::ParamsProver,
+    kzg::{
+        commitment::KZGCommitmentScheme,
+        multiopen::{ProverGWC, VerifierGWC},
+        strategy::BatchVerifier,
+    },
 };
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
@@ -45,14 +50,15 @@ macro_rules! halo2_evm_verify {
         )
         .unwrap();
         let code = strategy.code($params.get_g()[0], $params.g2(), $params.s_g2());
-        let (accept, gas) = execute(code, encode_calldata($statements, $proof));
-        dbg!(gas);
+        let (accept, total_cost, costs) = execute(code, encode_calldata($statements, $proof));
+        loader.print_gas_metering(costs);
+        println!("Total: {}", total_cost);
         assert!(accept);
     }};
 }
 
 #[test]
-fn test_plonk_evm_main_gate_with_range() {
+fn test_plonk_evm_standard_plonk() {
     const K: u32 = 9;
     const N: usize = 1;
 
@@ -61,7 +67,7 @@ fn test_plonk_evm_main_gate_with_range() {
         K,
         N,
         None,
-        MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+        StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
     );
     let snark = halo2_create_snark!(
         [kzg],
@@ -94,16 +100,18 @@ fn test_plonk_evm_main_gate_with_range() {
 }
 
 #[test]
-fn test_plonk_evm_standard_plonk() {
+fn test_plonk_evm_main_gate_with_range_with_mock_accumulator() {
     const K: u32 = 9;
     const N: usize = 1;
 
-    let (params, pk, protocol, circuits) = halo2_prepare!(
+    let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx + 1)).collect();
+    let params = read_or_create_srs::<KZGCommitmentScheme<Bn256>>("kzg", K);
+    let (_, pk, protocol, circuits) = halo2_prepare!(
         [kzg],
         K,
         N,
-        None,
-        StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+        Some(accumulator_indices),
+        MainGateWithRange::<_>::with_mock_accumulator(params.get_g()[0], params.get_g()[1])
     );
     let snark = halo2_create_snark!(
         [kzg],

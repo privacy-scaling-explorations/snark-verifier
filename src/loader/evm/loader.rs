@@ -3,7 +3,7 @@ use crate::{
         code::{Code, Precompiled},
         modulus,
     },
-    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
+    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
     util::{Curve, FieldOps, PrimeField, UncompressedEncoding},
 };
 use ethereum_types::{U256, U512};
@@ -27,6 +27,8 @@ pub struct EvmLoader {
     scalar_modulus: U256,
     code: RefCell<Code>,
     ptr: RefCell<usize>,
+    #[cfg(test)]
+    gas_metering_ids: RefCell<Vec<String>>,
 }
 
 impl EvmLoader {
@@ -45,6 +47,8 @@ impl EvmLoader {
             scalar_modulus,
             code: RefCell::new(code),
             ptr: RefCell::new(0),
+            #[cfg(test)]
+            gas_metering_ids: RefCell::new(Vec::new()),
         })
     }
 
@@ -511,6 +515,36 @@ impl EvmLoader {
     }
 }
 
+#[cfg(test)]
+impl EvmLoader {
+    fn start_gas_metering(self: &Rc<Self>, identifier: &str) {
+        self.gas_metering_ids
+            .borrow_mut()
+            .push(identifier.to_string());
+        self.code.borrow_mut().gas().swap(1);
+    }
+
+    fn end_gas_metering(self: &Rc<Self>) {
+        self.code
+            .borrow_mut()
+            .swap(1)
+            .push(9)
+            .gas()
+            .swap(2)
+            .sub()
+            .sub()
+            .push(0)
+            .push(0)
+            .log1();
+    }
+
+    pub fn print_gas_metering(self: &Rc<Self>, costs: Vec<u64>) {
+        for (identifier, cost) in self.gas_metering_ids.borrow().iter().zip(costs) {
+            println!("{}: {}", identifier, cost);
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct EcPoint {
     loader: Rc<EvmLoader>,
@@ -851,5 +885,21 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
         self.scalar(Value::Constant(U256::from_little_endian(
             value.to_repr().as_slice(),
         )))
+    }
+}
+
+impl<C> Loader<C> for Rc<EvmLoader>
+where
+    C: Curve + UncompressedEncoding<Uncompressed = [u8; 0x40]>,
+    C::Scalar: PrimeField<Repr = [u8; 0x20]>,
+{
+    #[cfg(test)]
+    fn start_cost_metering(&self, identifier: &str) {
+        self.start_gas_metering(identifier)
+    }
+
+    #[cfg(test)]
+    fn end_cost_metering(&self) {
+        self.end_gas_metering()
     }
 }

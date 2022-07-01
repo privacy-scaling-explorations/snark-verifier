@@ -69,7 +69,7 @@ impl<
         stream: circuit::Value<R>,
     ) -> Self {
         let transcript_chip = TranscriptChip::new(
-            &mut loader.ctx().borrow_mut(),
+            &mut loader.ctx_mut(),
             &Spec::new(R_F, R_P),
             loader.ecc_chip().clone(),
         )
@@ -112,10 +112,7 @@ impl<
     >
 {
     fn squeeze_challenge(&mut self) -> Scalar<'a, 'b, C, LIMBS, BITS> {
-        let assigned = self
-            .buf
-            .squeeze(&mut self.loader.ctx().borrow_mut())
-            .unwrap();
+        let assigned = self.buf.squeeze(&mut self.loader.ctx_mut()).unwrap();
         self.loader.scalar(Value::Assigned(assigned))
     }
 
@@ -126,7 +123,7 @@ impl<
 
     fn common_ec_point(&mut self, ec_point: &EcPoint<'a, 'b, C, LIMBS, BITS>) -> Result<(), Error> {
         self.buf
-            .write_point(&mut self.loader.ctx().borrow_mut(), &ec_point.assigned())
+            .write_point(&mut self.loader.ctx_mut(), &ec_point.assigned())
             .unwrap();
         Ok(())
     }

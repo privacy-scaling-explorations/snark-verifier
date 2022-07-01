@@ -145,6 +145,8 @@ pub trait ScalarLoader<F: PrimeField> {
     }
 }
 
-pub trait Loader<C: Curve>: EcPointLoader<C> + ScalarLoader<C::Scalar> + Clone {}
+pub trait Loader<C: Curve>: EcPointLoader<C> + ScalarLoader<C::Scalar> + Clone {
+    fn start_cost_metering(&self, _: &str) {}
 
-impl<C: Curve, T: EcPointLoader<C> + ScalarLoader<C::Scalar> + Clone> Loader<C> for T {}
+    fn end_cost_metering(&self) {}
+}

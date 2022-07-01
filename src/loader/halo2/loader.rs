@@ -1,5 +1,5 @@
 use crate::{
-    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, ScalarLoader},
+    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
     util::{Curve, Field, FieldOps, Group},
 };
 use halo2_curves::CurveAffine;
@@ -20,7 +20,7 @@ use std::{
     cell::RefCell,
     fmt::{self, Debug},
     iter,
-    ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Deref, DerefMut, Mul, MulAssign, Neg, Sub, SubAssign},
     rc::Rc,
 };
 
@@ -39,6 +39,8 @@ pub struct Halo2Loader<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: u
     main_gate: MainGate<C::Scalar>,
     ctx: RefCell<RegionCtx<'a, 'b, C::Scalar>>,
     num_ec_point: RefCell<usize>,
+    #[cfg(test)]
+    row_meterings: RefCell<Vec<(String, usize)>>,
 }
 
 impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
@@ -53,6 +55,8 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
             main_gate,
             ctx: RefCell::new(ctx),
             num_ec_point: RefCell::new(0),
+            #[cfg(test)]
+            row_meterings: RefCell::new(Vec::new()),
         })
     }
 
@@ -64,8 +68,8 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         self.ecc_chip.borrow()
     }
 
-    pub fn ctx(&self) -> &RefCell<RegionCtx<'a, 'b, C::Scalar>> {
-        &self.ctx
+    pub(super) fn ctx_mut(&self) -> impl DerefMut<Target = RegionCtx<'a, 'b, C::Scalar>> + '_ {
+        self.ctx.borrow_mut()
     }
 
     pub fn assign_const_scalar(
@@ -74,7 +78,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
     ) -> Scalar<'a, 'b, C, LIMBS, BITS> {
         let assigned = self
             .main_gate
-            .assign_constant(&mut self.ctx.borrow_mut(), scalar)
+            .assign_constant(&mut self.ctx_mut(), scalar)
             .unwrap();
         self.scalar(Value::Assigned(assigned))
     }
@@ -85,7 +89,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
     ) -> Scalar<'a, 'b, C, LIMBS, BITS> {
         let assigned = self
             .main_gate
-            .assign_value(&mut self.ctx.borrow_mut(), &scalar.into())
+            .assign_value(&mut self.ctx_mut(), &scalar.into())
             .unwrap();
         self.scalar(Value::Assigned(assigned))
     }
@@ -104,7 +108,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         let assigned = self
             .ecc_chip
             .borrow()
-            .assign_constant(&mut self.ctx.borrow_mut(), ec_point)
+            .assign_constant(&mut self.ctx_mut(), ec_point)
             .unwrap();
         self.ec_point(assigned)
     }
@@ -116,7 +120,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         let assigned = self
             .ecc_chip
             .borrow()
-            .assign_point(&mut self.ctx.borrow_mut(), ec_point)
+            .assign_point(&mut self.ctx_mut(), ec_point)
             .unwrap();
         self.ec_point(assigned)
     }
@@ -143,7 +147,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
                     .borrow()
                     .integer_chip()
                     .assign_integer(
-                        &mut self.ctx().borrow_mut(),
+                        &mut self.ctx_mut(),
                         limbs
                             .map(|limbs| Integer::from_limbs(&limbs, self.rns.clone()))
                             .into(),
@@ -154,7 +158,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
 
         let ec_point = AssignedPoint::new(x, y);
         self.ecc_chip()
-            .assert_is_on_curve(&mut self.ctx().borrow_mut(), &ec_point)
+            .assert_is_on_curve(&mut self.ctx_mut(), &ec_point)
             .unwrap();
 
         for (src, dst) in x_limbs.iter().chain(y_limbs.iter()).zip(
@@ -191,7 +195,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         assigned: &AssignedPoint<C::Base, C::Scalar, LIMBS, BITS>,
     ) -> AssignedPoint<C::Base, C::Scalar, LIMBS, BITS> {
         self.ecc_chip()
-            .normalize(&mut self.ctx.borrow_mut(), assigned)
+            .normalize(&mut self.ctx_mut(), assigned)
             .unwrap()
     }
 
@@ -206,7 +210,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
             | (Value::Constant(constant), Value::Assigned(assigned)) => {
                 MainGateInstructions::add_constant(
                     &self.main_gate,
-                    &mut self.ctx.borrow_mut(),
+                    &mut self.ctx_mut(),
                     assigned,
                     *constant,
                 )
@@ -214,7 +218,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
                 .unwrap()
             }
             (Value::Assigned(lhs), Value::Assigned(rhs)) => {
-                MainGateInstructions::add(&self.main_gate, &mut self.ctx.borrow_mut(), lhs, rhs)
+                MainGateInstructions::add(&self.main_gate, &mut self.ctx_mut(), lhs, rhs)
                     .map(Value::Assigned)
                     .unwrap()
             }
@@ -232,7 +236,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
             (Value::Constant(constant), Value::Assigned(assigned)) => {
                 MainGateInstructions::neg_with_constant(
                     &self.main_gate,
-                    &mut self.ctx.borrow_mut(),
+                    &mut self.ctx_mut(),
                     assigned,
                     *constant,
                 )
@@ -242,7 +246,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
             (Value::Assigned(assigned), Value::Constant(constant)) => {
                 MainGateInstructions::add_constant(
                     &self.main_gate,
-                    &mut self.ctx.borrow_mut(),
+                    &mut self.ctx_mut(),
                     assigned,
                     constant.neg(),
                 )
@@ -250,7 +254,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
                 .unwrap()
             }
             (Value::Assigned(lhs), Value::Assigned(rhs)) => {
-                MainGateInstructions::sub(&self.main_gate, &mut self.ctx.borrow_mut(), lhs, rhs)
+                MainGateInstructions::sub(&self.main_gate, &mut self.ctx_mut(), lhs, rhs)
                     .map(Value::Assigned)
                     .unwrap()
             }
@@ -273,7 +277,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
                     Term::unassigned_to_sub(assigned.value().map(|assigned| assigned * constant));
                 MainGateInstructions::apply(
                     &self.main_gate,
-                    &mut self.ctx.borrow_mut(),
+                    &mut self.ctx_mut(),
                     &terms,
                     C::Scalar::zero(),
                     CombinationOptionCommon::OneLinerAdd.into(),
@@ -282,7 +286,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
                 .unwrap()
             }
             (Value::Assigned(lhs), Value::Assigned(rhs)) => {
-                MainGateInstructions::mul(&self.main_gate, &mut self.ctx.borrow_mut(), lhs, rhs)
+                MainGateInstructions::mul(&self.main_gate, &mut self.ctx_mut(), lhs, rhs)
                     .map(Value::Assigned)
                     .unwrap()
             }
@@ -298,7 +302,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
             Value::Constant(constant) => Value::Constant(constant.neg()),
             Value::Assigned(assigned) => MainGateInstructions::neg_with_constant(
                 &self.main_gate,
-                &mut self.ctx.borrow_mut(),
+                &mut self.ctx_mut(),
                 assigned,
                 C::Scalar::zero(),
             )
@@ -315,19 +319,39 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         let output = match &scalar.value {
             Value::Constant(constant) => Value::Constant(Field::invert(constant).unwrap()),
             Value::Assigned(assigned) => {
-                let (inv, non_invertable) = MainGateInstructions::invert(
-                    &self.main_gate,
-                    &mut self.ctx.borrow_mut(),
-                    assigned,
-                )
-                .unwrap();
+                let (inv, non_invertable) =
+                    MainGateInstructions::invert(&self.main_gate, &mut self.ctx_mut(), assigned)
+                        .unwrap();
                 self.main_gate
-                    .assert_zero(&mut self.ctx.borrow_mut(), &non_invertable.into())
+                    .assert_zero(&mut self.ctx_mut(), &non_invertable.into())
                     .unwrap();
                 Value::Assigned(inv)
             }
         };
         self.scalar(output)
+    }
+}
+
+#[cfg(test)]
+impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
+    Halo2Loader<'a, 'b, C, LIMBS, BITS>
+{
+    fn start_row_metering(self: &Rc<Self>, identifier: &str) {
+        self.row_meterings
+            .borrow_mut()
+            .push((identifier.to_string(), *self.ctx.borrow().offset))
+    }
+
+    fn end_row_metering(self: &Rc<Self>) {
+        let mut row_meterings = self.row_meterings.borrow_mut();
+        let (_, row) = row_meterings.last_mut().unwrap();
+        *row = *self.ctx.borrow().offset - *row;
+    }
+
+    pub fn print_row_metering(self: &Rc<Self>) {
+        for (identifier, cost) in self.row_meterings.borrow().iter() {
+            println!("{}: {}", identifier, cost);
+        }
     }
 }
 
@@ -690,5 +714,19 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize> EcPointLoade
 
     fn ec_point_load_const(&self, ec_point: &C::CurveExt) -> EcPoint<'a, 'b, C, LIMBS, BITS> {
         self.assign_const_ec_point(ec_point.to_affine())
+    }
+}
+
+impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize> Loader<C::CurveExt>
+    for Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>
+{
+    #[cfg(test)]
+    fn start_cost_metering(&self, identifier: &str) {
+        self.start_row_metering(identifier)
+    }
+
+    #[cfg(test)]
+    fn end_cost_metering(&self) {
+        self.end_row_metering()
     }
 }

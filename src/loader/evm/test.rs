@@ -2,6 +2,7 @@ use crate::loader::evm::test::tui::Tui;
 use foundry_evm::{
     executor::{builder::Backend, ExecutorBuilder},
     revm::AccountInfo,
+    utils::h256_to_u256_be,
     Address,
 };
 use std::env::var_os;
@@ -21,16 +22,15 @@ fn debug() -> bool {
     )
 }
 
-pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64) {
+pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64, Vec<u64>) {
     let debug = debug();
     let caller = small_address(0xfe);
     let callee = small_address(0xff);
 
-    let mut builder = ExecutorBuilder::default().with_gas_limit(u64::MAX.into());
-
-    if debug {
-        builder = builder.set_tracing(true).set_debugger(true);
-    }
+    let builder = ExecutorBuilder::default()
+        .with_gas_limit(u64::MAX.into())
+        .set_tracing(debug)
+        .set_debugger(debug);
 
     let mut evm = builder.build(Backend::simple());
 
@@ -41,9 +41,15 @@ pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64) {
         .call_raw(caller, callee, calldata.into(), 0.into())
         .unwrap();
 
+    let costs = result
+        .logs
+        .into_iter()
+        .map(|log| h256_to_u256_be(log.topics[0]).as_u64())
+        .collect::<Vec<_>>();
+
     if debug {
         Tui::new(result.debug.unwrap().flatten(0), 0).start();
     }
 
-    (!result.reverted, result.gas)
+    (!result.reverted, result.gas, costs)
 }

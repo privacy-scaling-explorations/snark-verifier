@@ -296,7 +296,8 @@ impl Circuit<Fr> for Accumulation {
                 }
                 let (lhs, rhs) = stretagy.finalize(self.g1);
 
-                dbg!(offset);
+                loader.print_row_metering();
+                println!("Total: {}", offset);
 
                 Ok((lhs, rhs))
             },

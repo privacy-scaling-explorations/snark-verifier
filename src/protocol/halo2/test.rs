@@ -1,7 +1,8 @@
 use crate::{
     protocol::Protocol,
-    util::{Curve, Group},
+    util::{fe_to_limbs, Curve, Group},
 };
+use halo2_curves::CurveAffine;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{floor_planner::V1, Layouter, Value},
@@ -21,10 +22,11 @@ use halo2_wrong_maingate::{
     MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
     RegionCtx, Term,
 };
-use rand::RngCore;
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
-use std::fs;
+use rand_chacha::{
+    rand_core::{RngCore, SeedableRng},
+    ChaCha20Rng,
+};
+use std::{fs, iter};
 
 mod halo2;
 mod native;
@@ -196,15 +198,30 @@ impl MainGateWithRangeConfig {
 }
 
 #[derive(Clone, Default)]
-pub struct MainGateWithRange<F>(F);
+pub struct MainGateWithRange<F>(Vec<F>);
 
 impl<F: FieldExt> MainGateWithRange<F> {
     pub fn rand<R: RngCore>(mut rng: R) -> Self {
-        Self(F::from(rng.next_u32() as u64))
+        Self(vec![F::from(rng.next_u32() as u64)])
+    }
+
+    pub fn with_mock_accumulator<C: CurveAffine>(g1: C, s_g1: C) -> Self {
+        Self(
+            iter::once(F::zero())
+                .chain({
+                    let g1 = g1.coordinates().unwrap();
+                    let s_g1 = s_g1.coordinates().unwrap();
+                    [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
+                        .iter()
+                        .cloned()
+                        .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
+                })
+                .collect(),
+        )
     }
 
     pub fn instances(&self) -> Vec<Vec<F>> {
-        vec![vec![self.0]]
+        vec![self.0.clone()]
     }
 }
 
@@ -213,7 +230,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
     type FloorPlanner = V1;
 
     fn without_witnesses(&self) -> Self {
-        Self::default()
+        Self(vec![F::zero()])
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -234,7 +251,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
             |mut region| {
                 let mut offset = 0;
                 let mut ctx = RegionCtx::new(&mut region, &mut offset);
-                let a = range_chip.range_value(&mut ctx, &Value::known(self.0).into(), 33)?;
+                let a = range_chip.range_value(&mut ctx, &Value::known(self.0[0]).into(), 33)?;
                 let b = main_gate.sub_sub_with_constant(&mut ctx, &a, &a, &a, F::from(2))?;
                 let cond = main_gate.assign_value(&mut ctx, &Value::known(F::one()).into())?;
                 main_gate.select(&mut ctx, &a, &b, &cond.into())?;
@@ -383,8 +400,7 @@ macro_rules! halo2_prepare {
 macro_rules! halo2_create_snark {
     ([kzg], $params:expr, $pk:expr, $protocol:expr, $circuits:expr, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
         use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
-        use rand::SeedableRng;
-        use rand_chacha::ChaCha20Rng;
+        use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
         use $crate::protocol::halo2::test::{create_proof_checked, Snark};
 
         let instances = $circuits
