@@ -254,27 +254,29 @@ impl EvmLoader {
             .and();
     }
 
-    pub fn squeeze_challenge(self: &Rc<Self>, ptr: usize, mut len: usize) -> (usize, Scalar) {
+    pub fn squeeze_challenge(self: &Rc<Self>, ptr: usize, len: usize) -> (usize, Scalar) {
         assert!(len > 0 && len % 0x20 == 0);
-        let ptr = if ptr + len != *self.ptr.borrow() {
-            (ptr..ptr + len)
-                .step_by(0x20)
-                .map(|ptr| self.dup_scalar(&self.scalar(Value::Memory(ptr))))
-                .collect::<Vec<_>>()
-                .first()
-                .unwrap()
-                .ptr()
+
+        let (ptr, len) = if len == 0x20 {
+            let ptr = if ptr + len != *self.ptr.borrow() {
+                (ptr..ptr + len)
+                    .step_by(0x20)
+                    .map(|ptr| self.dup_scalar(&self.scalar(Value::Memory(ptr))))
+                    .collect::<Vec<_>>()
+                    .first()
+                    .unwrap()
+                    .ptr()
+            } else {
+                ptr
+            };
+            self.code.borrow_mut().push(1).push(ptr + 0x20).mstore8();
+            (ptr, len + 1)
         } else {
-            ptr
+            (ptr, len)
         };
 
         let challenge_ptr = self.allocate(0x20);
         let hash_ptr = self.allocate(0x20);
-
-        if len == 0x20 {
-            self.code.borrow_mut().push(1).push(ptr + 0x20).mstore8();
-            len += 1;
-        }
 
         self.code
             .borrow_mut()
