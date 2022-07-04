@@ -33,22 +33,38 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + FieldOps {
         assert!(!values.is_empty());
 
         let loader = values.first().unwrap().1.loader();
-        values
-            .iter()
-            .fold(loader.load_const(constant), |acc, (coeff, value)| {
-                acc + loader.load_const(coeff) * value
+        iter::empty()
+            .chain(if *constant == F::zero() {
+                None
+            } else {
+                Some(loader.load_const(constant))
             })
+            .chain(
+                values
+                    .iter()
+                    .map(|(coeff, value)| loader.load_const(coeff) * value),
+            )
+            .reduce(|acc, term| acc + term)
+            .unwrap()
     }
 
     fn sum_products_with_coeff_and_constant(values: &[(F, Self, Self)], constant: &F) -> Self {
         assert!(!values.is_empty());
 
         let loader = values.first().unwrap().1.loader();
-        values
-            .iter()
-            .fold(loader.load_const(constant), |acc, (coeff, lhs, rhs)| {
-                acc + loader.load_const(coeff) * lhs * rhs
+        iter::empty()
+            .chain(if *constant == F::zero() {
+                None
+            } else {
+                Some(loader.load_const(constant))
             })
+            .chain(
+                values
+                    .iter()
+                    .map(|(coeff, lhs, rhs)| loader.load_const(coeff) * lhs * rhs),
+            )
+            .reduce(|acc, term| acc + term)
+            .unwrap()
     }
 
     fn sum_with_coeff(values: &[(F, Self)]) -> Self {

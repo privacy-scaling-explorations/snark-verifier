@@ -76,7 +76,7 @@ where
             .collect::<Vec<_>>();
 
         Some(Accumulator::random_linear_combine(
-            challenges.into_iter().map(Option::Some).zip(accumulators),
+            challenges.into_iter().zip(accumulators),
         ))
     }
 
@@ -87,15 +87,12 @@ where
         _: P,
         accumulator: Accumulator<C, Rc<EvmLoader>>,
     ) -> Result<Self::Output, Error> {
-        match self.accumulator.take() {
+        self.accumulator = Some(match self.accumulator.take() {
             Some(curr_accumulator) => {
-                self.accumulator = Some(Accumulator::random_linear_combine([
-                    (None, accumulator),
-                    (Some(transcript.squeeze_challenge()), curr_accumulator),
-                ]));
+                accumulator + curr_accumulator * &transcript.squeeze_challenge()
             }
-            None => self.accumulator = Some(accumulator),
-        }
+            None => accumulator,
+        });
         Ok(())
     }
 }

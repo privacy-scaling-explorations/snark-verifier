@@ -89,14 +89,11 @@ where
     }
 
     pub fn random_linear_combine(
-        scaled_accumulators: impl IntoIterator<Item = (Option<L::LoadedScalar>, Self)>,
+        scaled_accumulators: impl IntoIterator<Item = (L::LoadedScalar, Self)>,
     ) -> Self {
         scaled_accumulators
             .into_iter()
-            .map(|(scalar, accumulator)| match scalar {
-                Some(scalar) => accumulator * &scalar,
-                None => accumulator,
-            })
+            .map(|(scalar, accumulator)| accumulator * &scalar)
             .reduce(|acc, scaled_accumulator| acc + scaled_accumulator)
             .unwrap_or_default()
     }
