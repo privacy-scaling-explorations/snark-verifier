@@ -113,12 +113,23 @@ struct Polynomials<'a, F: FieldExt> {
     num_instance: usize,
     num_advice: usize,
     num_lookup_permuted: usize,
+    permutation_chunk_size: usize,
     num_permutation_z: usize,
     num_lookup_z: usize,
 }
 
 impl<'a, F: FieldExt> Polynomials<'a, F> {
     fn new(cs: &'a ConstraintSystem<F>, zk: bool, query_instance: bool, num_proof: usize) -> Self {
+        let degree = if zk {
+            cs.degree::<true>()
+        } else {
+            cs.degree::<false>()
+        };
+        let permutation_chunk_size = if zk || cs.permutation().get_columns().len() >= degree {
+            degree - 2
+        } else {
+            degree - 1
+        };
         Self {
             cs,
             zk,
@@ -129,11 +140,12 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             num_instance: cs.num_instance_columns(),
             num_advice: cs.num_advice_columns(),
             num_lookup_permuted: 2 * cs.lookups().len(),
+            permutation_chunk_size,
             num_permutation_z: cs
                 .permutation()
                 .get_columns()
                 .len()
-                .div_ceil(cs.degree() - 2),
+                .div_ceil(permutation_chunk_size),
             num_lookup_z: cs.lookups().len(),
         }
     }
@@ -230,35 +242,35 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         &'a self,
         t: usize,
     ) -> impl IntoIterator<Item = Query> + 'a {
-        if self.zk {
-            if EVAL {
-                (0..self.num_permutation_z)
-                    .flat_map(move |i| {
-                        let z = self.permutation_poly(t, i);
-                        [Query::new(z, 0), Query::new(z, 1)].into_iter().chain(
-                            if i == self.num_permutation_z - 1 {
-                                None
-                            } else {
-                                Some(Query::new(z, self.rotation_last()))
-                            },
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            } else {
-                iter::empty()
-                    .chain((0..self.num_permutation_z).flat_map(move |i| {
-                        let z = self.permutation_poly(t, i);
-                        [Query::new(z, 0), Query::new(z, 1)]
-                    }))
-                    .chain((0..self.num_permutation_z).rev().skip(1).map(move |i| {
-                        let z = self.permutation_poly(t, i);
-                        Query::new(z, self.rotation_last())
-                    }))
-                    .collect::<Vec<_>>()
-            }
-        } else {
-            // TODO: optional zk
-            todo!()
+        match (self.zk, EVAL) {
+            (true, true) => (0..self.num_permutation_z)
+                .flat_map(move |i| {
+                    let z = self.permutation_poly(t, i);
+                    iter::empty()
+                        .chain([Query::new(z, 0), Query::new(z, 1)])
+                        .chain(if i == self.num_permutation_z - 1 {
+                            None
+                        } else {
+                            Some(Query::new(z, self.rotation_last()))
+                        })
+                })
+                .collect::<Vec<_>>(),
+            (true, false) => iter::empty()
+                .chain((0..self.num_permutation_z).flat_map(move |i| {
+                    let z = self.permutation_poly(t, i);
+                    [Query::new(z, 0), Query::new(z, 1)]
+                }))
+                .chain((0..self.num_permutation_z).rev().skip(1).map(move |i| {
+                    let z = self.permutation_poly(t, i);
+                    Query::new(z, self.rotation_last())
+                }))
+                .collect::<Vec<_>>(),
+            (false, _) => (0..self.num_permutation_z)
+                .flat_map(move |i| {
+                    let z = self.permutation_poly(t, i);
+                    [Query::new(z, 0), Query::new(z, 1)]
+                })
+                .collect::<Vec<_>>(),
         }
     }
 
@@ -276,31 +288,26 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         &'a self,
         t: usize,
     ) -> impl IntoIterator<Item = Query> + 'a {
-        if self.zk {
-            (0..self.num_lookup_z).flat_map(move |i| {
-                let (z, permuted_input, permuted_table) = self.lookup_poly(t, i);
-                if EVAL {
-                    [
-                        Query::new(z, 0),
-                        Query::new(z, 1),
-                        Query::new(permuted_input, 0),
-                        Query::new(permuted_input, -1),
-                        Query::new(permuted_table, 0),
-                    ]
-                } else {
-                    [
-                        Query::new(z, 0),
-                        Query::new(permuted_input, 0),
-                        Query::new(permuted_table, 0),
-                        Query::new(permuted_input, -1),
-                        Query::new(z, 1),
-                    ]
-                }
-            })
-        } else {
-            // TODO: optional zk
-            todo!()
-        }
+        (0..self.num_lookup_z).flat_map(move |i| {
+            let (z, permuted_input, permuted_table) = self.lookup_poly(t, i);
+            if EVAL {
+                [
+                    Query::new(z, 0),
+                    Query::new(z, 1),
+                    Query::new(permuted_input, 0),
+                    Query::new(permuted_input, -1),
+                    Query::new(permuted_table, 0),
+                ]
+            } else {
+                [
+                    Query::new(z, 0),
+                    Query::new(permuted_input, 0),
+                    Query::new(permuted_table, 0),
+                    Query::new(permuted_input, -1),
+                    Query::new(z, 1),
+                ]
+            }
+        })
     }
 
     fn vanishing_query(&self) -> Query {
@@ -340,11 +347,15 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 
     fn rotation_last(&self) -> Rotation {
-        Rotation(-((self.cs.blinding_factors() + 1) as i32))
+        Rotation(-((self.cs.blinding_factors::<true>() + 1) as i32))
     }
 
     fn l_last(&self) -> Expression<F> {
-        Expression::CommonPolynomial(CommonPolynomial::Lagrange(self.rotation_last().0))
+        if self.zk {
+            Expression::CommonPolynomial(CommonPolynomial::Lagrange(self.rotation_last().0))
+        } else {
+            Expression::CommonPolynomial(CommonPolynomial::Lagrange(-1))
+        }
     }
 
     fn l_blind(&self) -> Expression<F> {
@@ -376,8 +387,6 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 
     fn permutation_relations(&'a self, t: usize) -> impl IntoIterator<Item = Expression<F>> + 'a {
-        let chunk_size = self.cs.degree() - 2;
-
         let one = &Expression::Constant(F::one());
         let l_0 = &Expression::<F>::CommonPolynomial(CommonPolynomial::Lagrange(0));
         let l_last = &self.l_last();
@@ -385,8 +394,6 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         let identity = &Expression::<F>::CommonPolynomial(CommonPolynomial::Identity);
         let beta = &self.beta();
         let gamma = &self.gamma();
-
-        // TODO: optional zk
 
         let polys = self
             .cs
@@ -413,21 +420,32 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
 
         iter::empty()
             .chain(zs.first().map(|(z_0, _, _)| l_0 * (one - z_0)))
-            .chain(zs.last().map(|(z_l, _, _)| l_last * (z_l * z_l - z_l)))
             .chain(
+                zs.last()
+                    .and_then(|(z_l, _, _)| self.zk.then_some(l_last * (z_l * z_l - z_l))),
+            )
+            .chain(if self.zk {
                 zs.iter()
                     .skip(1)
                     .zip(zs.iter())
-                    .map(|((z_i, _, _), (_, _, z_j_last))| l_0 * (z_i - z_j_last)),
-            )
+                    .map(|((z, _, _), (_, _, z_prev_last))| l_0 * (z - z_prev_last))
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            })
             .chain(
                 zs.iter()
-                    .zip(polys.chunks(chunk_size))
-                    .zip(permutation_fixeds.chunks(chunk_size))
+                    .zip(zs.iter().cycle().skip(1))
+                    .zip(polys.chunks(self.permutation_chunk_size))
+                    .zip(permutation_fixeds.chunks(self.permutation_chunk_size))
                     .enumerate()
-                    .map(|(i, (((z, z_w, _), polys), permutation_fixeds))| {
-                        let left = z_w
-                            * polys
+                    .map(
+                        |(i, ((((z, z_w, _), (_, z_next_w, _)), polys), permutation_fixeds))| {
+                            let left = if self.zk || zs.len() == 1 {
+                                z_w.clone()
+                            } else {
+                                z_w + l_last * (z_next_w - z_w)
+                            } * polys
                                 .iter()
                                 .zip(permutation_fixeds.iter())
                                 .map(|(poly, permutation_fixed)| {
@@ -435,20 +453,27 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                                 })
                                 .reduce(|acc, expr| acc * expr)
                                 .unwrap();
-                        let right = z * polys
-                            .iter()
-                            .zip(
-                                iter::successors(
-                                    Some(F::DELTA.pow_vartime(&[(i * chunk_size) as u64])),
-                                    |delta| Some(F::DELTA * delta),
+                            let right = z * polys
+                                .iter()
+                                .zip(
+                                    iter::successors(
+                                        Some(F::DELTA.pow_vartime(&[(i
+                                            * self.permutation_chunk_size)
+                                            as u64])),
+                                        |delta| Some(F::DELTA * delta),
+                                    )
+                                    .map(Expression::Constant),
                                 )
-                                .map(Expression::Constant),
-                            )
-                            .map(|(poly, delta)| poly + beta * delta * identity + gamma)
-                            .reduce(|acc, expr| acc * expr)
-                            .unwrap();
-                        l_active * (left - right)
-                    }),
+                                .map(|(poly, delta)| poly + beta * delta * identity + gamma)
+                                .reduce(|acc, expr| acc * expr)
+                                .unwrap();
+                            if self.zk {
+                                l_active * (left - right)
+                            } else {
+                                left - right
+                            }
+                        },
+                    ),
             )
             .collect::<Vec<_>>()
     }
@@ -461,8 +486,6 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         let theta = &self.theta();
         let beta = &self.beta();
         let gamma = &self.gamma();
-
-        // TODO: optional zk
 
         let polys = (0..self.num_lookup_z)
             .map(|i| {
@@ -497,17 +520,26 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                 |(lookup, (z, z_w, permuted_input, permuted_input_w_inv, permuted_table))| {
                     let input = compress(lookup.input_expressions());
                     let table = compress(lookup.table_expressions());
-                    [
-                        l_0 * (one - z),
-                        l_last * (z * z - z),
-                        l_active
-                            * (z_w * (permuted_input + beta) * (permuted_table + gamma)
-                                - z * (input + beta) * (table + gamma)),
-                        l_0 * (permuted_input - permuted_table),
-                        l_active
-                            * (permuted_input - permuted_table)
-                            * (permuted_input - permuted_input_w_inv),
-                    ]
+                    iter::empty()
+                        .chain(Some(l_0 * (one - z)))
+                        .chain(self.zk.then_some(l_last * (z * z - z)))
+                        .chain(Some(if self.zk {
+                            l_active
+                                * (z_w * (permuted_input + beta) * (permuted_table + gamma)
+                                    - z * (input + beta) * (table + gamma))
+                        } else {
+                            z_w * (permuted_input + beta) * (permuted_table + gamma)
+                                - z * (input + beta) * (table + gamma)
+                        }))
+                        .chain(self.zk.then_some(l_0 * (permuted_input - permuted_table)))
+                        .chain(Some(if self.zk {
+                            l_active
+                                * (permuted_input - permuted_table)
+                                * (permuted_input - permuted_input_w_inv)
+                        } else {
+                            (permuted_input - permuted_table)
+                                * (permuted_input - permuted_input_w_inv)
+                        }))
                 },
             )
             .collect::<Vec<_>>()

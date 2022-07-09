@@ -9,7 +9,7 @@ use crate::{
 use ethereum_types::{U256, U512};
 use std::{
     cell::RefCell,
-    fmt::Debug,
+    fmt::{self, Debug},
     iter,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     rc::Rc,
@@ -545,7 +545,7 @@ impl EvmLoader {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct EcPoint {
     loader: Rc<EvmLoader>,
     value: Value<(U256, U256)>,
@@ -569,6 +569,14 @@ impl EcPoint {
             Value::Memory(ptr) => ptr,
             _ => unreachable!(),
         }
+    }
+}
+
+impl Debug for EcPoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EcPoint")
+            .field("value", &self.value)
+            .finish()
     }
 }
 
@@ -665,7 +673,7 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Scalar {
     loader: Rc<EvmLoader>,
     value: Value<U256>,
@@ -685,6 +693,14 @@ impl Scalar {
             Value::Memory(ptr) => ptr,
             _ => unreachable!(),
         }
+    }
+}
+
+impl Debug for Scalar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Scalar")
+            .field("value", &self.value)
+            .finish()
     }
 }
 

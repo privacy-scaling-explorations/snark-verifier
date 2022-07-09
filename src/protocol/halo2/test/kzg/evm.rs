@@ -4,7 +4,7 @@ use crate::{
     loader::evm::EvmTranscript,
     protocol::halo2::{
         test::{
-            kzg::{halo2::Accumulation, main_gate_with_range_with_kzg_accumulator, LIMBS},
+            kzg::{halo2::Accumulation, main_gate_with_range_with_mock_kzg_accumulator, LIMBS},
             StandardPlonk,
         },
         util::evm::ChallengeEvm,
@@ -112,10 +112,10 @@ test!(
     StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
 );
 test!(
-    zk_main_gate_with_range_with_kzg_accumulator,
+    zk_main_gate_with_range_with_mock_kzg_accumulator,
     9,
     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx + 1)).collect()),
-    main_gate_with_range_with_kzg_accumulator::<Bn256>()
+    main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
 );
 test!(
     #[ignore = "cause it requires 64GB memory to run"],
@@ -131,30 +131,29 @@ test!(
     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     Accumulation::two_snark_with_accumulator(true)
 );
-// TODO: Enable when optional-zk is merged
-// test!(
-//     standard_plonk,
-//     9,
-//     halo2_kzg_config!(false, 1),
-//     StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
-// );
-// test!(
-//     main_gate_with_range_with_kzg_accumulator,
-//     9,
-//     halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx + 1)).collect()),
-//     main_gate_with_range_with_kzg_accumulator::<Bn256>()
-// );
-// test!(
-//     #[ignore = "cause it requires 64GB memory to run"],
-//     two_snark,
-//     21,
-//     halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-//     Accumulation::two_snark(false)
-// );
-// test!(
-//     #[ignore = "cause it requires 128GB memory to run"],
-//     two_snark_with_accumulator,
-//     22,
-//     halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-//     Accumulation::two_snark_with_accumulator(false)
-// );
+test!(
+    standard_plonk_rand,
+    9,
+    halo2_kzg_config!(false, 1),
+    StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+);
+test!(
+    main_gate_with_range_with_mock_kzg_accumulator,
+    9,
+    halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx + 1)).collect()),
+    main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
+);
+test!(
+    #[ignore = "cause it requires 64GB memory to run"],
+    two_snark,
+    21,
+    halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
+    Accumulation::two_snark(false)
+);
+test!(
+    #[ignore = "cause it requires 128GB memory to run"],
+    two_snark_with_accumulator,
+    22,
+    halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
+    Accumulation::two_snark_with_accumulator(false)
+);

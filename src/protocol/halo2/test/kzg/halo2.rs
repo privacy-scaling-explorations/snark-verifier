@@ -365,18 +365,17 @@ test!(
     halo2_kzg_config!(true, 1, Accumulation::accumulator_indices()),
     Accumulation::two_snark_with_accumulator(true)
 );
-// TODO: Enable when optional-zk is merged
-// test!(
-//     #[ignore = "cause it requires 64GB memory to run"],
-//     two_snark,
-//     21,
-//     halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
-//     Accumulation::two_snark(false)
-// );
-// test!(
-//     #[ignore = "cause it requires 128GB memory to run"],
-//     two_snark_with_accumulator,
-//     22,
-//     halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
-//     Accumulation::two_snark_with_accumulator(false)
-// );
+test!(
+    #[ignore = "cause it requires 64GB memory to run"],
+    two_snark,
+    21,
+    halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
+    Accumulation::two_snark(false)
+);
+test!(
+    #[ignore = "cause it requires 128GB memory to run"],
+    two_snark_with_accumulator,
+    22,
+    halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
+    Accumulation::two_snark_with_accumulator(false)
+);

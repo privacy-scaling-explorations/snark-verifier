@@ -2,7 +2,7 @@ use crate::{
     collect_slice, halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify,
     halo2_kzg_prepare,
     protocol::halo2::test::{
-        kzg::{main_gate_with_range_with_kzg_accumulator, LIMBS},
+        kzg::{main_gate_with_range_with_mock_kzg_accumulator, LIMBS},
         MainGateWithRange,
     },
     scheme::kzg::{PlonkAccumulationScheme, ShplonkAccumulationScheme},
@@ -66,18 +66,17 @@ test!(
     zk_main_gate_with_range_with_mock_kzg_accumulator,
     9,
     halo2_kzg_config!(true, 2, (0..4 * LIMBS).map(|idx| (0, idx + 1)).collect()),
-    main_gate_with_range_with_kzg_accumulator::<Bn256>()
+    main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
 );
-// TODO: Enable when optional-zk is merged
-// test!(
-//     main_gate_with_range_rand,
-//     9,
-//     halo2_kzg_config!(false, 2),
-//     MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
-// );
-// test!(
-//     main_gate_with_range_with_mock_kzg_accumulator,
-//     9,
-//     halo2_kzg_config!(false, 2, (0..4 * LIMBS).map(|idx| (0, idx + 1)).collect()),
-//     main_gate_with_range_with_kzg_accumulator::<Bn256>()
-// );
+test!(
+    main_gate_with_range_rand,
+    9,
+    halo2_kzg_config!(false, 2),
+    MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+);
+test!(
+    main_gate_with_range_with_mock_kzg_accumulator,
+    9,
+    halo2_kzg_config!(false, 2, (0..4 * LIMBS).map(|idx| (0, idx + 1)).collect()),
+    main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
+);

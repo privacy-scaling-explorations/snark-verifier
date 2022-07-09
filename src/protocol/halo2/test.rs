@@ -1,17 +1,22 @@
 use crate::{
-    protocol::Protocol,
-    util::{Curve, Group},
+    protocol::{
+        halo2::{compile, Config},
+        Protocol,
+    },
+    util::{CommonPolynomial, Curve, Expression, Group, Query},
 };
+use halo2_curves::bn256::{Bn256, Fr, G1};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{floor_planner::V1, Layouter, Value},
     dev::MockProver,
     plonk::{
-        create_proof, verify_proof, Advice, Any, Circuit, Column, ConstraintSystem, Error, Fixed,
-        Instance, ProvingKey,
+        create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Any, Circuit, Column,
+        ConstraintSystem, Error, Fixed, Instance, ProvingKey,
     },
     poly::{
         commitment::{CommitmentScheme, Params, ParamsProver, Prover, Verifier},
+        kzg::commitment::KZGCommitmentScheme,
         Rotation, VerificationStrategy,
     },
     transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
@@ -21,7 +26,10 @@ use halo2_wrong_maingate::{
     MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
     RegionCtx,
 };
-use rand::RngCore;
+use rand_chacha::{
+    rand_core::{RngCore, SeedableRng},
+    ChaCha20Rng,
+};
 
 mod kzg;
 
@@ -111,7 +119,7 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        meta.set_minimum_degree(5);
+        meta.set_minimum_degree(4);
         StandardPlonkConfig::configure(meta)
     }
 
@@ -123,16 +131,27 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
         layouter.assign_region(
             || "",
             |mut region| {
-                region.assign_advice(|| "", config.a, 0, || Value::known(self.0 - F::one()))?;
-                region.assign_fixed(|| "", config.constant, 0, || Value::known(-F::one()))?;
+                region.assign_advice(|| "", config.a, 0, || Value::known(self.0))?;
                 region.assign_fixed(|| "", config.q_a, 0, || Value::known(-F::one()))?;
 
-                for (column, idx) in [config.q_a, config.q_b, config.q_c, config.q_ab]
-                    .iter()
-                    .zip(1..)
+                region.assign_advice(|| "", config.a, 1, || Value::known(-F::from(5)))?;
+                for (column, idx) in [
+                    config.q_a,
+                    config.q_b,
+                    config.q_c,
+                    config.q_ab,
+                    config.constant,
+                ]
+                .iter()
+                .zip(1..)
                 {
                     region.assign_fixed(|| "", *column, 1, || Value::known(F::from(idx)))?;
                 }
+
+                let a = region.assign_advice(|| "", config.a, 2, || Value::known(F::one()))?;
+                a.copy_advice(|| "", &mut region, config.b, 3)?;
+                a.copy_advice(|| "", &mut region, config.c, 4)?;
+
                 Ok(())
             },
         )
@@ -214,6 +233,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
             |mut region| {
                 let mut offset = 0;
                 let mut ctx = RegionCtx::new(&mut region, &mut offset);
+                range_chip.decompose(&mut ctx, Value::known(F::from(u64::MAX)), 8, 64)?;
                 range_chip.decompose(&mut ctx, Value::known(self.0[0]), 8, 33)?;
                 let (a, _) = range_chip.decompose(&mut ctx, Value::known(self.0[0]), 8, 39)?;
                 let b = main_gate.sub_sub_with_constant(&mut ctx, &a, &a, &a, F::from(2))?;
@@ -250,7 +270,7 @@ impl<C: Curve> Snark<C> {
     }
 }
 
-pub fn create_proof_checked<'a, S, C, P, V, VS, TW, TR, EC, R>(
+pub fn create_proof_checked<'a, S, C, P, V, VS, TW, TR, EC, R, const ZK: bool>(
     params: &'a S::ParamsProver,
     pk: &ProvingKey<S::Curve>,
     circuits: &[C],
@@ -270,7 +290,7 @@ where
     R: RngCore,
 {
     for (circuit, instances) in circuits.iter().zip(instances.iter()) {
-        MockProver::run(
+        MockProver::run::<_, ZK>(
             params.k(),
             circuit,
             instances.iter().map(|instance| instance.to_vec()).collect(),
@@ -281,7 +301,7 @@ where
 
     let proof = {
         let mut transcript = TW::init(Vec::new());
-        create_proof::<S, P, _, _, _, _>(
+        create_proof::<S, P, _, _, _, _, ZK>(
             params,
             pk,
             circuits,
@@ -297,11 +317,88 @@ where
         let params = params.verifier_params();
         let strategy = VS::new(params);
         let mut transcript = TR::init(Box::leak(Box::new(proof.clone())));
-        verify_proof(params, pk.get_vk(), strategy, instances, &mut transcript)
+        verify_proof::<_, _, _, _, _, ZK>(params, pk.get_vk(), strategy, instances, &mut transcript)
             .unwrap()
             .finalize()
     };
     assert!(accept);
 
     proof
+}
+
+#[test]
+fn test_compile_standard_plonk() {
+    let circuit = StandardPlonk::rand(ChaCha20Rng::from_seed(Default::default()));
+
+    let params = kzg::read_or_create_srs::<Bn256>(9);
+    let vk = keygen_vk::<KZGCommitmentScheme<_>, _, false>(&params, &circuit).unwrap();
+    let pk = keygen_pk::<KZGCommitmentScheme<_>, _, false>(&params, vk, &circuit).unwrap();
+
+    let protocol = compile::<G1>(
+        pk.get_vk(),
+        Config {
+            zk: false,
+            query_instance: false,
+            num_proof: 1,
+            accumulator_indices: None,
+        },
+    );
+
+    let [q_a, q_b, q_c, q_ab, constant, sigma_a, sigma_b, sigma_c, instance, a, b, c, z] =
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(|poly| Query::new(poly, Rotation::cur()));
+    let z_w = Query::new(12, Rotation::next());
+    let t = Query::new(13, Rotation::cur());
+
+    assert_eq!(protocol.preprocessed.len(), 8);
+    assert_eq!(protocol.num_statement, 1);
+    assert_eq!(protocol.num_auxiliary, vec![3, 0, 1]);
+    assert_eq!(protocol.num_challenge, vec![1, 2, 0]);
+    assert_eq!(
+        protocol.evaluations,
+        vec![a, b, c, q_a, q_b, q_c, q_ab, constant, sigma_a, sigma_b, sigma_c, z, z_w]
+    );
+    assert_eq!(
+        protocol.queries,
+        vec![a, b, c, z, z_w, q_a, q_b, q_c, q_ab, constant, sigma_a, sigma_b, sigma_c, t]
+    );
+    assert_eq!(
+        format!("{:?}", protocol.relations),
+        format!("{:?}", {
+            let [q_a, q_b, q_c, q_ab, constant, sigma_a, sigma_b, sigma_c, instance, a, b, c, z, z_w, beta, gamma, l_0, identity, one, k_1, k_2] =
+                &[
+                    Expression::Polynomial(q_a),
+                    Expression::Polynomial(q_b),
+                    Expression::Polynomial(q_c),
+                    Expression::Polynomial(q_ab),
+                    Expression::Polynomial(constant),
+                    Expression::Polynomial(sigma_a),
+                    Expression::Polynomial(sigma_b),
+                    Expression::Polynomial(sigma_c),
+                    Expression::Polynomial(instance),
+                    Expression::Polynomial(a),
+                    Expression::Polynomial(b),
+                    Expression::Polynomial(c),
+                    Expression::Polynomial(z),
+                    Expression::Polynomial(z_w),
+                    Expression::Challenge(1), // beta
+                    Expression::Challenge(2), // gamma
+                    Expression::CommonPolynomial(CommonPolynomial::Lagrange(0)), // l_0
+                    Expression::CommonPolynomial(CommonPolynomial::Identity), // identity
+                    Expression::Constant(Fr::one()), // one
+                    Expression::Constant(Fr::DELTA), // k_1
+                    Expression::Constant(Fr::DELTA * Fr::DELTA), // k_2
+                ];
+
+            vec![
+                q_a * a + q_b * b + q_c * c + q_ab * a * b + constant + instance,
+                l_0 * (one - z),
+                z_w * ((a + beta * sigma_a + gamma)
+                    * (b + beta * sigma_b + gamma)
+                    * (c + beta * sigma_c + gamma))
+                    - z * ((a + beta * one * identity + gamma)
+                        * (b + beta * k_1 * identity + gamma)
+                        * (c + beta * k_2 * identity + gamma)),
+            ]
+        })
+    );
 }

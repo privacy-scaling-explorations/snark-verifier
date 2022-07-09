@@ -35,8 +35,8 @@ pub fn read_or_create_srs<E: Engine + Debug>(k: u32) -> ParamsKZG<E> {
     }
 }
 
-pub fn main_gate_with_range_with_kzg_accumulator<E: Engine + Debug>() -> MainGateWithRange<E::Scalar>
-{
+pub fn main_gate_with_range_with_mock_kzg_accumulator<E: Engine + Debug>(
+) -> MainGateWithRange<E::Scalar> {
     let g = read_or_create_srs::<E>(3).get_g();
     let (g1, s_g1) = (g[0], g[1]);
     MainGateWithRange::new(
@@ -92,8 +92,15 @@ macro_rules! halo2_kzg_prepare {
             .collect::<Vec<_>>();
 
         let params = read_or_create_srs::<Bn256>($k);
-        let vk = keygen_vk::<KZGCommitmentScheme<_>, _>(&params, &circuits[0]).unwrap();
-        let pk = keygen_pk::<KZGCommitmentScheme<_>, _>(&params, vk, &circuits[0]).unwrap();
+        let pk = if $config.zk {
+            let vk = keygen_vk::<KZGCommitmentScheme<_>, _, true>(&params, &circuits[0]).unwrap();
+            let pk = keygen_pk::<KZGCommitmentScheme<_>, _, true>(&params, vk, &circuits[0]).unwrap();
+            pk
+        } else {
+            let vk = keygen_vk::<KZGCommitmentScheme<_>, _, false>(&params, &circuits[0]).unwrap();
+            let pk = keygen_pk::<KZGCommitmentScheme<_>, _, false>(&params, vk, &circuits[0]).unwrap();
+            pk
+        };
 
         let protocol = compile::<G1>(pk.get_vk(), $config);
 
@@ -130,23 +137,46 @@ macro_rules! halo2_kzg_create_snark {
             .collect::<Vec<_>>();
         let proof = {
             collect_slice!(instances, 2);
-            create_proof_checked::<
-                KZGCommitmentScheme<_>,
-                _,
-                $prover,
-                $verifier,
-                $verification_strategy,
-                $transcript_read,
-                $transcript_write,
-                $encoded_challenge,
-                _,
-            >(
-                $params,
-                $pk,
-                $circuits,
-                &instances,
-                &mut ChaCha20Rng::from_seed(Default::default()),
-            )
+            #[allow(clippy::needless_borrow)]
+            if $protocol.zk {
+                create_proof_checked::<
+                    KZGCommitmentScheme<_>,
+                    _,
+                    $prover,
+                    $verifier,
+                    $verification_strategy,
+                    $transcript_read,
+                    $transcript_write,
+                    $encoded_challenge,
+                    _,
+                    true,
+                >(
+                    $params,
+                    $pk,
+                    $circuits,
+                    &instances,
+                    &mut ChaCha20Rng::from_seed(Default::default()),
+                )
+            } else {
+                create_proof_checked::<
+                    KZGCommitmentScheme<_>,
+                    _,
+                    $prover,
+                    $verifier,
+                    $verification_strategy,
+                    $transcript_read,
+                    $transcript_write,
+                    $encoded_challenge,
+                    _,
+                    false,
+                >(
+                    $params,
+                    $pk,
+                    $circuits,
+                    &instances,
+                    &mut ChaCha20Rng::from_seed(Default::default()),
+                )
+            }
         };
 
         Snark::new(
