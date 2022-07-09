@@ -1,8 +1,7 @@
 use crate::{
     protocol::Protocol,
-    util::{fe_to_limbs, Curve, Group},
+    util::{Curve, Group},
 };
-use halo2_curves::CurveAffine;
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{floor_planner::V1, Layouter, Value},
@@ -20,37 +19,11 @@ use halo2_proofs::{
 use halo2_wrong_ecc::EccConfig;
 use halo2_wrong_maingate::{
     MainGate, MainGateConfig, MainGateInstructions, RangeChip, RangeConfig, RangeInstructions,
-    RegionCtx, Term,
+    RegionCtx,
 };
-use rand_chacha::{
-    rand_core::{RngCore, SeedableRng},
-    ChaCha20Rng,
-};
-use std::{fs, iter};
+use rand::RngCore;
 
-mod halo2;
-mod native;
-
-#[cfg(feature = "evm")]
-mod evm;
-
-pub const LIMBS: usize = 4;
-pub const BITS: usize = 68;
-
-pub fn read_or_create_srs<S: CommitmentScheme>(scheme: &str, k: u32) -> S::ParamsProver {
-    const DIR: &str = "./src/protocol/halo2/test/fixture";
-    let path = format!("{}/{}_{}.srs", DIR, scheme, k);
-    match fs::File::open(path.as_str()) {
-        Ok(mut file) => S::ParamsProver::read(&mut file).unwrap(),
-        Err(_) => {
-            fs::create_dir_all(DIR).unwrap();
-            let params = S::new_params(k, ChaCha20Rng::from_seed(Default::default()));
-            let mut file = fs::File::create(path.as_str()).unwrap();
-            params.write(&mut file).unwrap();
-            params
-        }
-    }
-}
+mod kzg;
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -177,21 +150,22 @@ impl MainGateWithRangeConfig {
         EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
     }
 
-    fn configure<F: FieldExt>(meta: &mut ConstraintSystem<F>, fine_tune_bits: Vec<usize>) -> Self {
+    fn configure<F: FieldExt>(
+        meta: &mut ConstraintSystem<F>,
+        composition_bits: Vec<usize>,
+        overflow_bits: Vec<usize>,
+    ) -> Self {
         let main_gate_config = MainGate::<F>::configure(meta);
-        let range_config = RangeChip::<F>::configure(meta, &main_gate_config, fine_tune_bits);
+        let range_config =
+            RangeChip::<F>::configure(meta, &main_gate_config, composition_bits, overflow_bits);
         MainGateWithRangeConfig {
             main_gate_config,
             range_config,
         }
     }
 
-    fn load_table<F: FieldExt>(
-        &self,
-        layouter: &mut impl Layouter<F>,
-        dense_limb_bits: usize,
-    ) -> Result<(), Error> {
-        let range_chip = RangeChip::<F>::new(self.range_config.clone(), dense_limb_bits);
+    fn load_table<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+        let range_chip = RangeChip::<F>::new(self.range_config.clone());
         range_chip.load_table(layouter)?;
         Ok(())
     }
@@ -201,23 +175,12 @@ impl MainGateWithRangeConfig {
 pub struct MainGateWithRange<F>(Vec<F>);
 
 impl<F: FieldExt> MainGateWithRange<F> {
-    pub fn rand<R: RngCore>(mut rng: R) -> Self {
-        Self(vec![F::from(rng.next_u32() as u64)])
+    pub fn new(inner: Vec<F>) -> Self {
+        Self(inner)
     }
 
-    pub fn with_mock_accumulator<C: CurveAffine>(g1: C, s_g1: C) -> Self {
-        Self(
-            iter::once(F::zero())
-                .chain({
-                    let g1 = g1.coordinates().unwrap();
-                    let s_g1 = s_g1.coordinates().unwrap();
-                    [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
-                        .iter()
-                        .cloned()
-                        .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-                })
-                .collect(),
-        )
+    pub fn rand<R: RngCore>(mut rng: R) -> Self {
+        Self::new(vec![F::from(rng.next_u32() as u64)])
     }
 
     pub fn instances(&self) -> Vec<Vec<F>> {
@@ -234,7 +197,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        MainGateWithRangeConfig::configure(meta, vec![1])
+        MainGateWithRangeConfig::configure(meta, vec![8], vec![1, 7])
     }
 
     fn synthesize(
@@ -243,7 +206,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let main_gate = MainGate::new(config.main_gate_config);
-        let range_chip = RangeChip::new(config.range_config, 8);
+        let range_chip = RangeChip::new(config.range_config);
         range_chip.load_table(&mut layouter)?;
 
         let a = layouter.assign_region(
@@ -251,24 +214,12 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
             |mut region| {
                 let mut offset = 0;
                 let mut ctx = RegionCtx::new(&mut region, &mut offset);
-                let a = range_chip.range_value(&mut ctx, &Value::known(self.0[0]).into(), 33)?;
+                range_chip.decompose(&mut ctx, Value::known(self.0[0]), 8, 33)?;
+                let (a, _) = range_chip.decompose(&mut ctx, Value::known(self.0[0]), 8, 39)?;
                 let b = main_gate.sub_sub_with_constant(&mut ctx, &a, &a, &a, F::from(2))?;
-                let cond = main_gate.assign_value(&mut ctx, &Value::known(F::one()).into())?;
-                main_gate.select(&mut ctx, &a, &b, &cond.into())?;
-                main_gate.compose(
-                    &mut ctx,
-                    &[
-                        Term::Assigned(a, F::from(3)),
-                        Term::Assigned(a, F::from(4)),
-                        Term::Assigned(a, F::from(5)),
-                        Term::Assigned(a, F::from(6)),
-                        Term::Assigned(a, F::from(7)),
-                        Term::Assigned(a, F::from(8)),
-                        Term::Assigned(a, F::from(9)),
-                        Term::Assigned(a, F::from(10)),
-                    ],
-                    F::from(11),
-                )?;
+                let cond = main_gate.assign_bit(&mut ctx, Value::known(F::one()))?;
+                main_gate.select(&mut ctx, &a, &b, &cond)?;
+
                 Ok(a)
             },
         )?;
@@ -299,7 +250,7 @@ impl<C: Curve> Snark<C> {
     }
 }
 
-pub fn create_proof_checked<'a, S, C, P, V, VS, TW, TR, E, R>(
+pub fn create_proof_checked<'a, S, C, P, V, VS, TW, TR, EC, R>(
     params: &'a S::ParamsProver,
     pk: &ProvingKey<S::Curve>,
     circuits: &[C],
@@ -312,10 +263,10 @@ where
     C: Circuit<S::Scalar>,
     P: Prover<'a, S>,
     V: Verifier<'a, S>,
-    VS: VerificationStrategy<'a, S, V, R, Output = VS>,
-    TW: TranscriptWriterBuffer<Vec<u8>, S::Curve, E>,
-    TR: TranscriptReadBuffer<&'static [u8], S::Curve, E>,
-    E: EncodedChallenge<S::Curve>,
+    VS: VerificationStrategy<'a, S, V, Output = VS>,
+    TW: TranscriptWriterBuffer<Vec<u8>, S::Curve, EC>,
+    TR: TranscriptReadBuffer<&'static [u8], S::Curve, EC>,
+    EC: EncodedChallenge<S::Curve>,
     R: RngCore,
 {
     for (circuit, instances) in circuits.iter().zip(instances.iter()) {
@@ -344,7 +295,7 @@ where
 
     let accept = {
         let params = params.verifier_params();
-        let strategy = VS::new(params, rng);
+        let strategy = VS::new(params);
         let mut transcript = TR::init(Box::leak(Box::new(proof.clone())));
         verify_proof(params, pk.get_vk(), strategy, instances, &mut transcript)
             .unwrap()
@@ -353,126 +304,4 @@ where
     assert!(accept);
 
     proof
-}
-
-#[macro_export]
-macro_rules! halo2_prepare {
-    ([kzg], $k:ident, $n:ident, $accumulator_indices:expr, $create_circuit:expr) => {{
-        use halo2_curves::bn256::{Bn256, G1};
-        use halo2_proofs::{
-            plonk::{keygen_pk, keygen_vk},
-            poly::kzg::commitment::KZGCommitmentScheme,
-        };
-        use std::{collections::BTreeSet, iter};
-        use $crate::{
-            protocol::halo2::{compile, test::read_or_create_srs},
-            util::GroupEncoding,
-        };
-
-        let circuits = iter::repeat_with(|| $create_circuit)
-            .take($n)
-            .collect::<Vec<_>>();
-
-        let params = read_or_create_srs::<KZGCommitmentScheme<Bn256>>("kzg", $k);
-        let vk = keygen_vk::<KZGCommitmentScheme<_>, _>(&params, &circuits[0]).unwrap();
-        let pk = keygen_pk::<KZGCommitmentScheme<_>, _>(&params, vk, &circuits[0]).unwrap();
-
-        let protocol = compile::<G1>(pk.get_vk(), N, $accumulator_indices);
-
-        assert_eq!(
-            protocol.preprocessed.len(),
-            BTreeSet::<[u8; 32]>::from_iter(
-                protocol.preprocessed.iter().map(|ec_point| ec_point
-                    .to_bytes()
-                    .as_ref()
-                    .to_vec()
-                    .try_into()
-                    .unwrap())
-            )
-            .len()
-        );
-
-        (params, pk, protocol, circuits)
-    }};
-}
-
-#[macro_export]
-macro_rules! halo2_create_snark {
-    ([kzg], $params:expr, $pk:expr, $protocol:expr, $circuits:expr, $prover:ty, $verifier:ty, $verification_strategy:ty, $transcript_read:ty, $transcript_write:ty, $encoded_challenge:ty) => {{
-        use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
-        use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
-        use $crate::protocol::halo2::test::{create_proof_checked, Snark};
-
-        let instances = $circuits
-            .iter()
-            .map(|circuit| circuit.instances())
-            .collect::<Vec<_>>();
-        let proof = {
-            collect_slice!(instances, 2);
-            create_proof_checked::<
-                KZGCommitmentScheme<_>,
-                _,
-                $prover,
-                $verifier,
-                $verification_strategy,
-                $transcript_read,
-                $transcript_write,
-                $encoded_challenge,
-                _,
-            >(
-                $params,
-                $pk,
-                $circuits,
-                &instances,
-                &mut ChaCha20Rng::from_seed(Default::default()),
-            )
-        };
-
-        Snark::new(
-            $protocol.clone(),
-            instances.into_iter().flatten().collect::<Vec<_>>(),
-            proof,
-        )
-    }};
-}
-
-#[macro_export]
-macro_rules! halo2_native_accumulate {
-    ([kzg], $protocol:expr, $statements:expr, $scheme:ty, $transcript:expr, $stretagy:expr) => {{
-        use $crate::{loader::native::NativeLoader, scheme::kzg::AccumulationScheme};
-
-        <$scheme>::accumulate(
-            $protocol,
-            &NativeLoader,
-            $statements,
-            $transcript,
-            $stretagy,
-        )
-        .unwrap();
-    }};
-}
-
-#[macro_export]
-macro_rules! halo2_native_verify {
-    ([kzg], $params:ident, $protocol:expr, $statements:expr, $scheme:ty, $transcript:expr) => {{
-        use halo2_curves::bn256::Bn256;
-        use halo2_proofs::poly::commitment::ParamsProver;
-        use $crate::{
-            halo2_native_accumulate,
-            protocol::halo2::test::{BITS, LIMBS},
-            scheme::kzg::SameCurveAccumulation,
-        };
-
-        let mut stretagy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
-        halo2_native_accumulate!(
-            [kzg],
-            $protocol,
-            $statements,
-            $scheme,
-            $transcript,
-            &mut stretagy
-        );
-
-        assert!(stretagy.decide::<Bn256>($params.get_g()[0], $params.g2(), $params.s_g2()));
-    }};
 }

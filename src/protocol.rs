@@ -5,6 +5,7 @@ pub mod halo2;
 
 #[derive(Clone, Debug)]
 pub struct Protocol<C: Curve> {
+    pub zk: bool,
     pub domain: Domain<C::Scalar>,
     pub preprocessed: Vec<C>,
     pub num_statement: usize,

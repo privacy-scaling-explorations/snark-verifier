@@ -10,10 +10,92 @@ use halo2_proofs::{
 };
 use std::{io, iter};
 
+mod util;
+
 #[cfg(test)]
 mod test;
 
-mod util;
+pub struct Config {
+    zk: bool,
+    query_instance: bool,
+    num_proof: usize,
+    accumulator_indices: Option<Vec<(usize, usize)>>,
+}
+
+pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, config: Config) -> Protocol<C> {
+    let cs = vk.cs();
+    let Config {
+        zk,
+        query_instance,
+        num_proof,
+        accumulator_indices,
+    } = config;
+
+    let k = vk.get_domain().empty_lagrange().len().log2();
+    let domain = Domain::new(k as usize);
+
+    let preprocessed = vk
+        .fixed_commitments()
+        .iter()
+        .chain(vk.permutation().commitments().iter())
+        .cloned()
+        .map(Into::into)
+        .collect();
+
+    let polynomials = &Polynomials::new(cs, zk, query_instance, num_proof);
+
+    let evaluations = iter::empty()
+        .chain((0..num_proof).flat_map(move |t| polynomials.instance_queries(t)))
+        .chain((0..num_proof).flat_map(move |t| polynomials.advice_queries(t)))
+        .chain(polynomials.fixed_queries())
+        .chain(polynomials.random_query())
+        .chain(polynomials.permutation_fixed_queries())
+        .chain((0..num_proof).flat_map(move |t| polynomials.permutation_z_queries::<true>(t)))
+        .chain((0..num_proof).flat_map(move |t| polynomials.lookup_queries::<true>(t)))
+        .collect();
+
+    let queries = (0..num_proof)
+        .flat_map(|t| {
+            iter::empty()
+                .chain(polynomials.instance_queries(t))
+                .chain(polynomials.advice_queries(t))
+                .chain(polynomials.permutation_z_queries::<false>(t))
+                .chain(polynomials.lookup_queries::<false>(t))
+        })
+        .chain(polynomials.fixed_queries())
+        .chain(polynomials.permutation_fixed_queries())
+        .chain(iter::once(polynomials.vanishing_query()))
+        .chain(polynomials.random_query())
+        .collect();
+
+    let relations = (0..num_proof)
+        .flat_map(|t| {
+            iter::empty()
+                .chain(polynomials.gate_relations(t))
+                .chain(polynomials.permutation_relations(t))
+                .chain(polynomials.lookup_relations(t))
+        })
+        .collect();
+
+    let transcript_initial_state = transcript_initial_state::<C>(vk);
+
+    let accumulator_indices = accumulator_indices
+        .map(|accumulator_indices| polynomials.accumulator_indices(accumulator_indices));
+
+    Protocol {
+        zk: config.zk,
+        domain,
+        preprocessed,
+        num_statement: polynomials.num_statement(),
+        num_auxiliary: polynomials.num_auxiliary(),
+        num_challenge: polynomials.num_challenge(),
+        evaluations,
+        queries,
+        relations,
+        transcript_initial_state,
+        accumulator_indices,
+    }
+}
 
 impl From<poly::Rotation> for Rotation {
     fn from(rotation: poly::Rotation) -> Rotation {
@@ -23,7 +105,9 @@ impl From<poly::Rotation> for Rotation {
 
 struct Polynomials<'a, F: FieldExt> {
     cs: &'a ConstraintSystem<F>,
-    n: usize,
+    zk: bool,
+    query_instance: bool,
+    num_proof: usize,
     num_fixed: usize,
     num_permutation_fixed: usize,
     num_instance: usize,
@@ -34,10 +118,12 @@ struct Polynomials<'a, F: FieldExt> {
 }
 
 impl<'a, F: FieldExt> Polynomials<'a, F> {
-    fn new(cs: &'a ConstraintSystem<F>, n: usize) -> Self {
+    fn new(cs: &'a ConstraintSystem<F>, zk: bool, query_instance: bool, num_proof: usize) -> Self {
         Self {
             cs,
-            n,
+            zk,
+            query_instance,
+            num_proof,
             num_fixed: cs.num_fixed_columns(),
             num_permutation_fixed: cs.permutation().get_columns().len(),
             num_instance: cs.num_instance_columns(),
@@ -57,14 +143,14 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 
     fn num_statement(&self) -> usize {
-        self.n * self.num_instance
+        self.num_proof * self.num_instance
     }
 
     fn num_auxiliary(&self) -> Vec<usize> {
         vec![
-            self.n * self.num_advice,
-            self.n * self.num_lookup_permuted,
-            self.n * (self.num_permutation_z + self.num_lookup_z) + 1,
+            self.num_proof * self.num_advice,
+            self.num_proof * self.num_lookup_permuted,
+            self.num_proof * (self.num_permutation_z + self.num_lookup_z) + self.zk as usize,
         ]
     }
 
@@ -99,15 +185,19 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         Query::new(offset + column_index, rotation.into())
     }
 
-    // TODO: Enable this when necessary
-    // fn instance_queries(&'a self, t: usize) -> impl IntoIterator<Item = Query> + 'a {
-    //     self.cs
-    //         .instance_queries()
-    //         .iter()
-    //         .map(move |(column, rotation)| {
-    //             self.query(*column.column_type(), column.index(), *rotation, t)
-    //         })
-    // }
+    fn instance_queries(&'a self, t: usize) -> impl IntoIterator<Item = Query> + 'a {
+        self.query_instance
+            .then_some(
+                self.cs
+                    .instance_queries()
+                    .iter()
+                    .map(move |(column, rotation)| {
+                        self.query(*column.column_type(), column.index(), *rotation, t)
+                    }),
+            )
+            .into_iter()
+            .flatten()
+    }
 
     fn advice_queries(&'a self, t: usize) -> impl IntoIterator<Item = Query> + 'a {
         self.cs
@@ -140,36 +230,42 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         &'a self,
         t: usize,
     ) -> impl IntoIterator<Item = Query> + 'a {
-        if EVAL {
-            (0..self.num_permutation_z)
-                .flat_map(move |i| {
-                    let z = self.permutation_poly(t, i);
-                    [Query::new(z, 0), Query::new(z, 1)].into_iter().chain(
-                        if i == self.num_permutation_z - 1 {
-                            None
-                        } else {
-                            Some(Query::new(z, self.rotation_last()))
-                        },
-                    )
-                })
-                .collect::<Vec<_>>()
+        if self.zk {
+            if EVAL {
+                (0..self.num_permutation_z)
+                    .flat_map(move |i| {
+                        let z = self.permutation_poly(t, i);
+                        [Query::new(z, 0), Query::new(z, 1)].into_iter().chain(
+                            if i == self.num_permutation_z - 1 {
+                                None
+                            } else {
+                                Some(Query::new(z, self.rotation_last()))
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                iter::empty()
+                    .chain((0..self.num_permutation_z).flat_map(move |i| {
+                        let z = self.permutation_poly(t, i);
+                        [Query::new(z, 0), Query::new(z, 1)]
+                    }))
+                    .chain((0..self.num_permutation_z).rev().skip(1).map(move |i| {
+                        let z = self.permutation_poly(t, i);
+                        Query::new(z, self.rotation_last())
+                    }))
+                    .collect::<Vec<_>>()
+            }
         } else {
-            iter::empty()
-                .chain((0..self.num_permutation_z).flat_map(move |i| {
-                    let z = self.permutation_poly(t, i);
-                    [Query::new(z, 0), Query::new(z, 1)]
-                }))
-                .chain((0..self.num_permutation_z).rev().skip(1).map(move |i| {
-                    let z = self.permutation_poly(t, i);
-                    Query::new(z, self.rotation_last())
-                }))
-                .collect::<Vec<_>>()
+            // TODO: optional zk
+            todo!()
         }
     }
 
     fn lookup_poly(&'a self, t: usize, i: usize) -> (usize, usize, usize) {
         let permuted_offset = self.auxiliary_offset() + self.num_auxiliary()[0];
-        let z_offset = permuted_offset + self.num_auxiliary()[1] + self.n * self.num_permutation_z;
+        let z_offset =
+            permuted_offset + self.num_auxiliary()[1] + self.num_proof * self.num_permutation_z;
         let z = z_offset + t * self.num_lookup_z + i;
         let permuted_input = permuted_offset + 2 * (t * self.num_lookup_z + i);
         let permuted_table = permuted_input + 1;
@@ -180,26 +276,31 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         &'a self,
         t: usize,
     ) -> impl IntoIterator<Item = Query> + 'a {
-        (0..self.num_lookup_z).flat_map(move |i| {
-            let (z, permuted_input, permuted_table) = self.lookup_poly(t, i);
-            if EVAL {
-                [
-                    Query::new(z, 0),
-                    Query::new(z, 1),
-                    Query::new(permuted_input, 0),
-                    Query::new(permuted_input, -1),
-                    Query::new(permuted_table, 0),
-                ]
-            } else {
-                [
-                    Query::new(z, 0),
-                    Query::new(permuted_input, 0),
-                    Query::new(permuted_table, 0),
-                    Query::new(permuted_input, -1),
-                    Query::new(z, 1),
-                ]
-            }
-        })
+        if self.zk {
+            (0..self.num_lookup_z).flat_map(move |i| {
+                let (z, permuted_input, permuted_table) = self.lookup_poly(t, i);
+                if EVAL {
+                    [
+                        Query::new(z, 0),
+                        Query::new(z, 1),
+                        Query::new(permuted_input, 0),
+                        Query::new(permuted_input, -1),
+                        Query::new(permuted_table, 0),
+                    ]
+                } else {
+                    [
+                        Query::new(z, 0),
+                        Query::new(permuted_input, 0),
+                        Query::new(permuted_table, 0),
+                        Query::new(permuted_input, -1),
+                        Query::new(z, 1),
+                    ]
+                }
+            })
+        } else {
+            // TODO: optional zk
+            todo!()
+        }
     }
 
     fn vanishing_query(&self) -> Query {
@@ -209,11 +310,11 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         )
     }
 
-    fn random_query(&self) -> Query {
-        Query::new(
+    fn random_query(&self) -> Option<Query> {
+        self.zk.then_some(Query::new(
             self.auxiliary_offset() + self.num_auxiliary().iter().sum::<usize>() - 1,
             0,
-        )
+        ))
     }
 
     fn convert(&self, expression: &plonk::Expression<F>, t: usize) -> Expression<F> {
@@ -257,16 +358,21 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         Expression::Constant(F::one()) - self.l_last() - self.l_blind()
     }
 
+    fn system_challenge_offset(&self) -> usize {
+        let num_challenge = self.num_challenge();
+        num_challenge[..num_challenge.len() - 3].iter().sum()
+    }
+
     fn theta(&self) -> Expression<F> {
-        Expression::Challenge(0)
+        Expression::Challenge(self.system_challenge_offset())
     }
 
     fn beta(&self) -> Expression<F> {
-        Expression::Challenge(1)
+        Expression::Challenge(self.system_challenge_offset() + 1)
     }
 
     fn gamma(&self) -> Expression<F> {
-        Expression::Challenge(2)
+        Expression::Challenge(self.system_challenge_offset() + 2)
     }
 
     fn permutation_relations(&'a self, t: usize) -> impl IntoIterator<Item = Expression<F>> + 'a {
@@ -279,6 +385,8 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         let identity = &Expression::<F>::CommonPolynomial(CommonPolynomial::Identity);
         let beta = &self.beta();
         let gamma = &self.gamma();
+
+        // TODO: optional zk
 
         let polys = self
             .cs
@@ -354,6 +462,8 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         let beta = &self.beta();
         let gamma = &self.gamma();
 
+        // TODO: optional zk
+
         let polys = (0..self.num_lookup_z)
             .map(|i| {
                 let (z, permuted_input, permuted_table) = self.lookup_poly(t, i);
@@ -385,8 +495,8 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             .zip(polys.iter())
             .flat_map(
                 |(lookup, (z, z_w, permuted_input, permuted_input_w_inv, permuted_table))| {
-                    let input = compress(&lookup.input_expressions);
-                    let table = compress(&lookup.table_expressions);
+                    let input = compress(lookup.input_expressions());
+                    let table = compress(lookup.table_expressions());
                     [
                         l_0 * (one - z),
                         l_last * (z * z - z),
@@ -407,7 +517,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         &self,
         accumulator_indices: Vec<(usize, usize)>,
     ) -> Vec<Vec<(usize, usize)>> {
-        (0..self.n)
+        (0..self.num_proof)
             .map(|t| {
                 accumulator_indices
                     .iter()
@@ -451,80 +561,8 @@ impl<C: CurveAffine> Transcript<C, MockChallenge> for MockTranscript<C::Scalar> 
     }
 }
 
-pub fn transcript_initial_state<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>) -> C::ScalarExt {
+fn transcript_initial_state<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>) -> C::ScalarExt {
     let mut transcript = MockTranscript::default();
     vk.hash_into(&mut transcript).unwrap();
     transcript.0
-}
-
-pub fn compile<C: CurveExt>(
-    vk: &VerifyingKey<C::AffineExt>,
-    n: usize,
-    accumulator_indices: Option<Vec<(usize, usize)>>,
-) -> Protocol<C> {
-    let cs = vk.cs();
-
-    let k = vk.get_domain().empty_lagrange().len().log2();
-    let domain = Domain::new(k as usize);
-
-    let preprocessed = vk
-        .fixed_commitments()
-        .iter()
-        .chain(vk.permutation().commitments().iter())
-        .cloned()
-        .map(Into::into)
-        .collect();
-
-    let polynomials = &Polynomials::new(cs, n);
-
-    let evaluations = iter::empty()
-        // .chain((0..n).flat_map(move |t| polynomials.instance_queries(t)))
-        .chain((0..n).flat_map(move |t| polynomials.advice_queries(t)))
-        .chain(polynomials.fixed_queries())
-        .chain(iter::once(polynomials.random_query()))
-        .chain(polynomials.permutation_fixed_queries())
-        .chain((0..n).flat_map(move |t| polynomials.permutation_z_queries::<true>(t)))
-        .chain((0..n).flat_map(move |t| polynomials.lookup_queries::<true>(t)))
-        .collect();
-
-    let queries = (0..n)
-        .flat_map(|t| {
-            iter::empty()
-                // .chain(polynomials.instance_queries(t))
-                .chain(polynomials.advice_queries(t))
-                .chain(polynomials.permutation_z_queries::<false>(t))
-                .chain(polynomials.lookup_queries::<false>(t))
-        })
-        .chain(polynomials.fixed_queries())
-        .chain(polynomials.permutation_fixed_queries())
-        .chain(iter::once(polynomials.vanishing_query()))
-        .chain(iter::once(polynomials.random_query()))
-        .collect();
-
-    let relations = (0..n)
-        .flat_map(|t| {
-            iter::empty()
-                .chain(polynomials.gate_relations(t))
-                .chain(polynomials.permutation_relations(t))
-                .chain(polynomials.lookup_relations(t))
-        })
-        .collect();
-
-    let transcript_initial_state = transcript_initial_state::<C>(vk);
-
-    let accumulator_indices = accumulator_indices
-        .map(|accumulator_indices| polynomials.accumulator_indices(accumulator_indices));
-
-    Protocol {
-        domain,
-        preprocessed,
-        num_statement: polynomials.num_statement(),
-        num_auxiliary: polynomials.num_auxiliary(),
-        num_challenge: polynomials.num_challenge(),
-        evaluations,
-        queries,
-        relations,
-        transcript_initial_state,
-        accumulator_indices,
-    }
 }

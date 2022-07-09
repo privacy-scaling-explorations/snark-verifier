@@ -12,8 +12,7 @@ use halo2_wrong_ecc::{
     AssignedPoint, BaseFieldEccChip, EccConfig,
 };
 use halo2_wrong_maingate::{
-    Assigned, AssignedValue, CombinationOptionCommon, MainGate, MainGateInstructions, RegionCtx,
-    Term,
+    AssignedValue, CombinationOptionCommon, MainGate, MainGateInstructions, RegionCtx, Term,
 };
 use rand::rngs::OsRng;
 use std::{
@@ -24,7 +23,6 @@ use std::{
     rc::Rc,
 };
 
-const MAIN_GATE_WIDTH: usize = 5;
 const WINDOW_SIZE: usize = 3;
 
 #[derive(Clone, Debug)]
@@ -89,7 +87,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
     ) -> Scalar<'a, 'b, C, LIMBS, BITS> {
         let assigned = self
             .main_gate
-            .assign_value(&mut self.ctx_mut(), &scalar.into())
+            .assign_value(&mut self.ctx_mut(), scalar)
             .unwrap();
         self.scalar(Value::Assigned(assigned))
     }
@@ -130,13 +128,13 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         x_limbs: [AssignedValue<C::Scalar>; LIMBS],
         y_limbs: [AssignedValue<C::Scalar>; LIMBS],
     ) -> EcPoint<'a, 'b, C, LIMBS, BITS> {
-        let [x, y] = [x_limbs, y_limbs]
+        let [x, y] = [&x_limbs, &y_limbs]
             .map(|limbs| {
                 limbs.iter().enumerate().fold(
                     circuit::Value::known([C::Scalar::zero(); LIMBS]),
                     |acc, (idx, limb)| {
                         acc.zip(limb.value()).map(|(mut acc, limb)| {
-                            acc[idx] = limb;
+                            acc[idx] = *limb;
                             acc
                         })
                     },
@@ -170,7 +168,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
         ) {
             self.ctx
                 .borrow_mut()
-                .constrain_equal(src.cell(), dst.cell())
+                .constrain_equal(src.cell(), dst.as_ref().cell())
                 .unwrap();
         }
 
@@ -271,18 +269,19 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
             (Value::Constant(lhs), Value::Constant(rhs)) => Value::Constant(*lhs * rhs),
             (Value::Assigned(assigned), Value::Constant(constant))
             | (Value::Constant(constant), Value::Assigned(assigned)) => {
-                let mut terms = [(); MAIN_GATE_WIDTH].map(|_| Term::Zero);
-                terms[0] = Term::Assigned(*assigned, *constant);
-                terms[1] =
-                    Term::unassigned_to_sub(assigned.value().map(|assigned| assigned * constant));
                 MainGateInstructions::apply(
                     &self.main_gate,
                     &mut self.ctx_mut(),
-                    &terms,
+                    [
+                        Term::Assigned(assigned, *constant),
+                        Term::unassigned_to_sub(
+                            assigned.value().map(|assigned| *assigned * constant),
+                        ),
+                    ],
                     C::Scalar::zero(),
                     CombinationOptionCommon::OneLinerAdd.into(),
                 )
-                .map(|[_, output, ..]| Value::Assigned(output))
+                .map(|mut assigned| Value::Assigned(assigned.swap_remove(1)))
                 .unwrap()
             }
             (Value::Assigned(lhs), Value::Assigned(rhs)) => {
@@ -323,7 +322,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
                     MainGateInstructions::invert(&self.main_gate, &mut self.ctx_mut(), assigned)
                         .unwrap();
                 self.main_gate
-                    .assert_zero(&mut self.ctx_mut(), &non_invertable.into())
+                    .assert_zero(&mut self.ctx_mut(), &non_invertable)
                     .unwrap();
                 Value::Assigned(inv)
             }
@@ -365,7 +364,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize> Scalar<'a, '
     pub fn assigned(&self) -> AssignedValue<C::Scalar> {
         match &self.value {
             Value::Constant(constant) => self.loader.assign_const_scalar(*constant).assigned(),
-            Value::Assigned(assigned) => *assigned,
+            Value::Assigned(assigned) => assigned.clone(),
         }
     }
 }

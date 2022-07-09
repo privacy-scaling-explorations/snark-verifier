@@ -1,9 +1,13 @@
 use crate::{
-    collect_slice, halo2_create_snark, halo2_native_accumulate, halo2_native_verify, halo2_prepare,
+    collect_slice, halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_accumulate,
+    halo2_kzg_native_verify, halo2_kzg_prepare,
     loader::{halo2, native::NativeLoader},
     protocol::{
         halo2::{
-            test::{MainGateWithRange, MainGateWithRangeConfig, Snark, StandardPlonk, BITS, LIMBS},
+            test::{
+                kzg::{BITS, LIMBS},
+                MainGateWithRange, MainGateWithRangeConfig, Snark, StandardPlonk,
+            },
             util::halo2::ChallengeScalar,
         },
         Protocol,
@@ -20,7 +24,7 @@ use halo2_proofs::{
         commitment::ParamsProver,
         kzg::{
             multiopen::{ProverSHPLONK, VerifierSHPLONK},
-            strategy::BatchVerifier,
+            strategy::AccumulatorStrategy,
         },
     },
     transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer},
@@ -28,6 +32,7 @@ use halo2_proofs::{
 use halo2_wrong_ecc;
 use halo2_wrong_maingate::RegionCtx;
 use halo2_wrong_transcript::NativeRepresentation;
+use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use std::rc::Rc;
 
@@ -113,27 +118,27 @@ pub struct Accumulation {
 }
 
 impl Accumulation {
-    pub fn two_snark() -> Self {
+    pub fn accumulator_indices() -> Vec<(usize, usize)> {
+        (0..4 * LIMBS).map(|idx| (0, idx)).collect()
+    }
+
+    pub fn two_snark(zk: bool) -> Self {
         const K: u32 = 9;
-        const N: usize = 1;
 
         let (params, snark1) = {
-            let (params, pk, protocol, circuits) = halo2_prepare!(
-                [kzg],
+            let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
                 K,
-                N,
-                None,
+                halo2_kzg_config!(zk, 1),
                 StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
             );
-            let snark = halo2_create_snark!(
-                [kzg],
+            let snark = halo2_kzg_create_snark!(
                 &params,
                 &pk,
                 &protocol,
                 &circuits,
                 ProverSHPLONK<_>,
                 VerifierSHPLONK<_>,
-                BatchVerifier<_, _>,
+                AccumulatorStrategy<_>,
                 PoseidonTranscript<_, _, _, _>,
                 PoseidonTranscript<_, _, _, _>,
                 ChallengeScalar<_>
@@ -141,22 +146,19 @@ impl Accumulation {
             (params, snark)
         };
         let snark2 = {
-            let (params, pk, protocol, circuits) = halo2_prepare!(
-                [kzg],
+            let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
                 K,
-                N,
-                None,
+                halo2_kzg_config!(zk, 1),
                 MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
             );
-            halo2_create_snark!(
-                [kzg],
+            halo2_kzg_create_snark!(
                 &params,
                 &pk,
                 &protocol,
                 &circuits,
                 ProverSHPLONK<_>,
                 VerifierSHPLONK<_>,
-                BatchVerifier<_, _>,
+                AccumulatorStrategy<_>,
                 PoseidonTranscript<_, _, _, _>,
                 PoseidonTranscript<_, _, _, _>,
                 ChallengeScalar<_>
@@ -164,16 +166,14 @@ impl Accumulation {
         };
 
         let mut strategy = SameCurveAccumulation::<G1, NativeLoader>::default();
-        halo2_native_accumulate!(
-            [kzg],
+        halo2_kzg_native_accumulate!(
             &snark1.protocol,
             snark1.statements.clone(),
             ShplonkAccumulationScheme,
             &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark1.proof.as_slice()),
             &mut strategy
         );
-        halo2_native_accumulate!(
-            [kzg],
+        halo2_kzg_native_accumulate!(
             &snark2.protocol,
             snark2.statements.clone(),
             ShplonkAccumulationScheme,
@@ -199,30 +199,29 @@ impl Accumulation {
         }
     }
 
-    pub fn two_snark_with_accumulator() -> Self {
+    pub fn two_snark_with_accumulator(zk: bool) -> Self {
         const K: u32 = 21;
-        const N: usize = 2;
 
-        let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx)).collect();
-        let (params, pk, protocol, circuits) =
-            halo2_prepare!([kzg], K, N, Some(accumulator_indices), Self::two_snark());
-        let snark = halo2_create_snark!(
-            [kzg],
+        let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
+            K,
+            halo2_kzg_config!(zk, 2, Self::accumulator_indices()),
+            Self::two_snark(zk)
+        );
+        let snark = halo2_kzg_create_snark!(
             &params,
             &pk,
             &protocol,
             &circuits,
             ProverSHPLONK<_>,
             VerifierSHPLONK<_>,
-            BatchVerifier<_, _>,
+            AccumulatorStrategy<_>,
             PoseidonTranscript<_, _, _, _>,
             PoseidonTranscript<_, _, _, _>,
             ChallengeScalar<_>
         );
 
         let mut strategy = SameCurveAccumulation::<G1, NativeLoader>::default();
-        halo2_native_accumulate!(
-            [kzg],
+        halo2_kzg_native_accumulate!(
             &snark.protocol,
             snark.statements.clone(),
             ShplonkAccumulationScheme,
@@ -272,6 +271,7 @@ impl Circuit<Fr> for Accumulation {
     fn configure(meta: &mut plonk::ConstraintSystem<Fr>) -> Self::Config {
         MainGateWithRangeConfig::configure::<Fr>(
             meta,
+            vec![BITS / LIMBS],
             BaseFieldEccChip::<G1Affine>::rns().overflow_lengths(),
         )
     }
@@ -281,7 +281,7 @@ impl Circuit<Fr> for Accumulation {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), plonk::Error> {
-        config.load_table(&mut layouter, BITS / LIMBS)?;
+        config.load_table(&mut layouter)?;
 
         let (lhs, rhs) = layouter.assign_region(
             || "",
@@ -311,76 +311,72 @@ impl Circuit<Fr> for Accumulation {
     }
 }
 
-#[test]
-#[ignore = "cause it requires 64GB ram to run"]
-fn test_shplonk_halo2_accumulation_two_snark() {
-    const K: u32 = 21;
-    const N: usize = 1;
-
-    let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx)).collect();
-    let (params, pk, protocol, circuits) = halo2_prepare!(
-        [kzg],
-        K,
-        N,
-        Some(accumulator_indices),
-        Accumulation::two_snark()
-    );
-    let snark = halo2_create_snark!(
-        [kzg],
-        &params,
-        &pk,
-        &protocol,
-        &circuits,
-        ProverSHPLONK<_>,
-        VerifierSHPLONK<_>,
-        BatchVerifier<_, _>,
-        Blake2bWrite<_, _, _>,
-        Blake2bRead<_, _, _>,
-        Challenge255<_>
-    );
-    halo2_native_verify!(
-        [kzg],
-        params,
-        &snark.protocol,
-        snark.statements,
-        ShplonkAccumulationScheme,
-        &mut Blake2bRead::<_, G1Affine, _>::init(snark.proof.as_slice())
-    );
+macro_rules! test {
+    (@ #[$($attr:meta),*], $name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
+        paste! {
+            $(#[$attr])*
+            fn [<test_kzg_shplonk_ $name>]() {
+                let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
+                    $k,
+                    $config,
+                    $create_circuit
+                );
+                let snark = halo2_kzg_create_snark!(
+                    &params,
+                    &pk,
+                    &protocol,
+                    &circuits,
+                    ProverSHPLONK<_>,
+                    VerifierSHPLONK<_>,
+                    AccumulatorStrategy<_>,
+                    Blake2bWrite<_, _, _>,
+                    Blake2bRead<_, _, _>,
+                    Challenge255<_>
+                );
+                halo2_kzg_native_verify!(
+                    params,
+                    &snark.protocol,
+                    snark.statements,
+                    ShplonkAccumulationScheme,
+                    &mut Blake2bRead::<_, G1Affine, _>::init(snark.proof.as_slice())
+                );
+            }
+        }
+    };
+    ($name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
+        test!(@ #[test], $name, $k, $config, $create_circuit);
+    };
+    (#[ignore = $reason:literal], $name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
+        test!(@ #[test, ignore = $reason], $name, $k, $config, $create_circuit);
+    };
 }
 
-#[test]
-#[ignore = "cause it requires 128GB ram to run"]
-fn test_shplonk_halo2_accumulation_two_snark_with_accumulator() {
-    const K: u32 = 22;
-    const N: usize = 1;
-
-    let accumulator_indices = (0..4 * LIMBS).map(|idx| (0, idx)).collect();
-    let (params, pk, protocol, circuits) = halo2_prepare!(
-        [kzg],
-        K,
-        N,
-        Some(accumulator_indices),
-        Accumulation::two_snark_with_accumulator()
-    );
-    let snark = halo2_create_snark!(
-        [kzg],
-        &params,
-        &pk,
-        &protocol,
-        &circuits,
-        ProverSHPLONK<_>,
-        VerifierSHPLONK<_>,
-        BatchVerifier<_, _>,
-        Blake2bWrite<_, _, _>,
-        Blake2bRead<_, _, _>,
-        Challenge255<_>
-    );
-    halo2_native_verify!(
-        [kzg],
-        params,
-        &snark.protocol,
-        snark.statements,
-        ShplonkAccumulationScheme,
-        &mut Blake2bRead::<_, G1Affine, _>::init(snark.proof.as_slice())
-    );
-}
+test!(
+    #[ignore = "cause it requires 64GB memory to run"],
+    zk_two_snark,
+    21,
+    halo2_kzg_config!(true, 1, Accumulation::accumulator_indices()),
+    Accumulation::two_snark(true)
+);
+test!(
+    #[ignore = "cause it requires 128GB memory to run"],
+    zk_two_snark_with_accumulator,
+    22,
+    halo2_kzg_config!(true, 1, Accumulation::accumulator_indices()),
+    Accumulation::two_snark_with_accumulator(true)
+);
+// TODO: Enable when optional-zk is merged
+// test!(
+//     #[ignore = "cause it requires 64GB memory to run"],
+//     two_snark,
+//     21,
+//     halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
+//     Accumulation::two_snark(false)
+// );
+// test!(
+//     #[ignore = "cause it requires 128GB memory to run"],
+//     two_snark_with_accumulator,
+//     22,
+//     halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
+//     Accumulation::two_snark_with_accumulator(false)
+// );
