@@ -119,14 +119,14 @@ test!(
 );
 test!(
     #[ignore = "cause it requires 64GB memory to run"],
-    zk_two_snark,
+    zk_accumulation_two_snark,
     21,
     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     Accumulation::two_snark(true)
 );
 test!(
     #[ignore = "cause it requires 128GB memory to run"],
-    zk_two_snark_with_accumulator,
+    zk_accumulation_two_snark_with_accumulator,
     22,
     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     Accumulation::two_snark_with_accumulator(true)
@@ -145,14 +145,14 @@ test!(
 );
 test!(
     #[ignore = "cause it requires 64GB memory to run"],
-    two_snark,
+    accumulation_two_snark,
     21,
     halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     Accumulation::two_snark(false)
 );
 test!(
     #[ignore = "cause it requires 128GB memory to run"],
-    two_snark_with_accumulator,
+    accumulation_two_snark_with_accumulator,
     22,
     halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     Accumulation::two_snark_with_accumulator(false)
