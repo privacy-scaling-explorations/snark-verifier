@@ -62,7 +62,7 @@ where
                 .powers(sets.iter().map(|set| set.polys.len()).max().unwrap());
             sets.iter()
                 .map(|set| set.msm(&commitments, &evaluations, &powers_of_v))
-                .zip(powers_of_u.iter().rev())
+                .zip(powers_of_u.iter())
                 .map(|(msm, power_of_u)| msm * power_of_u)
                 .sum::<MSM<_, _>>()
         };
@@ -77,7 +77,7 @@ where
         let rhs = proof
             .ws
             .iter()
-            .zip(powers_of_u.iter().rev())
+            .zip(powers_of_u.iter())
             .map(|(w, power_of_u)| MSM::base(w.clone()) * power_of_u)
             .collect::<Vec<_>>();
         let lhs = f + rhs
@@ -319,7 +319,7 @@ impl RotationSet {
                     .clone();
                 commitment - MSM::scalar(evalaution)
             })
-            .zip(powers_of_v.iter().take(self.polys.len()).rev())
+            .zip(powers_of_v.iter())
             .map(|(msm, power_of_v)| msm * power_of_v)
             .sum()
     }

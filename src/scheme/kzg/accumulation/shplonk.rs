@@ -71,7 +71,7 @@ where
                 .iter()
                 .map(|set| set.msm(&commitments, &evaluations, &powers_of_mu));
 
-            msms.zip(proof.gamma.powers(sets.len()).into_iter().rev())
+            msms.zip(proof.gamma.powers(sets.len()).into_iter())
                 .map(|(msm, power_of_gamma)| msm * &power_of_gamma)
                 .sum::<MSM<_, _>>()
                 - MSM::base(proof.w.clone()) * &sets[0].z_s
@@ -424,7 +424,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
     ) -> MSM<C, L> {
         self.polys
             .iter()
-            .zip(powers_of_mu.iter().take(self.polys.len()).rev())
+            .zip(powers_of_mu.iter())
             .map(|(poly, power_of_mu)| {
                 let commitment = self
                     .commitment_coeff
