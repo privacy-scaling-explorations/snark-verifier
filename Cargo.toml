@@ -39,6 +39,7 @@ evm = ["dep:foundry_evm", "dep:crossterm", "dep:tui", "dep:ethereum_types", "dep
 
 [patch.crates-io]
 halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "experiment", package = "halo2_proofs" }
+revm = { git = "https://github.com/bluealloy/revm", package = "revm"  }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2"]
 halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "experiment", package = "halo2_proofs" }
