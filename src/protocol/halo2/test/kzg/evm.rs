@@ -62,7 +62,7 @@ macro_rules! test {
     (@ #[$($attr:meta),*], $name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
         paste! {
             $(#[$attr])*
-            fn [<test_kzg_shplonk_ $name>]() {
+            fn [<test_kzg_plonk_ $name>]() {
                 let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
                     $k,
                     $config,
