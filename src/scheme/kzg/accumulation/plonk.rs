@@ -3,6 +3,7 @@ use crate::{
     protocol::Protocol,
     scheme::kzg::{
         accumulation::{AccumulationScheme, AccumulationStrategy, Accumulator},
+        langranges,
         msm::MSM,
     },
     util::{
@@ -42,7 +43,7 @@ where
             let mut common_poly_eval = CommonPolynomialEvaluation::new(
                 &protocol.domain,
                 loader,
-                protocol.langranges(&proof.statements),
+                langranges(protocol, &proof.statements),
                 &proof.z,
             );
 

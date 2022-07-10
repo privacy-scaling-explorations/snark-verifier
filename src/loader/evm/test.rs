@@ -35,7 +35,7 @@ pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64, Vec<u64>) {
     let mut evm = builder.build(Backend::simple());
 
     evm.db
-        .insert_cache(callee, AccountInfo::new(0.into(), 1, code.into()));
+        .insert_account_info(callee, AccountInfo::new(0.into(), 1, code.into()));
 
     let result = evm
         .call_raw(caller, callee, calldata.into(), 0.into())
