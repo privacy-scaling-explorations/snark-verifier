@@ -3,7 +3,7 @@ use crate::{
     halo2_kzg_prepare,
     protocol::halo2::test::{
         kzg::{main_gate_with_range_with_mock_kzg_accumulator, LIMBS},
-        MainGateWithRange,
+        Plookuper, StandardPlonk,
     },
     scheme::kzg::{PlonkAccumulationScheme, ShplonkAccumulationScheme},
 };
@@ -57,10 +57,10 @@ macro_rules! test {
 }
 
 test!(
-    zk_main_gate_with_range_rand,
+    zk_standard_plonk_rand,
     9,
     halo2_kzg_config!(true, 2),
-    MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+    StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
 );
 test!(
     zk_main_gate_with_range_with_mock_kzg_accumulator,
@@ -69,14 +69,20 @@ test!(
     main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
 );
 test!(
-    main_gate_with_range_rand,
+    standard_plonk_rand,
     9,
     halo2_kzg_config!(false, 2),
-    MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+    StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
 );
 test!(
     main_gate_with_range_with_mock_kzg_accumulator,
     9,
     halo2_kzg_config!(false, 2, (0..4 * LIMBS).map(|idx| (0, idx + 1)).collect()),
     main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
+);
+test!(
+    plookup_rand,
+    9,
+    halo2_kzg_config!(false, 2),
+    Plookuper::<_, 2, 5, false>::rand(ChaCha20Rng::from_seed(Default::default()), 1 << 9)
 );

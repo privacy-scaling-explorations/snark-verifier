@@ -6,11 +6,11 @@ use crate::{
         halo2::{
             test::{
                 kzg::{BITS, LIMBS},
-                MainGateWithRange, MainGateWithRangeConfig, Snark, StandardPlonk,
+                MainGateWithRange, MainGateWithRangeConfig, StandardPlonk,
             },
             util::halo2::ChallengeScalar,
         },
-        Protocol,
+        Protocol, Snark,
     },
     scheme::kzg::{self, AccumulationScheme, ShplonkAccumulationScheme},
     util::{fe_to_limbs, Curve, Group, PrimeCurveAffine},

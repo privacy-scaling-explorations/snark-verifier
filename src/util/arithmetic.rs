@@ -7,7 +7,7 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-pub use ff::{Field, PrimeField};
+pub use ff::{BatchInvert, Field, PrimeField};
 pub use group::{prime::PrimeCurveAffine, Curve, Group, GroupEncoding};
 
 pub trait GroupOps:

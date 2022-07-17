@@ -1,6 +1,6 @@
 use crate::loader::evm::test::tui::Tui;
 use foundry_evm::{
-    executor::{builder::Backend, ExecutorBuilder},
+    executor::{backend::Backend, fork::MultiFork, ExecutorBuilder},
     revm::AccountInfo,
     utils::h256_to_u256_be,
     Address,
@@ -27,14 +27,13 @@ pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64, Vec<u64>) {
     let caller = small_address(0xfe);
     let callee = small_address(0xff);
 
-    let builder = ExecutorBuilder::default()
+    let mut evm = ExecutorBuilder::default()
         .with_gas_limit(u64::MAX.into())
         .set_tracing(debug)
-        .set_debugger(debug);
+        .set_debugger(debug)
+        .build(Backend::new(MultiFork::new().0, None));
 
-    let mut evm = builder.build(Backend::simple());
-
-    evm.db
+    evm.backend_mut()
         .insert_account_info(callee, AccountInfo::new(0.into(), 1, code.into()));
 
     let result = evm

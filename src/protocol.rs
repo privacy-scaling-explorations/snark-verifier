@@ -1,4 +1,4 @@
-use crate::util::{Curve, Domain, Expression, Query};
+use crate::util::{Curve, Domain, Expression, Group, Query};
 
 #[cfg(feature = "halo2")]
 pub mod halo2;
@@ -21,5 +21,25 @@ pub struct Protocol<C: Curve> {
 impl<C: Curve> Protocol<C> {
     pub fn vanishing_poly(&self) -> usize {
         self.preprocessed.len() + self.num_statement + self.num_auxiliary.iter().sum::<usize>()
+    }
+}
+
+pub struct Snark<C: Curve> {
+    pub protocol: Protocol<C>,
+    pub statements: Vec<Vec<<C as Group>::Scalar>>,
+    pub proof: Vec<u8>,
+}
+
+impl<C: Curve> Snark<C> {
+    pub fn new(
+        protocol: Protocol<C>,
+        statements: Vec<Vec<<C as Group>::Scalar>>,
+        proof: Vec<u8>,
+    ) -> Self {
+        Snark {
+            protocol,
+            statements,
+            proof,
+        }
     }
 }

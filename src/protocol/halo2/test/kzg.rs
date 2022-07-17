@@ -128,7 +128,7 @@ macro_rules! halo2_kzg_create_snark {
         use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
         use $crate::{
             collect_slice,
-            protocol::halo2::test::{create_proof_checked, Snark},
+            protocol::{halo2::test::create_proof_checked, Snark},
         };
 
         let instances = $circuits

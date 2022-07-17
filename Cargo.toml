@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ff = "0.12.0"
 group = "0.12.0"
+itertools = "0.10.3"
 lazy_static = "1.4.0"
 num-bigint = "0.4"
 num-traits = "0.2"
@@ -34,8 +35,11 @@ paste = "1.0.7"
 
 [features]
 default = ["halo2", "evm"]
+test = ["halo2", "evm"]
+
 halo2 = ["dep:blake2b_simd", "dep:halo2_proofs", "dep:halo2_wrong", "dep:halo2_wrong_ecc", "dep:halo2_wrong_maingate", "dep:halo2_wrong_transcript", "dep:poseidon"]
 evm = ["dep:foundry_evm", "dep:crossterm", "dep:tui", "dep:ethereum_types", "dep:sha3"]
+sanity-check = []
 
 [patch.crates-io]
 halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "experiment", package = "halo2_proofs" }
