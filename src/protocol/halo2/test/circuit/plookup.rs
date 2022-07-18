@@ -8,9 +8,21 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use itertools::Itertools;
+use itertools::{EitherOrBoth, Itertools};
 use rand::RngCore;
-use std::{collections::BTreeMap, convert::TryFrom, iter, mem, ops::Mul};
+use std::{collections::BTreeMap, convert::TryFrom, iter, ops::Mul};
+
+fn query<F: FieldExt, T>(
+    meta: &mut ConstraintSystem<F>,
+    query_fn: impl FnOnce(&mut VirtualCells<'_, F>) -> T,
+) -> T {
+    let mut tmp = None;
+    meta.create_gate("", |meta| {
+        tmp = Some(query_fn(meta));
+        Some(Expression::Constant(F::zero()))
+    });
+    tmp.unwrap()
+}
 
 fn first_fit_packing(cap: usize, weights: Vec<usize>) -> Vec<Vec<usize>> {
     let mut bins = Vec::<(usize, Vec<usize>)>::new();
@@ -86,32 +98,27 @@ fn challenge_usable_after<F: FieldExt>(meta: &mut ConstraintSystem<F>, phase: u8
 }
 
 #[derive(Clone)]
-pub struct ShuffleConfig<const ZK: bool> {
+pub struct ShuffleConfig<F: FieldExt, const ZK: bool> {
     l_0: Selector,
     zs: Vec<Column<Advice>>,
     gamma: Option<Challenge>,
-    lhs_bins: Vec<Vec<usize>>,
-    rhs_bins: Vec<Vec<usize>>,
+    lhs: Vec<Expression<F>>,
+    rhs: Vec<Expression<F>>,
 }
 
-impl<const ZK: bool> ShuffleConfig<ZK> {
-    pub fn configure<F: FieldExt>(
+impl<F: FieldExt, const ZK: bool> ShuffleConfig<F, ZK> {
+    pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        lhs: impl Clone + FnOnce(&mut VirtualCells<'_, F>) -> Vec<Expression<F>>,
-        rhs: impl Clone + FnOnce(&mut VirtualCells<'_, F>) -> Vec<Expression<F>>,
+        lhs: impl FnOnce(&mut VirtualCells<'_, F>) -> Vec<Expression<F>>,
+        rhs: impl FnOnce(&mut VirtualCells<'_, F>) -> Vec<Expression<F>>,
         l_0: Option<Selector>,
     ) -> Self {
-        let gamma = {
-            let (lhs, rhs) = {
-                let mut tmp = None;
-                meta.create_gate("", |meta| {
-                    let (lhs, rhs) = (lhs.clone()(meta), rhs.clone()(meta));
-                    assert_eq!(lhs.len(), rhs.len());
-                    tmp = Some((lhs, rhs));
-                    Some(Expression::Constant(F::zero()))
-                });
-                tmp.unwrap()
-            };
+        let (lhs, rhs, gamma) = {
+            let (lhs, rhs) = query(meta, |meta| {
+                let (lhs, rhs) = (lhs(meta), rhs(meta));
+                assert_eq!(lhs.len(), rhs.len());
+                (lhs, rhs)
+            });
             let phase = iter::empty()
                 .chain(lhs.iter())
                 .chain(rhs.iter())
@@ -119,15 +126,15 @@ impl<const ZK: bool> ShuffleConfig<ZK> {
                 .max()
                 .unwrap();
 
-            challenge_usable_after(meta, phase)
+            let gamma = challenge_usable_after(meta, phase);
+
+            (lhs, rhs, gamma)
         };
         let lhs_with_gamma = |meta: &mut VirtualCells<'_, F>| {
-            let lhs = lhs(meta);
             let gamma = meta.query_challenge(gamma);
             lhs.into_iter().zip(iter::repeat(gamma)).collect()
         };
         let rhs_with_gamma = |meta: &mut VirtualCells<'_, F>| {
-            let rhs = rhs(meta);
             let gamma = meta.query_challenge(gamma);
             rhs.into_iter().zip(iter::repeat(gamma)).collect()
         };
@@ -143,7 +150,7 @@ impl<const ZK: bool> ShuffleConfig<ZK> {
         config
     }
 
-    pub fn configure_with_gamma<F: FieldExt>(
+    pub fn configure_with_gamma(
         meta: &mut ConstraintSystem<F>,
         lhs_with_gamma: impl FnOnce(&mut VirtualCells<'_, F>) -> Vec<(Expression<F>, Expression<F>)>,
         rhs_with_gamma: impl FnOnce(&mut VirtualCells<'_, F>) -> Vec<(Expression<F>, Expression<F>)>,
@@ -155,19 +162,16 @@ impl<const ZK: bool> ShuffleConfig<ZK> {
             todo!()
         }
 
-        let (lhs_with_gamma, rhs_with_gamma, lhs_coeff, rhs_coeff) = {
-            let mut tmp = None;
-            meta.create_gate("", |meta| {
-                let lhs_with_gamma = lhs_with_gamma(meta);
-                let rhs_with_gamma = rhs_with_gamma(meta);
-                let lhs_coeff = lhs_coeff(meta);
-                let rhs_coeff = rhs_coeff(meta);
-                assert_eq!(lhs_with_gamma.len(), rhs_with_gamma.len());
-                tmp = Some((lhs_with_gamma, rhs_with_gamma, lhs_coeff, rhs_coeff));
-                Some(Expression::Constant(F::zero()))
-            });
-            tmp.unwrap()
-        };
+        let (lhs_with_gamma, rhs_with_gamma, lhs_coeff, rhs_coeff) = query(meta, |meta| {
+            let lhs_with_gamma = lhs_with_gamma(meta);
+            let rhs_with_gamma = rhs_with_gamma(meta);
+            let lhs_coeff = lhs_coeff(meta);
+            let rhs_coeff = rhs_coeff(meta);
+            assert_eq!(lhs_with_gamma.len(), rhs_with_gamma.len());
+
+            (lhs_with_gamma, rhs_with_gamma, lhs_coeff, rhs_coeff)
+        });
+
         let gamma_phase = iter::empty()
             .chain(lhs_with_gamma.iter())
             .chain(rhs_with_gamma.iter())
@@ -200,6 +204,29 @@ impl<const ZK: bool> ShuffleConfig<ZK> {
             .take(num_z)
             .collect::<Vec<_>>();
 
+        let collect_contribution = |value_with_gamma: Vec<(Expression<F>, Expression<F>)>,
+                                    coeff: Option<Expression<F>>,
+                                    bins: &[Vec<usize>]| {
+            let mut contribution = bins
+                .iter()
+                .map(|bin| {
+                    bin.iter()
+                        .map(|idx| value_with_gamma[*idx].clone())
+                        .map(|(value, gamma)| value + gamma)
+                        .reduce(|acc, expr| acc * expr)
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+
+            if let Some(coeff) = coeff {
+                contribution[0] = coeff * contribution[0].clone();
+            }
+
+            contribution
+        };
+        let lhs = collect_contribution(lhs_with_gamma, lhs_coeff, &lhs_bins);
+        let rhs = collect_contribution(rhs_with_gamma, rhs_coeff, &rhs_bins);
+
         meta.create_gate("Shuffle", |meta| {
             let l_0 = meta.query_selector(l_0);
             let zs = iter::empty()
@@ -211,38 +238,15 @@ impl<const ZK: bool> ShuffleConfig<ZK> {
             let one = Expression::Constant(F::one());
             let z_0 = zs[0].clone();
 
-            let collect_contribution =
-                |value_with_gamma: Vec<(Expression<F>, Expression<F>)>,
-                 coeff: Option<Expression<F>>,
-                 bins: &[Vec<usize>]| {
-                    let mut contribution = bins
-                        .iter()
-                        .chain(iter::repeat(&Vec::new()).take(num_z - bins.len()))
-                        .map(|bin| {
-                            bin.iter()
-                                .map(|idx| value_with_gamma[*idx].clone())
-                                .map(|(value, gamma)| value + gamma)
-                                .reduce(|acc, expr| acc * expr)
-                        })
-                        .collect::<Vec<_>>();
-
-                    if let Some(coeff) = coeff {
-                        contribution[0] = contribution[0].take().map(|value| coeff * value)
-                    }
-
-                    contribution
-                };
-            let lhs_contributions = collect_contribution(lhs_with_gamma, lhs_coeff, &lhs_bins);
-            let rhs_contributions = collect_contribution(rhs_with_gamma, rhs_coeff, &rhs_bins);
-
             iter::once(l_0 * (one - z_0)).chain(
-                lhs_contributions
+                lhs.clone()
                     .into_iter()
-                    .zip(rhs_contributions)
+                    .zip_longest(rhs.clone())
                     .zip(zs.clone().into_iter().zip(zs.into_iter().skip(1)))
-                    .map(|((lhs, rhs), (z_i, z_j))| {
-                        lhs.map(|lhs| z_i.clone() * lhs).unwrap_or_else(|| z_i)
-                            - rhs.map(|rhs| z_j.clone() * rhs).unwrap_or_else(|| z_j)
+                    .map(|(pair, (z_i, z_j))| match pair {
+                        EitherOrBoth::Left(lhs) => z_i * lhs - z_j,
+                        EitherOrBoth::Right(rhs) => z_i - z_j * rhs,
+                        EitherOrBoth::Both(lhs, rhs) => z_i * lhs - z_j * rhs,
                     }),
             )
         });
@@ -251,108 +255,64 @@ impl<const ZK: bool> ShuffleConfig<ZK> {
             l_0,
             zs,
             gamma: None,
-            lhs_bins,
-            rhs_bins,
+            lhs,
+            rhs,
         }
     }
 
-    fn assign<F: FieldExt>(
-        &self,
-        layouter: impl Layouter<F>,
-        lhs: Value<Vec<Vec<F>>>,
-        rhs: Value<Vec<Vec<F>>>,
-        n: usize,
-    ) -> Result<(), Error> {
-        let gamma = layouter.get_challenge(self.gamma.unwrap());
-        let lhs_gammas = lhs
-            .zip(gamma)
-            .map(|(lhs, gamma)| lhs.into_iter().zip(iter::repeat(gamma)).collect::<Vec<_>>());
-        let rhs_gammas = rhs
-            .zip(gamma)
-            .map(|(rhs, gamma)| rhs.into_iter().zip(iter::repeat(gamma)).collect::<Vec<_>>());
-        self.assign_with_gamma(layouter, lhs_gammas, rhs_gammas, None, None, n)
-    }
-
-    fn assign_with_gamma<F: FieldExt>(
-        &self,
-        mut layouter: impl Layouter<F>,
-        lhs_with_gamma: Value<Vec<(Vec<F>, F)>>,
-        rhs_with_gamma: Value<Vec<(Vec<F>, F)>>,
-        lhs_coeff: Option<Value<F>>,
-        rhs_coeff: Option<Value<F>>,
-        n: usize,
-    ) -> Result<(), Error> {
+    fn assign(&self, mut layouter: impl Layouter<F>, n: usize) -> Result<(), Error> {
         if ZK {
             todo!()
         }
 
-        let lhs_coeff = lhs_coeff
-            .map(|lhs_coeff| lhs_coeff.map(|lhs_coeff| Some(lhs_coeff)))
-            .unwrap_or_else(|| Value::known(None));
-        let rhs_coeff = rhs_coeff
-            .map(|rhs_coeff| rhs_coeff.map(|rhs_coeff| Some(rhs_coeff)))
-            .unwrap_or_else(|| Value::known(None));
-        let z = lhs_with_gamma
-            .zip(rhs_with_gamma)
-            .zip(lhs_coeff)
-            .zip(rhs_coeff)
-            .map(
-                |(((lhs_with_gamma, rhs_with_gamma), lhs_coeff), rhs_coeff)| {
-                    let collect_contribution =
-                        |mut value_with_gamma: Vec<(Vec<F>, F)>,
-                         coeff: Option<F>,
-                         bins: &[Vec<usize>]| {
-                            let mut contribution = bins
-                                .iter()
-                                .map(|bin| {
-                                    bin.iter()
-                                        .map(|idx| mem::take(&mut value_with_gamma[*idx]))
-                                        .map(|(mut values, gamma)| {
-                                            values.iter_mut().for_each(|value| *value += gamma);
-                                            values
-                                        })
-                                        .reduce(|mut acc, values| {
-                                            acc.iter_mut()
-                                                .zip(values)
-                                                .for_each(|(acc, value)| *acc *= value);
-                                            acc
-                                        })
-                                        .unwrap()
-                                })
-                                .collect::<Vec<_>>();
+        let lhs = self
+            .lhs
+            .iter()
+            .map(|expression| layouter.evaluate_committed(expression))
+            .fold(Value::known(Vec::new()), |acc, evaluated| {
+                acc.zip(evaluated).map(|(mut acc, evaluated)| {
+                    acc.extend(evaluated);
+                    acc
+                })
+            });
+        let rhs = self
+            .rhs
+            .iter()
+            .map(|expression| layouter.evaluate_committed(expression))
+            .fold(Value::known(Vec::new()), |acc, evaluated| {
+                acc.zip(evaluated).map(|(mut acc, evaluated)| {
+                    acc.extend(evaluated);
+                    acc
+                })
+            });
 
-                            if let Some(coeff) = coeff {
-                                contribution[0].iter_mut().for_each(|value| *value *= coeff);
-                            }
+        let z = lhs
+            .zip(rhs)
+            .map(|(lhs, mut rhs)| {
+                rhs.iter_mut().batch_invert();
 
-                            contribution.into_iter().flatten().collect::<Vec<_>>()
-                        };
+                let products = lhs
+                    .into_iter()
+                    .zip_longest(rhs)
+                    .map(|pair| match pair {
+                        EitherOrBoth::Left(value) | EitherOrBoth::Right(value) => value,
+                        EitherOrBoth::Both(lhs, rhs) => lhs * rhs,
+                    })
+                    .collect::<Vec<_>>();
 
-                    let numers = collect_contribution(lhs_with_gamma, lhs_coeff, &self.lhs_bins);
-                    let mut denoms =
-                        collect_contribution(rhs_with_gamma, rhs_coeff, &self.rhs_bins);
-                    denoms.iter_mut().batch_invert();
-
-                    let products = numers
-                        .into_iter()
-                        .zip(denoms)
-                        .map(|(numer, denom)| numer * denom)
-                        .collect::<Vec<_>>();
-
-                    let mut z = vec![F::one()];
-                    for i in 0..n {
-                        for j in (i..).step_by(n).take(self.zs.len()) {
-                            z.push(products[j] * z.last().unwrap());
-                        }
+                let mut z = vec![F::one()];
+                for i in 0..n {
+                    for j in (i..).step_by(n).take(self.zs.len()) {
+                        z.push(products[j] * z.last().unwrap());
                     }
+                }
 
-                    let _last = z.pop().unwrap();
-                    #[cfg(feature = "sanity-check")]
-                    assert_eq!(_last, F::one());
+                let _last = z.pop().unwrap();
+                #[cfg(feature = "sanity-check")]
+                assert_eq!(_last, F::one());
 
-                    z
-                },
-            )
+                z
+            })
             .transpose_vec(self.zs.len() * n);
 
         layouter.assign_region(
@@ -425,17 +385,20 @@ fn ordered_multiset<F: FieldExt>(inputs: &[Vec<F>], table: &[F]) -> Vec<F> {
     ordered
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
-pub struct PlookupConfig<const W: usize, const ZK: bool> {
-    shuffle: ShuffleConfig<ZK>,
+pub struct PlookupConfig<F: FieldExt, const W: usize, const ZK: bool> {
+    shuffle: ShuffleConfig<F, ZK>,
+    compressed_inputs: Vec<Expression<F>>,
+    compressed_table: Expression<F>,
     mixes: Vec<Column<Advice>>,
     theta: Option<Challenge>,
     beta: Challenge,
     gamma: Challenge,
 }
 
-impl<const W: usize, const ZK: bool> PlookupConfig<W, ZK> {
-    pub fn configure<F: FieldExt>(
+impl<F: FieldExt, const W: usize, const ZK: bool> PlookupConfig<F, W, ZK> {
+    pub fn configure(
         meta: &mut ConstraintSystem<F>,
         inputs: impl FnOnce(&mut VirtualCells<'_, F>) -> Vec<[Expression<F>; W]>,
         table: [Column<Any>; W],
@@ -448,14 +411,7 @@ impl<const W: usize, const ZK: bool> PlookupConfig<W, ZK> {
             todo!()
         }
 
-        let inputs = {
-            let mut tmp = None;
-            meta.create_gate("", |meta| {
-                tmp = Some(inputs(meta));
-                Some(Expression::Constant(F::zero()))
-            });
-            tmp.unwrap()
-        };
+        let inputs = query(meta, inputs);
         let t = inputs.len();
         let theta_phase = iter::empty()
             .chain(inputs.iter().flatten())
@@ -495,33 +451,42 @@ impl<const W: usize, const ZK: bool> PlookupConfig<W, ZK> {
         assert_ne!(theta, Some(gamma));
         assert_ne!(beta, gamma);
 
-        let lhs_with_gamma = |meta: &mut VirtualCells<'_, F>| {
+        let (compressed_inputs, compressed_table, compressed_table_w) = query(meta, |meta| {
             let [table, table_w] = [Rotation::cur(), Rotation::next()]
                 .map(|at| table.map(|column| meta.query_any(column, at)));
             let theta = theta.map(|theta| meta.query_challenge(theta));
+
+            let compressed_inputs = inputs
+                .iter()
+                .map(|input| {
+                    input
+                        .iter()
+                        .cloned()
+                        .reduce(|acc, expr| acc * theta.clone().unwrap() + expr)
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+            let compressed_table = table
+                .iter()
+                .cloned()
+                .reduce(|acc, expr| acc * theta.clone().unwrap() + expr)
+                .unwrap();
+            let compressed_table_w = table_w
+                .iter()
+                .cloned()
+                .reduce(|acc, expr| acc * theta.clone().unwrap() + expr)
+                .unwrap();
+
+            (compressed_inputs, compressed_table, compressed_table_w)
+        });
+        let lhs_with_gamma = |meta: &mut VirtualCells<'_, F>| {
             let [beta, gamma] = [beta, gamma].map(|challenge| meta.query_challenge(challenge));
             let one = Expression::Constant(F::one());
             let gamma_prime = (one + beta.clone()) * gamma.clone();
 
-            let table = table
-                .iter()
-                .cloned()
-                .reduce(|acc, expr| acc * theta.clone().unwrap() + expr)
-                .unwrap();
-            let table_w = table_w
-                .iter()
-                .cloned()
-                .reduce(|acc, expr| acc * theta.clone().unwrap() + expr)
-                .unwrap();
-            let inputs = inputs.iter().map(|input| {
-                input
-                    .iter()
-                    .cloned()
-                    .reduce(|acc, expr| acc * theta.clone().unwrap() + expr)
-                    .unwrap()
-            });
-
-            let values = inputs.chain(Some(table + table_w * beta));
+            let values = compressed_inputs.clone().into_iter().chain(Some(
+                compressed_table.clone() + compressed_table_w.clone() * beta,
+            ));
             let gammas = iter::empty()
                 .chain(iter::repeat(gamma).take(t))
                 .chain(Some(gamma_prime));
@@ -566,6 +531,8 @@ impl<const W: usize, const ZK: bool> PlookupConfig<W, ZK> {
 
         Self {
             shuffle,
+            compressed_inputs,
+            compressed_table,
             mixes,
             theta,
             beta,
@@ -573,117 +540,31 @@ impl<const W: usize, const ZK: bool> PlookupConfig<W, ZK> {
         }
     }
 
-    fn assign<F: FieldExt>(
-        &self,
-        mut layouter: impl Layouter<F>,
-        inputs: Value<Vec<Vec<[F; W]>>>,
-        table: Value<Vec<[F; W]>>,
-        n: usize,
-    ) -> Result<(), Error> {
+    fn assign(&self, mut layouter: impl Layouter<F>, n: usize) -> Result<(), Error> {
         if ZK {
             todo!()
         }
 
-        let (compressed_inputs, compressed_table, mix) = {
-            let compress = |values: Vec<[F; W]>, theta: Option<F>| {
-                if W > 1 {
-                    let theta = theta.unwrap();
-                    values
-                        .into_iter()
-                        .map(|value| {
-                            value
-                                .into_iter()
-                                .reduce(|acc, value| acc * theta + value)
-                                .unwrap()
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    values.into_iter().map(|value| value[0]).collect::<Vec<_>>()
-                }
-            };
-
-            let theta = self
-                .theta
-                .map(|theta| layouter.get_challenge(theta).map(Some))
-                .unwrap_or_else(|| Value::known(None));
-            let compressed_inputs = inputs.zip(theta).map(|(inputs, theta)| {
-                inputs
-                    .into_iter()
-                    .map(|input| compress(input, theta))
-                    .collect::<Vec<_>>()
+        let compressed_inputs = self
+            .compressed_inputs
+            .iter()
+            .map(|expression| layouter.evaluate_committed(expression))
+            .fold(Value::known(Vec::new()), |acc, compressed_input| {
+                acc.zip(compressed_input)
+                    .map(|(mut acc, compressed_input)| {
+                        acc.push(compressed_input);
+                        acc
+                    })
             });
-            let compressed_table = table
-                .zip(theta)
-                .map(|(table, theta)| compress(table, theta));
+        let compressed_table = layouter.evaluate_committed(&self.compressed_table);
 
-            let mix = compressed_inputs
-                .as_ref()
-                .zip(compressed_table.as_ref())
-                .map(|(compressed_inputs, compressed_table)| {
-                    ordered_multiset(compressed_inputs, compressed_table)
-                });
+        let mix = compressed_inputs
+            .zip(compressed_table.as_ref())
+            .map(|(compressed_inputs, compressed_table)| {
+                ordered_multiset(&compressed_inputs, compressed_table)
+            })
+            .transpose_vec(self.mixes.len() * n);
 
-            (compressed_inputs, compressed_table, mix)
-        };
-
-        let (lhs_with_gamma, rhs_with_gamma, lhs_coeff) = {
-            let [beta, gamma] =
-                [self.beta, self.gamma].map(|challenge| layouter.get_challenge(challenge));
-            let gamma_prime = beta
-                .zip(gamma)
-                .map(|(beta, gamma)| (F::one() + beta) * gamma);
-
-            let lhs_with_gamma = compressed_inputs
-                .zip(compressed_table)
-                .zip(beta)
-                .zip(gamma)
-                .zip(gamma_prime)
-                .map(
-                    |((((compressed_inputs, compressed_table), beta), gamma), gamma_prime)| {
-                        let values = compressed_inputs.into_iter().chain(Some(
-                            compressed_table
-                                .iter()
-                                .zip(compressed_table.iter().cycle().skip(1))
-                                .map(|(table, table_w)| *table + beta * table_w)
-                                .collect::<Vec<_>>(),
-                        ));
-                        let gammas = iter::empty()
-                            .chain(iter::repeat(gamma).take(self.mixes.len() - 1))
-                            .chain(Some(gamma_prime));
-
-                        values.zip(gammas).collect::<Vec<_>>()
-                    },
-                );
-            let rhs_with_gamma =
-                mix.as_ref()
-                    .zip(beta)
-                    .zip(gamma_prime)
-                    .map(|((mix, beta), gamma_prime)| {
-                        let mut values = vec![Vec::with_capacity(n); self.mixes.len()];
-                        for (idx, value) in (0..values.len()).cycle().zip(
-                            mix.iter()
-                                .zip(mix.iter().cycle().skip(1))
-                                .map(|(mix_i, mix_j)| *mix_i + beta * mix_j),
-                        ) {
-                            values[idx].push(value);
-                        }
-                        let gammas = iter::repeat(gamma_prime).take(self.mixes.len());
-
-                        values.into_iter().zip(gammas).collect::<Vec<_>>()
-                    });
-            let lhs_coeff = beta.map(|beta| {
-                binomial_coeffs(self.mixes.len())
-                    .into_iter()
-                    .zip(powers(F::one(), beta))
-                    .map(|(coeff, power_of_beta)| F::from(coeff) * power_of_beta)
-                    .reduce(|acc, value| acc + value)
-                    .unwrap()
-            });
-
-            (lhs_with_gamma, rhs_with_gamma, lhs_coeff)
-        };
-
-        let mix = mix.transpose_vec(self.mixes.len() * n);
         layouter.assign_region(
             || "mixes",
             |mut region| {
@@ -698,14 +579,7 @@ impl<const W: usize, const ZK: bool> PlookupConfig<W, ZK> {
             },
         )?;
 
-        self.shuffle.assign_with_gamma(
-            layouter.namespace(|| "Shuffle"),
-            lhs_with_gamma,
-            rhs_with_gamma,
-            Some(lhs_coeff),
-            None,
-            n,
-        )?;
+        self.shuffle.assign(layouter.namespace(|| "Shuffle"), n)?;
 
         Ok(())
     }
@@ -756,7 +630,7 @@ impl<F: FieldExt, const W: usize, const T: usize, const ZK: bool> Circuit<F>
     type Config = (
         [[Column<Advice>; W]; T],
         [Column<Fixed>; W],
-        PlookupConfig<W, ZK>,
+        PlookupConfig<F, W, ZK>,
     );
     type FloorPlanner = V1;
 
@@ -819,12 +693,7 @@ impl<F: FieldExt, const W: usize, const T: usize, const ZK: bool> Circuit<F>
                 Ok(())
             },
         )?;
-        plookup.assign(
-            layouter.namespace(|| "Plookup"),
-            self.inputs.as_ref().map(|input| input.to_vec()),
-            Value::known(self.table.clone()),
-            self.n,
-        )?;
+        plookup.assign(layouter.namespace(|| "Plookup"), self.n)?;
         Ok(())
     }
 }
@@ -842,17 +711,17 @@ mod test {
     use rand::{rngs::OsRng, RngCore};
     use std::{iter, mem};
 
-    fn shuffled<T: Default, R: RngCore, const W: usize>(
-        mut values: [Vec<T>; W],
+    fn shuffled<F: Default, R: RngCore, const T: usize>(
+        mut values: [Vec<F>; T],
         mut rng: R,
-    ) -> [Vec<T>; W] {
+    ) -> [Vec<F>; T] {
         let n = values[0].len();
         let mut swap = |lhs: usize, rhs: usize| {
             let tmp = mem::take(&mut values[lhs / n][lhs % n]);
             values[lhs / n][lhs % n] = mem::replace(&mut values[rhs / n][rhs % n], tmp);
         };
 
-        for row in (1..n * W).rev() {
+        for row in (1..n * T).rev() {
             let rand_row = (rng.next_u32() as usize) % row;
             swap(row, rand_row);
         }
@@ -875,7 +744,14 @@ mod test {
                     .take(n)
                     .collect::<Vec<_>>()
             });
-            let rhs = shuffled(lhs.clone(), rng);
+            let rhs = shuffled(
+                lhs.iter()
+                    .map(|lhs| lhs.iter().map(F::square).collect())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+                rng,
+            );
             Self {
                 n,
                 lhs: Value::known(lhs),
@@ -885,7 +761,11 @@ mod test {
     }
 
     impl<F: FieldExt, const T: usize, const ZK: bool> Circuit<F> for Shuffler<F, T, ZK> {
-        type Config = ([Column<Advice>; T], [Column<Advice>; T], ShuffleConfig<ZK>);
+        type Config = (
+            [Column<Advice>; T],
+            [Column<Advice>; T],
+            ShuffleConfig<F, ZK>,
+        );
         type FloorPlanner = V1;
 
         fn without_witnesses(&self) -> Self {
@@ -902,8 +782,11 @@ mod test {
             let shuffle = ShuffleConfig::configure(
                 meta,
                 |meta| {
-                    lhs.map(|column| meta.query_advice(column, Rotation::cur()))
-                        .to_vec()
+                    lhs.map(|column| {
+                        let lhs = meta.query_advice(column, Rotation::cur());
+                        lhs.clone() * lhs
+                    })
+                    .to_vec()
                 },
                 |meta| {
                     rhs.map(|column| meta.query_advice(column, Rotation::cur()))
@@ -942,12 +825,7 @@ mod test {
                     Ok(())
                 },
             )?;
-            shuffle.assign(
-                layouter.namespace(|| "Shuffle"),
-                self.lhs.as_ref().map(|lhs| lhs.to_vec()),
-                self.rhs.as_ref().map(|rhs| rhs.to_vec()),
-                self.n,
-            )?;
+            shuffle.assign(layouter.namespace(|| "Shuffle"), self.n)?;
 
             Ok(())
         }
@@ -1010,7 +888,12 @@ mod test {
                     .unwrap()
                     .verify(),
                 vec![(
-                    ((2, "Shuffle").into(), T.div_ceil(cs.degree::<ZK>() - 1), "").into(),
+                    (
+                        (2, "Shuffle").into(),
+                        (T * 2).div_ceil(cs.degree::<ZK>() - 1),
+                        "",
+                    )
+                        .into(),
                     FailureLocation::InRegion {
                         region: (0, "").into(),
                         offset: n - 1,
@@ -1051,7 +934,7 @@ mod test {
                     .verify(),
                 vec![(
                     (
-                        (2, "Shuffle").into(),
+                        (3, "Shuffle").into(),
                         (T + 1).div_ceil(cs.degree::<ZK>() - 1),
                         "",
                     )
