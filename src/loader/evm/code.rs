@@ -1,3 +1,4 @@
+use crate::util::Itertools;
 use ethereum_types::U256;
 use foundry_evm::{revm::opcode::*, HashMap};
 
@@ -22,7 +23,7 @@ impl Code {
             constants: HashMap::new(),
             stack_len: 0,
         };
-        let constants = constants.into_iter().collect::<Vec<_>>();
+        let constants = constants.into_iter().collect_vec();
         for constant in constants.iter() {
             code.push(*constant);
         }

@@ -1,4 +1,4 @@
-use crate::util::{Curve, Domain, Expression, Group, Query};
+use crate::util::{Curve, Domain, Expression, Group, Itertools, Query};
 
 #[cfg(feature = "halo2")]
 pub mod halo2;
@@ -43,7 +43,7 @@ impl<C: Curve> Snark<C> {
             statements
                 .iter()
                 .map(|statements| statements.len())
-                .collect::<Vec<_>>()
+                .collect_vec()
         );
         Snark {
             protocol,

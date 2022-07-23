@@ -1,6 +1,6 @@
 use crate::{
     loader::{LoadedScalar, Loader},
-    util::{Curve, Domain, Field, Fraction, Rotation},
+    util::{Curve, Domain, Field, Fraction, Itertools, Rotation},
 };
 use std::{
     cmp::max,
@@ -40,9 +40,7 @@ where
         z: &L::LoadedScalar,
     ) -> Self {
         let zn = z.pow_const(domain.n as u64);
-        let langranges = BTreeSet::<i32>::from_iter(langranges)
-            .into_iter()
-            .collect::<Vec<_>>();
+        let langranges = langranges.into_iter().sorted().dedup().collect_vec();
 
         let one = loader.load_one();
         let zn_minus_one = zn.clone() - one;
@@ -52,12 +50,12 @@ where
         let omegas = langranges
             .iter()
             .map(|&i| loader.load_const(&domain.rotate_scalar(C::Scalar::one(), Rotation(i))))
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         let lagrange_evals = omegas
             .iter()
             .map(|omega| Fraction::new(numer.clone() * omega, z.clone() - omega))
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         Self {
             zn,

@@ -1,3 +1,4 @@
+use crate::util::Itertools;
 use num_bigint::BigUint;
 use num_traits::One;
 use std::{
@@ -57,7 +58,7 @@ pub fn batch_invert_and_mul<F: PrimeField>(values: &mut [F], coeff: &F) {
             *acc *= value;
             Some(*acc)
         })
-        .collect::<Vec<_>>();
+        .collect_vec();
 
     let mut all_product_inv = products.last().unwrap().invert().unwrap() * coeff;
 
@@ -234,7 +235,7 @@ pub fn fe_to_limbs<F1: PrimeField, F2: PrimeField, const LIMBS: usize, const BIT
         .step_by(BITS)
         .take(LIMBS)
         .map(move |shift| big_to_fe((&big >> shift) & &mask))
-        .collect::<Vec<_>>()
+        .collect_vec()
         .try_into()
         .unwrap()
 }

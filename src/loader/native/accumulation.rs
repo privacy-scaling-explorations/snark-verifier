@@ -2,7 +2,7 @@ use crate::{
     loader::native::NativeLoader,
     protocol::Protocol,
     scheme::kzg::{AccumulationStrategy, Accumulator, SameCurveAccumulation, MSM},
-    util::{fe_from_limbs, Curve, Group, PrimeCurveAffine, Transcript},
+    util::{fe_from_limbs, Curve, Group, Itertools, PrimeCurveAffine, Transcript},
     Error,
 };
 use halo2_curves::{
@@ -70,12 +70,12 @@ where
                             indices
                                 .iter()
                                 .map(|index| statements[index.0][index.1])
-                                .collect::<Vec<_>>()
+                                .collect_vec()
                                 .try_into()
                                 .unwrap(),
                         )
                     })
-                    .collect::<Vec<_>>()
+                    .collect_vec()
                     .try_into()
                     .unwrap();
                 let lhs = <C::AffineExt as CurveAffine>::from_xy(lhs_x, lhs_y)
@@ -86,7 +86,7 @@ where
                     .to_curve();
                 Accumulator::new(MSM::base(lhs), MSM::base(rhs))
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         Some(Accumulator::random_linear_combine(
             challenges.into_iter().zip(accumulators),

@@ -13,7 +13,7 @@ use crate::{
         Protocol, Snark,
     },
     scheme::kzg::{self, AccumulationScheme, ShplonkAccumulationScheme},
-    util::{fe_to_limbs, Curve, Group, PrimeCurveAffine},
+    util::{fe_to_limbs, Curve, Group, Itertools, PrimeCurveAffine},
 };
 use halo2_curves::bn256::{Fr, G1Affine, G1};
 use halo2_proofs::{
@@ -59,7 +59,7 @@ impl<C: Curve> From<Snark<C>> for SnarkWitness<C> {
             statements: snark
                 .statements
                 .into_iter()
-                .map(|statements| statements.into_iter().map(Value::known).collect::<Vec<_>>())
+                .map(|statements| statements.into_iter().map(Value::known).collect_vec())
                 .collect(),
             proof: Value::known(snark.proof),
         }
@@ -96,9 +96,9 @@ pub fn accumulate<'a, 'b>(
             statements
                 .iter()
                 .map(|statement| loader.assign_scalar(*statement))
-                .collect::<Vec<_>>()
+                .collect_vec()
         })
-        .collect::<Vec<_>>();
+        .collect_vec();
     ShplonkAccumulationScheme::accumulate(
         &snark.protocol,
         loader,

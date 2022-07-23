@@ -8,8 +8,8 @@ use crate::{
         msm::MSM,
     },
     util::{
-        CommonPolynomial, CommonPolynomialEvaluation, Curve, Expression, Field, Query, Rotation,
-        TranscriptRead,
+        CommonPolynomial, CommonPolynomialEvaluation, Curve, Expression, Field, Itertools, Query,
+        Rotation, TranscriptRead,
     },
     Error,
 };
@@ -81,7 +81,7 @@ where
             .iter()
             .zip(powers_of_u.iter())
             .map(|(w, power_of_u)| MSM::base(w.clone()) * power_of_u)
-            .collect::<Vec<_>>();
+            .collect_vec();
         let lhs = f + rhs
             .iter()
             .zip(z_omegas)
@@ -119,7 +119,7 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
             != statements
                 .iter()
                 .map(|statements| statements.len())
-                .collect::<Vec<_>>()
+                .collect_vec()
         {
             return Err(Error::InvalidInstances);
         }
@@ -145,8 +145,8 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
                 .unzip::<_, _, Vec<_>, Vec<_>>();
 
             (
-                auxiliaries.into_iter().flatten().collect::<Vec<_>>(),
-                challenges.into_iter().flatten().collect::<Vec<_>>(),
+                auxiliaries.into_iter().flatten().collect_vec(),
+                challenges.into_iter().flatten().collect_vec(),
             )
         };
 
@@ -231,7 +231,7 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
                     .map(|(i, statement)| {
                         common_poly_eval.get(CommonPolynomial::Lagrange(i as i32)) * statement
                     })
-                    .collect::<Vec<_>>(),
+                    .collect_vec(),
             )
         });
         let mut evaluations = HashMap::<Query, L::LoadedScalar>::from_iter(

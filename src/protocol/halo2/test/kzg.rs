@@ -88,20 +88,20 @@ macro_rules! halo2_kzg_config {
 #[macro_export]
 macro_rules! halo2_kzg_prepare {
     ($k:expr, $config:expr, $create_circuit:expr) => {{
+        use $crate::{
+            protocol::halo2::{compile, test::kzg::read_or_create_srs},
+            util::{GroupEncoding, Itertools},
+        };
         use halo2_curves::bn256::{Bn256, G1};
         use halo2_proofs::{
             plonk::{keygen_pk, keygen_vk},
             poly::kzg::commitment::KZGCommitmentScheme,
         };
-        use std::{collections::BTreeSet, iter};
-        use $crate::{
-            protocol::halo2::{compile, test::kzg::read_or_create_srs},
-            util::GroupEncoding,
-        };
+        use std::{iter};
 
         let circuits = iter::repeat_with(|| $create_circuit)
             .take($config.num_proof)
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         let params = read_or_create_srs::<Bn256>($k);
         let pk = if $config.zk {
@@ -121,9 +121,9 @@ macro_rules! halo2_kzg_prepare {
             protocol.preprocessed.len(),
             protocol.preprocessed
                 .iter()
-                .map(|ec_point| ec_point.to_bytes().as_ref().to_vec().try_into().unwrap())
-                .collect::<BTreeSet<[u8; 32]>>()
-                .len(),
+                .map(|ec_point| <[u8; 32]>::try_from(ec_point.to_bytes().as_ref().to_vec()).unwrap())
+                .unique()
+                .count()
         );
 
         (params, pk, protocol, circuits)
@@ -138,12 +138,13 @@ macro_rules! halo2_kzg_create_snark {
         use $crate::{
             collect_slice,
             protocol::{halo2::test::create_proof_checked, Snark},
+            util::Itertools,
         };
 
         let instances = $circuits
             .iter()
             .map(|circuit| circuit.instances())
-            .collect::<Vec<_>>();
+            .collect_vec();
         let proof = {
             collect_slice!(instances, 2);
             #[allow(clippy::needless_borrow)]
@@ -190,7 +191,7 @@ macro_rules! halo2_kzg_create_snark {
 
         Snark::new(
             $protocol.clone(),
-            instances.into_iter().flatten().collect::<Vec<_>>(),
+            instances.into_iter().flatten().collect_vec(),
             proof,
         )
     }};

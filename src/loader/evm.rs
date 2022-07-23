@@ -1,4 +1,7 @@
-use crate::{scheme::kzg::Cost, util::PrimeField};
+use crate::{
+    scheme::kzg::Cost,
+    util::{Itertools, PrimeField},
+};
 use ethereum_types::U256;
 use std::iter;
 
@@ -46,15 +49,12 @@ where
     F: PrimeField<Repr = [u8; 32]>,
 {
     iter::empty()
-        .chain(instances.into_iter().flatten().flat_map(|value| {
-            value
-                .to_repr()
-                .as_ref()
-                .iter()
-                .rev()
-                .cloned()
-                .collect::<Vec<_>>()
-        }))
+        .chain(
+            instances
+                .into_iter()
+                .flatten()
+                .flat_map(|value| value.to_repr().as_ref().iter().rev().cloned().collect_vec()),
+        )
         .chain(proof)
         .collect()
 }

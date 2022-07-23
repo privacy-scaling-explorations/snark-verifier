@@ -1,4 +1,4 @@
-use crate::loader::evm::test::tui::Tui;
+use crate::{loader::evm::test::tui::Tui, util::Itertools};
 use foundry_evm::{
     executor::{backend::Backend, fork::MultiFork, ExecutorBuilder},
     revm::AccountInfo,
@@ -44,7 +44,7 @@ pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64, Vec<u64>) {
         .logs
         .into_iter()
         .map(|log| h256_to_u256_be(log.topics[0]).as_u64())
-        .collect::<Vec<_>>();
+        .collect_vec();
 
     if debug {
         Tui::new(result.debug.unwrap().flatten(0), 0).start();

@@ -1,4 +1,4 @@
-use crate::util::{Curve, FieldOps, GroupOps, PrimeField};
+use crate::util::{Curve, FieldOps, GroupOps, Itertools, PrimeField};
 use std::{fmt::Debug, iter};
 
 pub mod native;
@@ -76,7 +76,7 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + FieldOps {
             &values
                 .iter()
                 .map(|value| (F::one(), value.clone()))
-                .collect::<Vec<_>>(),
+                .collect_vec(),
             constant,
         )
     }
@@ -129,7 +129,7 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + FieldOps {
                 iter::successors(Some(self.clone()), |power| Some(power.clone() * self))
                     .take(n - 1),
             )
-            .collect::<Vec<_>>()
+            .collect_vec()
     }
 }
 

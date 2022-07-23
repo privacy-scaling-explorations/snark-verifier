@@ -1,4 +1,4 @@
-use crate::util::{BatchInvert, Field};
+use crate::util::{BatchInvert, EitherOrBoth, Field, Itertools};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{Layouter, Value},
@@ -8,7 +8,6 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
-use itertools::{EitherOrBoth, Itertools};
 use std::{collections::BTreeMap, convert::TryFrom, iter, ops::Mul};
 
 fn query<F: FieldExt, T>(
@@ -201,7 +200,7 @@ impl<F: FieldExt, const ZK: bool> ShuffleConfig<F, ZK> {
         let l_0 = l_0.unwrap_or_else(|| meta.selector());
         let zs = iter::repeat_with(|| advice_column_in(meta, z_phase))
             .take(num_z)
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         let collect_contribution = |value_with_gamma: Vec<(Expression<F>, Expression<F>)>,
                                     coeff: Option<Expression<F>>,
@@ -215,7 +214,7 @@ impl<F: FieldExt, const ZK: bool> ShuffleConfig<F, ZK> {
                         .reduce(|acc, expr| acc * expr)
                         .unwrap()
                 })
-                .collect::<Vec<_>>();
+                .collect_vec();
 
             if let Some(coeff) = coeff {
                 contribution[0] = coeff * contribution[0].clone();
@@ -232,7 +231,7 @@ impl<F: FieldExt, const ZK: bool> ShuffleConfig<F, ZK> {
                 .chain(zs.iter().cloned().zip(iter::repeat(Rotation::cur())))
                 .chain(Some((zs[0], Rotation::next())))
                 .map(|(z, at)| meta.query_advice(z, at))
-                .collect::<Vec<_>>();
+                .collect_vec();
 
             let one = Expression::Constant(F::one());
             let z_0 = zs[0].clone();
@@ -297,7 +296,7 @@ impl<F: FieldExt, const ZK: bool> ShuffleConfig<F, ZK> {
                         EitherOrBoth::Left(value) | EitherOrBoth::Right(value) => value,
                         EitherOrBoth::Both(lhs, rhs) => lhs * rhs,
                     })
-                    .collect::<Vec<_>>();
+                    .collect_vec();
 
                 let mut z = vec![F::one()];
                 for i in 0..n {
@@ -437,7 +436,7 @@ impl<F: FieldExt, const W: usize, const ZK: bool> PlookupConfig<F, W, ZK> {
         };
         let mixes = iter::repeat_with(|| advice_column_in(meta, mixes_phase))
             .take(t + 1)
-            .collect::<Vec<_>>();
+            .collect_vec();
         let [beta, gamma] = [beta, gamma].map(|challenge| match challenge {
             Some(challenge) => {
                 assert!(challenge.phase() >= mixes_phase);
@@ -463,7 +462,7 @@ impl<F: FieldExt, const W: usize, const ZK: bool> PlookupConfig<F, W, ZK> {
                         .reduce(|acc, expr| acc * theta.clone().unwrap() + expr)
                         .unwrap()
                 })
-                .collect::<Vec<_>>();
+                .collect_vec();
             let compressed_table = table
                 .iter()
                 .cloned()
@@ -495,7 +494,7 @@ impl<F: FieldExt, const W: usize, const ZK: bool> PlookupConfig<F, W, ZK> {
                 .chain(mixes.iter().cloned().zip(iter::repeat(Rotation::cur())))
                 .chain(Some((mixes[0], Rotation::next())))
                 .map(|(column, at)| meta.query_advice(column, at))
-                .collect::<Vec<_>>();
+                .collect_vec();
             let [beta, gamma] = [beta, gamma].map(|challenge| meta.query_challenge(challenge));
             let one = Expression::Constant(F::one());
             let gamma_prime = (one + beta.clone()) * gamma;
@@ -586,6 +585,7 @@ impl<F: FieldExt, const W: usize, const ZK: bool> PlookupConfig<F, W, ZK> {
 #[cfg(test)]
 mod test {
     use super::{PlookupConfig, ShuffleConfig};
+    use crate::util::Itertools;
     use halo2_curves::{bn256::Fr, FieldExt};
     use halo2_proofs::{
         circuit::{floor_planner::V1, Layouter, Value},
@@ -628,12 +628,12 @@ mod test {
                 let rng = &mut rng;
                 iter::repeat_with(|| F::random(&mut *rng))
                     .take(n)
-                    .collect::<Vec<_>>()
+                    .collect_vec()
             });
             let rhs = shuffled(
                 lhs.iter()
                     .map(|lhs| lhs.iter().map(F::square).collect())
-                    .collect::<Vec<_>>()
+                    .collect_vec()
                     .try_into()
                     .unwrap(),
                 rng,
@@ -730,7 +730,7 @@ mod test {
             let m = rng.next_u32() as usize % n;
             let mut table = iter::repeat_with(|| [(); W].map(|_| F::random(&mut rng)))
                 .take(m)
-                .collect::<Vec<_>>();
+                .collect_vec();
             table.extend(
                 iter::repeat(
                     table
@@ -846,7 +846,7 @@ mod test {
                             } => (constraint, location),
                             _ => panic!("MockProver::verify has unexpected failure"),
                         })
-                        .collect::<Vec<_>>(),
+                        .collect_vec(),
                     failures
                 )
             }

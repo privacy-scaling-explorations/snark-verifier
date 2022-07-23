@@ -2,7 +2,7 @@ use crate::{
     loader::evm::loader::{EvmLoader, Scalar},
     protocol::Protocol,
     scheme::kzg::{AccumulationStrategy, Accumulator, SameCurveAccumulation, MSM},
-    util::{Curve, PrimeCurveAffine, PrimeField, Transcript, UncompressedEncoding},
+    util::{Curve, Itertools, PrimeCurveAffine, PrimeField, Transcript, UncompressedEncoding},
     Error,
 };
 use ethereum_types::U256;
@@ -56,7 +56,7 @@ where
         let num_statements = statements
             .iter()
             .map(|statements| statements.len())
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         let challenges = transcript.squeeze_n_challenges(accumulator_indices.len());
         let accumulators = accumulator_indices
@@ -73,7 +73,7 @@ where
                 let rhs = loader.calldataload_ec_point_from_limbs::<LIMBS, BITS>(offset + 0x100);
                 Accumulator::new(MSM::base(lhs), MSM::base(rhs))
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         Some(Accumulator::random_linear_combine(
             challenges.into_iter().zip(accumulators),

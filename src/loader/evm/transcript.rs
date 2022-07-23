@@ -7,7 +7,7 @@ use crate::{
         native::NativeLoader,
         Loader,
     },
-    util::{Curve, Group, PrimeField, Transcript, TranscriptRead, UncompressedEncoding},
+    util::{Curve, Group, Itertools, PrimeField, Transcript, TranscriptRead, UncompressedEncoding},
     Error,
 };
 use ethereum_types::U256;
@@ -153,7 +153,7 @@ where
             } else {
                 None
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
         let hash: [u8; 32] = Keccak256::digest(data).into();
         self.buf = hash.to_vec();
         u256_to_field(U256::from_big_endian(hash.as_slice()))

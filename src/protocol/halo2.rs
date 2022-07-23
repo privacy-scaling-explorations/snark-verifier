@@ -1,6 +1,6 @@
 use crate::{
     protocol::Protocol,
-    util::{CommonPolynomial, Domain, Expression, Query, Rotation},
+    util::{CommonPolynomial, Domain, Expression, Itertools, Query, Rotation},
 };
 use halo2_proofs::{
     arithmetic::{CurveAffine, CurveExt, FieldExt},
@@ -155,7 +155,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     state[*phase as usize] += 1;
                     Some(index)
                 })
-                .collect::<Vec<_>>();
+                .collect_vec();
             (num, index)
         };
 
@@ -325,7 +325,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                             Some(Query::new(z, self.rotation_last()))
                         })
                 })
-                .collect::<Vec<_>>(),
+                .collect_vec(),
             (true, false) => iter::empty()
                 .chain((0..self.num_permutation_z).flat_map(move |i| {
                     let z = self.permutation_poly(t, i);
@@ -335,13 +335,13 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     let z = self.permutation_poly(t, i);
                     Query::new(z, self.rotation_last())
                 }))
-                .collect::<Vec<_>>(),
+                .collect_vec(),
             (false, _) => (0..self.num_permutation_z)
                 .flat_map(move |i| {
                     let z = self.permutation_poly(t, i);
                     [Query::new(z, 0), Query::new(z, 1)]
                 })
-                .collect::<Vec<_>>(),
+                .collect_vec(),
         }
     }
 
@@ -499,11 +499,11 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             .iter()
             .map(|column| self.query(*column.column_type(), column.index(), 0, t))
             .map(Expression::<F>::Polynomial)
-            .collect::<Vec<_>>();
+            .collect_vec();
         let permutation_fixeds = (0..self.num_permutation_fixed)
             .map(|i| Query::new(self.num_fixed + i, 0))
             .map(Expression::<F>::Polynomial)
-            .collect::<Vec<_>>();
+            .collect_vec();
         let zs = (0..self.num_permutation_z)
             .map(|i| {
                 let z = self.permutation_poly(t, i);
@@ -513,7 +513,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     Expression::<F>::Polynomial(Query::new(z, self.rotation_last())),
                 )
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         iter::empty()
             .chain(zs.first().map(|(z_0, _, _)| l_0 * (one - z_0)))
@@ -526,7 +526,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     .skip(1)
                     .zip(zs.iter())
                     .map(|((z, _, _), (_, _, z_prev_last))| l_0 * (z - z_prev_last))
-                    .collect::<Vec<_>>()
+                    .collect_vec()
             } else {
                 Vec::new()
             })
@@ -572,7 +572,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                         },
                     ),
             )
-            .collect::<Vec<_>>()
+            .collect_vec()
     }
 
     fn lookup_relations(&'a self, t: usize) -> impl IntoIterator<Item = Expression<F>> + 'a {
@@ -595,7 +595,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     Expression::<F>::Polynomial(Query::new(permuted_table, 0)),
                 )
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         let compress = |expressions: &'a [plonk::Expression<F>]| {
             expressions
@@ -639,7 +639,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                         }))
                 },
             )
-            .collect::<Vec<_>>()
+            .collect_vec()
     }
 
     fn accumulator_indices(

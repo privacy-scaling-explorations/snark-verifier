@@ -1,6 +1,6 @@
 use crate::{
     loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
-    util::{Curve, Field, FieldOps, Group},
+    util::{Curve, Field, FieldOps, Group, Itertools},
 };
 use halo2_curves::CurveAffine;
 use halo2_proofs::circuit;
@@ -550,7 +550,7 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize> LoadedEcPoin
     fn multi_scalar_multiplication(
         pairs: impl IntoIterator<Item = (Scalar<'a, 'b, C, LIMBS, BITS>, Self)>,
     ) -> Self {
-        let pairs = pairs.into_iter().collect::<Vec<_>>();
+        let pairs = pairs.into_iter().collect_vec();
         let loader = &pairs[0].0.loader;
 
         let (non_scaled, scaled) = pairs.iter().fold(

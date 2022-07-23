@@ -5,7 +5,7 @@ use crate::{
     },
     protocol::Protocol,
     scheme::kzg::{AccumulationStrategy, Accumulator, SameCurveAccumulation, MSM},
-    util::Transcript,
+    util::{Itertools, Transcript},
     Error,
 };
 use halo2_curves::CurveAffine;
@@ -57,7 +57,7 @@ where
                 let assinged = indices
                     .iter()
                     .map(|index| statements[index.0][index.1].assigned())
-                    .collect::<Vec<_>>();
+                    .collect_vec();
                 let lhs = loader.assign_ec_point_from_limbs(
                     assinged[..LIMBS].to_vec().try_into().unwrap(),
                     assinged[LIMBS..2 * LIMBS].to_vec().try_into().unwrap(),
@@ -68,7 +68,7 @@ where
                 );
                 Accumulator::new(MSM::base(lhs), MSM::base(rhs))
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         Some(Accumulator::random_linear_combine(
             challenges.into_iter().zip(accumulators),

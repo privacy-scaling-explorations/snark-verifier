@@ -1,4 +1,4 @@
-use crate::protocol::halo2::test::circuit::plookup::PlookupConfig;
+use crate::{protocol::halo2::test::circuit::plookup::PlookupConfig, util::Itertools};
 use halo2_proofs::{
     arithmetic::FieldExt,
     circuit::{floor_planner::V1, Chip, Layouter, Value},
@@ -13,10 +13,7 @@ use halo2_wrong_ecc::{
     EccConfig,
 };
 use rand::RngCore;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    iter,
-};
+use std::{collections::BTreeMap, iter};
 
 #[derive(Clone)]
 pub struct MainGateWithRangeConfig {
@@ -166,8 +163,8 @@ impl<F: FieldExt> PlookupRangeChip<F> {
         );
         let bits = bits
             .into_iter()
-            .collect::<BTreeSet<usize>>()
-            .into_iter()
+            .sorted()
+            .dedup()
             .enumerate()
             .map(|(tag, bit)| (bit, tag))
             .collect();
@@ -228,7 +225,7 @@ impl<F: FieldExt> RangeInstructions<F> for PlookupRangeChip<F> {
             .into_iter()
             .zip((0..num_limbs).map(|i| F::from(2).pow(&[(limb_bit * i) as u64, 0, 0, 0])))
             .map(|(limb, base)| Term::Unassigned(limb, base))
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         self.main_gate
             .decompose(ctx, &terms, F::zero(), |ctx, is_last| {

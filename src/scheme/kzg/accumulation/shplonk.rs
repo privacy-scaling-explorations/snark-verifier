@@ -9,7 +9,7 @@ use crate::{
     },
     util::{
         CommonPolynomial, CommonPolynomialEvaluation, Curve, Domain, Expression, Field, Fraction,
-        Query, Rotation, TranscriptRead,
+        Itertools, Query, Rotation, TranscriptRead,
     },
     Error,
 };
@@ -115,7 +115,7 @@ impl<C: Curve, L: Loader<C>> ShplonkProof<C, L> {
             != statements
                 .iter()
                 .map(|statements| statements.len())
-                .collect::<Vec<_>>()
+                .collect_vec()
         {
             return Err(Error::InvalidInstances);
         }
@@ -141,8 +141,8 @@ impl<C: Curve, L: Loader<C>> ShplonkProof<C, L> {
                 .unzip::<_, _, Vec<_>, Vec<_>>();
 
             (
-                auxiliaries.into_iter().flatten().collect::<Vec<_>>(),
-                challenges.into_iter().flatten().collect::<Vec<_>>(),
+                auxiliaries.into_iter().flatten().collect_vec(),
+                challenges.into_iter().flatten().collect_vec(),
             )
         };
 
@@ -232,7 +232,7 @@ impl<C: Curve, L: Loader<C>> ShplonkProof<C, L> {
                         statement.clone()
                             * common_poly_eval.get(CommonPolynomial::Lagrange(i as i32))
                     })
-                    .collect::<Vec<_>>(),
+                    .collect_vec(),
             )
         });
         let mut evaluations = HashMap::<Query, L::LoadedScalar>::from_iter(
@@ -327,7 +327,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
         let omegas = rotations
             .iter()
             .map(|rotation| domain.rotate_scalar(C::Scalar::one(), *rotation))
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         let normalized_ell_primes = omegas
             .iter()
@@ -341,7 +341,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                         acc * (*omega_j - omega_i)
                     })
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         let z = &powers_of_z[1].clone();
         let z_pow_k_minus_one = {
@@ -379,7 +379,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                 )
             })
             .map(Fraction::one_over)
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         let z_s = rotations
             .iter()
@@ -404,14 +404,14 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                 .iter_mut()
                 .chain(self.commitment_coeff.as_mut())
                 .filter_map(Fraction::denom_mut)
-                .collect::<Vec<_>>()
+                .collect_vec()
         } else if self.remainder_coeff.is_none() {
             let barycentric_weights_sum = L::LoadedScalar::sum(
                 &self
                     .evaluation_coeffs
                     .iter()
                     .map(Fraction::evaluate)
-                    .collect::<Vec<_>>(),
+                    .collect_vec(),
             );
             self.remainder_coeff = Some(match self.commitment_coeff.clone() {
                 Some(coeff) => Fraction::new(coeff.evaluate(), barycentric_weights_sum),
@@ -455,7 +455,7 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                                         })
                                         .unwrap()
                             })
-                            .collect::<Vec<_>>(),
+                            .collect_vec(),
                     );
                 (commitment - MSM::scalar(remainder)) * power_of_mu
             })
@@ -472,9 +472,9 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
     let rotations_sets = rotations_sets(protocol);
     let superset = rotations_sets
         .iter()
-        .flat_map(|set| set.rotations.iter())
-        .cloned()
-        .collect::<BTreeSet<_>>();
+        .flat_map(|set| set.rotations.clone())
+        .sorted()
+        .dedup();
 
     let size = 2.max(
         (rotations_sets
@@ -490,7 +490,6 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
     let powers_of_z = z.powers(size);
     let z_prime_minus_z_omega_i = HashMap::from_iter(
         superset
-            .into_iter()
             .map(|rotation| {
                 (
                     rotation,

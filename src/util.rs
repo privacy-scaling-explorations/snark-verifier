@@ -10,19 +10,25 @@ pub use arithmetic::{
 pub use expression::{CommonPolynomial, CommonPolynomialEvaluation, Expression, Query};
 pub use transcript::{Transcript, TranscriptRead};
 
+pub use itertools::{EitherOrBoth, Itertools};
+
 #[macro_export]
 macro_rules! collect_slice {
     ($vec:ident) => {
-        let $vec = $vec.iter().map(|vec| vec.as_slice()).collect::<Vec<_>>();
+        use $crate::util::Itertools;
+
+        let $vec = $vec.iter().map(|vec| vec.as_slice()).collect_vec();
     };
     ($vec:ident, 2) => {
+        use $crate::util::Itertools;
+
         let $vec = $vec
             .iter()
             .map(|vec| {
                 collect_slice!(vec);
                 vec
             })
-            .collect::<Vec<_>>();
-        let $vec = $vec.iter().map(|vec| vec.as_slice()).collect::<Vec<_>>();
+            .collect_vec();
+        let $vec = $vec.iter().map(|vec| vec.as_slice()).collect_vec();
     };
 }

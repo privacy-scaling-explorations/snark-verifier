@@ -4,7 +4,7 @@ use crate::{
         modulus,
     },
     loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
-    util::{Curve, FieldOps, PrimeField, UncompressedEncoding},
+    util::{Curve, FieldOps, Itertools, PrimeField, UncompressedEncoding},
 };
 use ethereum_types::{U256, U512};
 use std::{
@@ -266,7 +266,7 @@ impl EvmLoader {
                 (ptr..ptr + len)
                     .step_by(0x20)
                     .map(|ptr| self.dup_scalar(&self.scalar(Value::Memory(ptr))))
-                    .collect::<Vec<_>>()
+                    .collect_vec()
                     .first()
                     .unwrap()
                     .ptr()
@@ -816,7 +816,7 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> LoadedScalar<F> for Scalar {
     }
 
     fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self>) {
-        let values = values.into_iter().collect::<Vec<_>>();
+        let values = values.into_iter().collect_vec();
         let loader = &values.first().unwrap().loader;
         let products = iter::once(values[0].clone())
             .chain(
@@ -824,7 +824,7 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> LoadedScalar<F> for Scalar {
                     .map(|ptr| loader.scalar(Value::Memory(ptr)))
                     .take(values.len() - 1),
             )
-            .collect::<Vec<_>>();
+            .collect_vec();
 
         loader.code.borrow_mut().push(loader.scalar_modulus);
         for _ in 2..values.len() {

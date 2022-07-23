@@ -31,7 +31,7 @@ macro_rules! halo2_kzg_evm_verify {
             loader::evm::{encode_calldata, execute, EvmLoader, EvmTranscript},
             protocol::halo2::test::kzg::{BITS, LIMBS},
             scheme::kzg::{AccumulationScheme, SameCurveAccumulation},
-            util::TranscriptRead,
+            util::{Itertools, TranscriptRead},
         };
 
         let loader = EvmLoader::new::<Fq, Fr>();
@@ -41,9 +41,9 @@ macro_rules! halo2_kzg_evm_verify {
             .map(|instance| {
                 iter::repeat_with(|| transcript.read_scalar().unwrap())
                     .take(instance.len())
-                    .collect::<Vec<_>>()
+                    .collect_vec()
             })
-            .collect::<Vec<_>>();
+            .collect_vec();
         let mut strategy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
         <$scheme>::accumulate(
             $protocol,

@@ -1,6 +1,9 @@
 use crate::{
     loader::native::NativeLoader,
-    util::{Curve, PrimeCurveAffine, PrimeField, Transcript, TranscriptRead, UncompressedEncoding},
+    util::{
+        Curve, Itertools, PrimeCurveAffine, PrimeField, Transcript, TranscriptRead,
+        UncompressedEncoding,
+    },
     Error,
 };
 use halo2_proofs::{
@@ -26,7 +29,7 @@ where
             .chain(coordinates.x().to_repr().as_ref())
             .chain(coordinates.y().to_repr().as_ref())
             .cloned()
-            .collect::<Vec<_>>()
+            .collect_vec()
             .try_into()
             .unwrap()
     }
