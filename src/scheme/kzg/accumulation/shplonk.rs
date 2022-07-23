@@ -3,6 +3,7 @@ use crate::{
     protocol::Protocol,
     scheme::kzg::{
         accumulation::{AccumulationScheme, AccumulationStrategy, Accumulator},
+        cost::{Cost, CostEstimation},
         langranges,
         msm::MSM,
     },
@@ -110,7 +111,12 @@ impl<C: Curve, L: Loader<C>> ShplonkProof<C, L> {
         statements: Vec<Vec<L::LoadedScalar>>,
         transcript: &mut T,
     ) -> Result<Self, Error> {
-        if statements.len() != protocol.num_statement {
+        if protocol.num_statement
+            != statements
+                .iter()
+                .map(|statements| statements.len())
+                .collect::<Vec<_>>()
+        {
             return Err(Error::InvalidInstances);
         }
         for statements in statements.iter() {
@@ -191,7 +197,7 @@ impl<C: Curve, L: Loader<C>> ShplonkProof<C, L> {
                     .enumerate(),
             )
             .chain({
-                let auxiliary_offset = protocol.preprocessed.len() + protocol.num_statement;
+                let auxiliary_offset = protocol.preprocessed.len() + protocol.num_statement.len();
                 self.auxiliaries
                     .iter()
                     .cloned()
@@ -463,36 +469,17 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
     z: &L::LoadedScalar,
     z_prime: &L::LoadedScalar,
 ) -> Vec<IntermediateSet<C, L>> {
-    let mut superset = BTreeSet::new();
-    let poly_rotations = protocol.queries.iter().fold(
-        Vec::<(usize, Vec<Rotation>, BTreeSet<Rotation>)>::new(),
-        |mut poly_rotations, query| {
-            superset.insert(query.rotation);
-
-            if let Some(pos) = poly_rotations
-                .iter()
-                .position(|(poly, _, _)| *poly == query.poly)
-            {
-                let (_, rotations, set) = &mut poly_rotations[pos];
-                if !set.contains(&query.rotation) {
-                    rotations.push(query.rotation);
-                    set.insert(query.rotation);
-                }
-            } else {
-                poly_rotations.push((
-                    query.poly,
-                    vec![query.rotation],
-                    BTreeSet::from_iter([query.rotation]),
-                ));
-            }
-            poly_rotations
-        },
-    );
+    let rotations_sets = rotations_sets(protocol);
+    let superset = rotations_sets
+        .iter()
+        .flat_map(|set| set.rotations.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
 
     let size = 2.max(
-        (poly_rotations
+        (rotations_sets
             .iter()
-            .map(|(_, rotations, _)| rotations.len())
+            .map(|set| set.rotations.len())
             .max()
             .unwrap()
             - 1)
@@ -514,35 +501,94 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
     );
 
     let mut z_s_1 = None;
-    poly_rotations.into_iter().fold(
-        Vec::<IntermediateSet<_, _>>::new(),
-        |mut intermediate_sets, (poly, rotations, set)| {
-            if let Some(pos) = intermediate_sets.iter().position(|intermediate_set| {
-                BTreeSet::from_iter(intermediate_set.rotations.iter().cloned()) == set
-            }) {
-                let intermediate_set = &mut intermediate_sets[pos];
-                if !intermediate_set.polys.contains(&poly) {
-                    intermediate_set.polys.push(poly);
+    rotations_sets
+        .into_iter()
+        .map(|set| {
+            let intermetidate_set = IntermediateSet {
+                polys: set.polys,
+                ..IntermediateSet::new(
+                    &protocol.domain,
+                    loader,
+                    set.rotations,
+                    &powers_of_z,
+                    z_prime,
+                    &z_prime_minus_z_omega_i,
+                    &z_s_1,
+                )
+            };
+            if z_s_1.is_none() {
+                z_s_1 = Some(intermetidate_set.z_s.clone());
+            };
+            intermetidate_set
+        })
+        .collect()
+}
+
+struct RotationsSet {
+    rotations: Vec<Rotation>,
+    polys: Vec<usize>,
+}
+
+fn rotations_sets<C: Curve>(protocol: &Protocol<C>) -> Vec<RotationsSet> {
+    let poly_rotations = protocol.queries.iter().fold(
+        Vec::<(usize, Vec<Rotation>)>::new(),
+        |mut poly_rotations, query| {
+            if let Some(pos) = poly_rotations
+                .iter()
+                .position(|(poly, _)| *poly == query.poly)
+            {
+                let (_, rotations) = &mut poly_rotations[pos];
+                if !rotations.contains(&query.rotation) {
+                    rotations.push(query.rotation);
                 }
             } else {
-                let intermetidate_set = IntermediateSet {
-                    polys: vec![poly],
-                    ..IntermediateSet::new(
-                        &protocol.domain,
-                        loader,
-                        rotations,
-                        &powers_of_z,
-                        z_prime,
-                        &z_prime_minus_z_omega_i,
-                        &z_s_1,
-                    )
-                };
-                if z_s_1.is_none() {
-                    z_s_1 = Some(intermetidate_set.z_s.clone());
-                }
-                intermediate_sets.push(intermetidate_set);
+                poly_rotations.push((query.poly, vec![query.rotation]));
             }
-            intermediate_sets
+            poly_rotations
         },
-    )
+    );
+
+    poly_rotations
+        .into_iter()
+        .fold(Vec::<RotationsSet>::new(), |mut sets, (poly, rotations)| {
+            if let Some(pos) = sets.iter().position(|set| {
+                BTreeSet::from_iter(set.rotations.iter()) == BTreeSet::from_iter(rotations.iter())
+            }) {
+                let set = &mut sets[pos];
+                if !set.polys.contains(&poly) {
+                    set.polys.push(poly);
+                }
+            } else {
+                let set = RotationsSet {
+                    rotations,
+                    polys: vec![poly],
+                };
+                sets.push(set);
+            }
+            sets
+        })
+}
+
+impl CostEstimation for ShplonkAccumulationScheme {
+    fn estimate_cost<C: Curve>(protocol: &Protocol<C>) -> Cost {
+        let num_quotient = protocol
+            .relations
+            .iter()
+            .map(Expression::degree)
+            .max()
+            .unwrap()
+            - 1;
+        let num_accumulator = protocol
+            .accumulator_indices
+            .as_ref()
+            .map(|accumulator_indices| accumulator_indices.len())
+            .unwrap_or_default();
+
+        let num_statement = protocol.num_statement.iter().sum();
+        let num_commitment = protocol.num_auxiliary.iter().sum::<usize>() + num_quotient + 2;
+        let num_evaluation = protocol.evaluations.len();
+        let num_msm = protocol.preprocessed.len() + num_commitment + 3 + 2 * num_accumulator;
+
+        Cost::new(num_statement, num_commitment, num_evaluation, num_msm)
+    }
 }

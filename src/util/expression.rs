@@ -63,7 +63,7 @@ where
             zn,
             zn_minus_one_inv: Fraction::one_over(zn_minus_one),
             identity: z.clone(),
-            lagrange: BTreeMap::from_iter(langranges.into_iter().zip(lagrange_evals)),
+            lagrange: langranges.into_iter().zip(lagrange_evals).collect(),
         }
     }
 

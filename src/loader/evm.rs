@@ -1,4 +1,4 @@
-use crate::util::PrimeField;
+use crate::{scheme::kzg::Cost, util::PrimeField};
 use ethereum_types::U256;
 use std::iter;
 
@@ -57,4 +57,14 @@ where
         }))
         .chain(proof)
         .collect()
+}
+
+pub fn estimate_gas(cost: Cost) -> usize {
+    let proof_size = cost.num_commitment * 64 + (cost.num_evaluation + cost.num_statement) * 32;
+
+    let intrinsic_cost = 21000;
+    let calldata_cost = (proof_size as f64 * 15.25).ceil() as usize;
+    let ec_operation_cost = 113100 + (cost.num_msm - 2) * 6350;
+
+    intrinsic_cost + calldata_cost + ec_operation_cost
 }

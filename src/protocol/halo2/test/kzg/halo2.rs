@@ -29,8 +29,7 @@ use halo2_proofs::{
     },
     transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer},
 };
-use halo2_wrong_ecc;
-use halo2_wrong_maingate::RegionCtx;
+use halo2_wrong_ecc::{self, maingate::RegionCtx};
 use halo2_wrong_transcript::NativeRepresentation;
 use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
@@ -352,28 +351,28 @@ macro_rules! test {
 }
 
 test!(
-    #[ignore = "cause it requires 64GB memory to run"],
+    #[ignore = "cause it requires 16GB memory to run"],
     zk_accumulation_two_snark,
     21,
     halo2_kzg_config!(true, 1, Accumulation::accumulator_indices()),
     Accumulation::two_snark(true)
 );
 test!(
-    #[ignore = "cause it requires 128GB memory to run"],
+    #[ignore = "cause it requires 32GB memory to run"],
     zk_accumulation_two_snark_with_accumulator,
     22,
     halo2_kzg_config!(true, 1, Accumulation::accumulator_indices()),
     Accumulation::two_snark_with_accumulator(true)
 );
 test!(
-    #[ignore = "cause it requires 64GB memory to run"],
+    #[ignore = "cause it requires 16GB memory to run"],
     accumulation_two_snark,
     21,
     halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
     Accumulation::two_snark(false)
 );
 test!(
-    #[ignore = "cause it requires 128GB memory to run"],
+    #[ignore = "cause it requires 32GB memory to run"],
     accumulation_two_snark_with_accumulator,
     22,
     halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),

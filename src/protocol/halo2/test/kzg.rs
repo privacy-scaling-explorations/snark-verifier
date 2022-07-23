@@ -1,6 +1,6 @@
 use crate::{
-    protocol::halo2::test::MainGateWithRange,
-    util::{fe_to_limbs, Field},
+    protocol::halo2::test::{MainGateWithPlookup, MainGateWithRange},
+    util::fe_to_limbs,
 };
 use halo2_curves::{pairing::Engine, CurveAffine};
 use halo2_proofs::poly::{
@@ -8,7 +8,7 @@ use halo2_proofs::poly::{
     kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
 };
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
-use std::{fmt::Debug, fs, iter};
+use std::{fmt::Debug, fs};
 
 mod halo2;
 mod native;
@@ -38,17 +38,27 @@ pub fn read_or_create_srs<E: Engine + Debug>(k: u32) -> ParamsKZG<E> {
 pub fn main_gate_with_range_with_mock_kzg_accumulator<E: Engine + Debug>(
 ) -> MainGateWithRange<E::Scalar> {
     let g = read_or_create_srs::<E>(3).get_g();
-    let (g1, s_g1) = (g[0], g[1]);
+    let [g1, s_g1] = [g[0], g[1]].map(|point| point.coordinates().unwrap());
     MainGateWithRange::new(
-        iter::once(E::Scalar::zero())
-            .chain({
-                let g1 = g1.coordinates().unwrap();
-                let s_g1 = s_g1.coordinates().unwrap();
-                [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
-                    .iter()
-                    .cloned()
-                    .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-            })
+        [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
+            .iter()
+            .cloned()
+            .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
+            .collect(),
+    )
+}
+
+pub fn main_gate_with_plookup_with_mock_kzg_accumulator<E: Engine + Debug>(
+    k: u32,
+) -> MainGateWithPlookup<E::Scalar> {
+    let g = read_or_create_srs::<E>(3).get_g();
+    let [g1, s_g1] = [g[0], g[1]].map(|point| point.coordinates().unwrap());
+    MainGateWithPlookup::new(
+        k,
+        [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
+            .iter()
+            .cloned()
+            .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
             .collect(),
     )
 }
@@ -59,6 +69,7 @@ macro_rules! halo2_kzg_config {
         $crate::protocol::halo2::Config {
             zk: $zk,
             query_instance: false,
+            num_instance: Vec::new(),
             num_proof: $num_proof,
             accumulator_indices: None,
         }
@@ -67,6 +78,7 @@ macro_rules! halo2_kzg_config {
         $crate::protocol::halo2::Config {
             zk: $zk,
             query_instance: false,
+            num_instance: Vec::new(),
             num_proof: $num_proof,
             accumulator_indices: Some($accumulator_indices),
         }
@@ -102,19 +114,16 @@ macro_rules! halo2_kzg_prepare {
             pk
         };
 
-        let protocol = compile::<G1>(pk.get_vk(), $config);
-
+        let mut config = $config;
+        config.num_instance = circuits[0].instances().iter().map(|instances| instances.len()).collect();
+        let protocol = compile::<G1>(pk.get_vk(), config);
         assert_eq!(
             protocol.preprocessed.len(),
-            BTreeSet::<[u8; 32]>::from_iter(
-                protocol.preprocessed.iter().map(|ec_point| ec_point
-                    .to_bytes()
-                    .as_ref()
-                    .to_vec()
-                    .try_into()
-                    .unwrap())
-            )
-            .len()
+            protocol.preprocessed
+                .iter()
+                .map(|ec_point| ec_point.to_bytes().as_ref().to_vec().try_into().unwrap())
+                .collect::<BTreeSet<[u8; 32]>>()
+                .len(),
         );
 
         (params, pk, protocol, circuits)

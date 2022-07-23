@@ -1,5 +1,6 @@
 use crate::{
     protocol::halo2::{compile, Config},
+    scheme::kzg::{Cost, CostEstimation, PlonkAccumulationScheme},
     util::{CommonPolynomial, Expression, Query},
 };
 use halo2_curves::bn256::{Bn256, Fr, G1};
@@ -18,13 +19,15 @@ use rand_chacha::{
     rand_core::{RngCore, SeedableRng},
     ChaCha20Rng,
 };
+use std::assert_matches::assert_matches;
 
 mod circuit;
 mod kzg;
 
 pub use circuit::{
-    maingate::{MainGateWithRange, MainGateWithRangeConfig},
-    plookup::Plookuper,
+    maingate::{
+        MainGateWithPlookup, MainGateWithPlookupConfig, MainGateWithRange, MainGateWithRangeConfig,
+    },
     standard::StandardPlonk,
 };
 
@@ -97,6 +100,7 @@ fn test_compile_standard_plonk() {
         Config {
             zk: false,
             query_instance: false,
+            num_instance: vec![1],
             num_proof: 1,
             accumulator_indices: None,
         },
@@ -108,7 +112,7 @@ fn test_compile_standard_plonk() {
     let t = Query::new(13, Rotation::cur());
 
     assert_eq!(protocol.preprocessed.len(), 8);
-    assert_eq!(protocol.num_statement, 1);
+    assert_eq!(protocol.num_statement, vec![1]);
     assert_eq!(protocol.num_auxiliary, vec![3, 0, 1]);
     assert_eq!(protocol.num_challenge, vec![1, 2, 0]);
     assert_eq!(
@@ -158,5 +162,15 @@ fn test_compile_standard_plonk() {
                         * (c + beta * k_2 * identity + gamma)),
             ]
         })
+    );
+
+    assert_matches!(
+        PlonkAccumulationScheme::estimate_cost(&protocol),
+        Cost {
+            num_commitment: 9,
+            num_evaluation: 13,
+            num_msm: 20,
+            ..
+        }
     );
 }

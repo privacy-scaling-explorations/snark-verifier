@@ -9,10 +9,10 @@ use halo2_wrong_ecc::{
         rns::{Integer, Rns},
         IntegerInstructions, Range,
     },
+    maingate::{
+        AssignedValue, CombinationOptionCommon, MainGate, MainGateInstructions, RegionCtx, Term,
+    },
     AssignedPoint, BaseFieldEccChip, EccConfig,
-};
-use halo2_wrong_maingate::{
-    AssignedValue, CombinationOptionCommon, MainGate, MainGateInstructions, RegionCtx, Term,
 };
 use rand::rngs::OsRng;
 use std::{

@@ -18,6 +18,7 @@ mod test;
 pub struct Config {
     zk: bool,
     query_instance: bool,
+    num_instance: Vec<usize>,
     num_proof: usize,
     accumulator_indices: Option<Vec<(usize, usize)>>,
 }
@@ -26,6 +27,7 @@ pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, config: Config) -> 
     let cs = vk.cs();
     let Config {
         zk,
+        num_instance,
         query_instance,
         num_proof,
         accumulator_indices,
@@ -42,7 +44,7 @@ pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, config: Config) -> 
         .map(Into::into)
         .collect();
 
-    let polynomials = &Polynomials::new(cs, zk, query_instance, num_proof);
+    let polynomials = &Polynomials::new(cs, zk, query_instance, num_instance, num_proof);
 
     let evaluations = iter::empty()
         .chain((0..num_proof).flat_map(move |t| polynomials.instance_queries(t)))
@@ -110,7 +112,7 @@ struct Polynomials<'a, F: FieldExt> {
     num_proof: usize,
     num_fixed: usize,
     num_permutation_fixed: usize,
-    num_instance: usize,
+    num_instance: Vec<usize>,
     num_advice: Vec<usize>,
     num_challenge: Vec<usize>,
     advice_index: Vec<usize>,
@@ -122,7 +124,13 @@ struct Polynomials<'a, F: FieldExt> {
 }
 
 impl<'a, F: FieldExt> Polynomials<'a, F> {
-    fn new(cs: &'a ConstraintSystem<F>, zk: bool, query_instance: bool, num_proof: usize) -> Self {
+    fn new(
+        cs: &'a ConstraintSystem<F>,
+        zk: bool,
+        query_instance: bool,
+        num_instance: Vec<usize>,
+        num_proof: usize,
+    ) -> Self {
         let degree = if zk {
             cs.degree::<true>()
         } else {
@@ -156,6 +164,8 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         assert_eq!(num_advice.iter().sum::<usize>(), cs.num_advice_columns());
         assert_eq!(num_challenge.iter().sum::<usize>(), cs.num_challenges());
 
+        assert_eq!(cs.num_instance_columns(), num_instance.len());
+
         Self {
             cs,
             zk,
@@ -163,7 +173,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             num_proof,
             num_fixed: cs.num_fixed_columns(),
             num_permutation_fixed: cs.permutation().get_columns().len(),
-            num_instance: cs.num_instance_columns(),
+            num_instance,
             num_advice,
             num_challenge,
             advice_index,
@@ -183,8 +193,11 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         self.num_fixed + self.num_permutation_fixed
     }
 
-    fn num_statement(&self) -> usize {
-        self.num_proof * self.num_instance
+    fn num_statement(&self) -> Vec<usize> {
+        iter::repeat(self.num_instance.clone())
+            .take(self.num_proof)
+            .flatten()
+            .collect()
     }
 
     fn num_auxiliary(&self) -> Vec<usize> {
@@ -219,7 +232,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 
     fn auxiliary_offset(&self) -> usize {
-        self.instance_offset() + self.num_statement()
+        self.instance_offset() + self.num_statement().len()
     }
 
     fn cs_auxiliary_offset(&self) -> usize {
@@ -240,7 +253,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     ) -> Query {
         let offset = match column_type.into() {
             Any::Fixed => 0,
-            Any::Instance => self.instance_offset() + t * self.num_instance,
+            Any::Instance => self.instance_offset() + t * self.num_instance.len(),
             Any::Advice(advice) => {
                 column_index = self.advice_index[column_index];
                 let phase_offset = self.num_proof
@@ -638,7 +651,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                 accumulator_indices
                     .iter()
                     .cloned()
-                    .map(|(poly, row)| (poly + t * self.num_instance, row))
+                    .map(|(poly, row)| (poly + t * self.num_instance.len(), row))
                     .collect()
             })
             .collect()

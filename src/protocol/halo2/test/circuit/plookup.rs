@@ -1,15 +1,14 @@
 use crate::util::{BatchInvert, Field};
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{floor_planner::V1, Layouter, Value},
+    circuit::{Layouter, Value},
     plonk::{
-        Advice, Any, Challenge, Circuit, Column, ConstraintSystem, Error, Expression, FirstPhase,
-        Fixed, SecondPhase, Selector, ThirdPhase, VirtualCells,
+        Advice, Any, Challenge, Column, ConstraintSystem, Error, Expression, FirstPhase,
+        SecondPhase, Selector, ThirdPhase, VirtualCells,
     },
     poly::Rotation,
 };
 use itertools::{EitherOrBoth, Itertools};
-use rand::RngCore;
 use std::{collections::BTreeMap, convert::TryFrom, iter, ops::Mul};
 
 fn query<F: FieldExt, T>(
@@ -97,7 +96,7 @@ fn challenge_usable_after<F: FieldExt>(meta: &mut ConstraintSystem<F>, phase: u8
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShuffleConfig<F: FieldExt, const ZK: bool> {
     l_0: Selector,
     zs: Vec<Column<Advice>>,
@@ -260,7 +259,7 @@ impl<F: FieldExt, const ZK: bool> ShuffleConfig<F, ZK> {
         }
     }
 
-    fn assign(&self, mut layouter: impl Layouter<F>, n: usize) -> Result<(), Error> {
+    pub fn assign(&self, mut layouter: impl Layouter<F>, n: usize) -> Result<(), Error> {
         if ZK {
             todo!()
         }
@@ -354,16 +353,15 @@ fn powers<T: Clone + Mul<Output = T>>(one: T, base: T) -> impl Iterator<Item = T
 }
 
 fn ordered_multiset<F: FieldExt>(inputs: &[Vec<F>], table: &[F]) -> Vec<F> {
-    let mut input_counts =
-        inputs
-            .iter()
-            .flatten()
-            .fold(BTreeMap::<_, usize>::new(), |mut map, value| {
-                map.entry(value)
-                    .and_modify(|count| *count += 1)
-                    .or_insert(1);
-                map
-            });
+    let mut input_counts = inputs
+        .iter()
+        .flatten()
+        .fold(BTreeMap::new(), |mut map, value| {
+            map.entry(value)
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+            map
+        });
 
     let mut ordered = Vec::with_capacity((inputs.len() + 1) * inputs[0].len());
     for (count, value) in table.iter().dedup_with_count() {
@@ -386,7 +384,7 @@ fn ordered_multiset<F: FieldExt>(inputs: &[Vec<F>], table: &[F]) -> Vec<F> {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PlookupConfig<F: FieldExt, const W: usize, const ZK: bool> {
     shuffle: ShuffleConfig<F, ZK>,
     compressed_inputs: Vec<Expression<F>>,
@@ -540,7 +538,7 @@ impl<F: FieldExt, const W: usize, const ZK: bool> PlookupConfig<F, W, ZK> {
         }
     }
 
-    fn assign(&self, mut layouter: impl Layouter<F>, n: usize) -> Result<(), Error> {
+    pub fn assign(&self, mut layouter: impl Layouter<F>, n: usize) -> Result<(), Error> {
         if ZK {
             todo!()
         }
@@ -585,127 +583,14 @@ impl<F: FieldExt, const W: usize, const ZK: bool> PlookupConfig<F, W, ZK> {
     }
 }
 
-#[derive(Clone)]
-pub struct Plookuper<F, const W: usize, const T: usize, const ZK: bool> {
-    n: usize,
-    inputs: Value<[Vec<[F; W]>; T]>,
-    table: Vec<[F; W]>,
-}
-
-impl<F: FieldExt, const W: usize, const T: usize, const ZK: bool> Plookuper<F, W, T, ZK> {
-    pub fn rand<R: RngCore>(mut rng: R, n: usize) -> Self {
-        let m = rng.next_u32() as usize % n;
-        let mut table = iter::repeat_with(|| [(); W].map(|_| F::random(&mut rng)))
-            .take(m)
-            .collect::<Vec<_>>();
-        table.extend(
-            iter::repeat(
-                table
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| [(); W].map(|_| F::random(&mut rng))),
-            )
-            .take(n - m),
-        );
-        let inputs = [(); T].map(|_| {
-            iter::repeat_with(|| table[rng.next_u32() as usize % n])
-                .take(n)
-                .collect()
-        });
-        Self {
-            n,
-            inputs: Value::known(inputs),
-            table,
-        }
-    }
-
-    pub fn instances(&self) -> Vec<Vec<F>> {
-        Vec::new()
-    }
-}
-
-impl<F: FieldExt, const W: usize, const T: usize, const ZK: bool> Circuit<F>
-    for Plookuper<F, W, T, ZK>
-{
-    type Config = (
-        [[Column<Advice>; W]; T],
-        [Column<Fixed>; W],
-        PlookupConfig<F, W, ZK>,
-    );
-    type FloorPlanner = V1;
-
-    fn without_witnesses(&self) -> Self {
-        Self {
-            n: self.n,
-            inputs: Value::unknown(),
-            table: self.table.clone(),
-        }
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let inputs = [(); T].map(|_| [(); W].map(|_| meta.advice_column()));
-        let table = [(); W].map(|_| meta.fixed_column());
-        let plookup = PlookupConfig::configure(
-            meta,
-            |meta| {
-                inputs
-                    .iter()
-                    .map(|input| input.map(|column| meta.query_advice(column, Rotation::cur())))
-                    .collect()
-            },
-            table.map(|fixed| fixed.into()),
-            None,
-            None,
-            None,
-            None,
-        );
-
-        (inputs, table, plookup)
-    }
-
-    fn synthesize(
-        &self,
-        (inputs, table, plookup): Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        layouter.assign_region(
-            || "",
-            |mut region| {
-                for (offset, value) in self.table.iter().enumerate() {
-                    for (column, value) in table.iter().zip(value.iter()) {
-                        region.assign_fixed(|| "", *column, offset, || Value::known(*value))?;
-                    }
-                }
-                Ok(())
-            },
-        )?;
-        layouter.assign_region(
-            || "",
-            |mut region| {
-                for (idx, columns) in inputs.iter().enumerate() {
-                    let values = self.inputs.as_ref().map(|inputs| inputs[idx].clone());
-                    for (offset, value) in values.transpose_vec(self.n).into_iter().enumerate() {
-                        for (column, value) in columns.iter().zip(value.transpose_array()) {
-                            region.assign_advice(|| "", *column, offset, || value)?;
-                        }
-                    }
-                }
-                Ok(())
-            },
-        )?;
-        plookup.assign(layouter.namespace(|| "Plookup"), self.n)?;
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use super::{Plookuper, ShuffleConfig};
+    use super::{PlookupConfig, ShuffleConfig};
     use halo2_curves::{bn256::Fr, FieldExt};
     use halo2_proofs::{
         circuit::{floor_planner::V1, Layouter, Value},
         dev::{metadata::Constraint, FailureLocation, MockProver, VerifyFailure},
-        plonk::{Advice, Circuit, Column, ConstraintSystem, Error},
+        plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed},
         poly::Rotation,
     };
     use rand::{rngs::OsRng, RngCore};
@@ -737,7 +622,8 @@ mod test {
     }
 
     impl<F: FieldExt, const T: usize, const ZK: bool> Shuffler<F, T, ZK> {
-        pub fn rand<R: RngCore>(mut rng: R, n: usize) -> Self {
+        pub fn rand<R: RngCore>(k: u32, mut rng: R) -> Self {
+            let n = 1 << k;
             let lhs = [(); T].map(|_| {
                 let rng = &mut rng;
                 iter::repeat_with(|| F::random(&mut *rng))
@@ -831,6 +717,117 @@ mod test {
         }
     }
 
+    #[derive(Clone)]
+    pub struct Plookuper<F, const W: usize, const T: usize, const ZK: bool> {
+        n: usize,
+        inputs: Value<[Vec<[F; W]>; T]>,
+        table: Vec<[F; W]>,
+    }
+
+    impl<F: FieldExt, const W: usize, const T: usize, const ZK: bool> Plookuper<F, W, T, ZK> {
+        pub fn rand<R: RngCore>(k: u32, mut rng: R) -> Self {
+            let n = 1 << k;
+            let m = rng.next_u32() as usize % n;
+            let mut table = iter::repeat_with(|| [(); W].map(|_| F::random(&mut rng)))
+                .take(m)
+                .collect::<Vec<_>>();
+            table.extend(
+                iter::repeat(
+                    table
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| [(); W].map(|_| F::random(&mut rng))),
+                )
+                .take(n - m),
+            );
+            let inputs = [(); T].map(|_| {
+                iter::repeat_with(|| table[rng.next_u32() as usize % n])
+                    .take(n)
+                    .collect()
+            });
+            Self {
+                n,
+                inputs: Value::known(inputs),
+                table,
+            }
+        }
+    }
+
+    impl<F: FieldExt, const W: usize, const T: usize, const ZK: bool> Circuit<F>
+        for Plookuper<F, W, T, ZK>
+    {
+        type Config = (
+            [[Column<Advice>; W]; T],
+            [Column<Fixed>; W],
+            PlookupConfig<F, W, ZK>,
+        );
+        type FloorPlanner = V1;
+
+        fn without_witnesses(&self) -> Self {
+            Self {
+                n: self.n,
+                inputs: Value::unknown(),
+                table: self.table.clone(),
+            }
+        }
+
+        fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+            let inputs = [(); T].map(|_| [(); W].map(|_| meta.advice_column()));
+            let table = [(); W].map(|_| meta.fixed_column());
+            let plookup = PlookupConfig::configure(
+                meta,
+                |meta| {
+                    inputs
+                        .iter()
+                        .map(|input| input.map(|column| meta.query_advice(column, Rotation::cur())))
+                        .collect()
+                },
+                table.map(|fixed| fixed.into()),
+                None,
+                None,
+                None,
+                None,
+            );
+
+            (inputs, table, plookup)
+        }
+
+        fn synthesize(
+            &self,
+            (inputs, table, plookup): Self::Config,
+            mut layouter: impl Layouter<F>,
+        ) -> Result<(), Error> {
+            layouter.assign_region(
+                || "",
+                |mut region| {
+                    for (offset, value) in self.table.iter().enumerate() {
+                        for (column, value) in table.iter().zip(value.iter()) {
+                            region.assign_fixed(|| "", *column, offset, || Value::known(*value))?;
+                        }
+                    }
+                    Ok(())
+                },
+            )?;
+            layouter.assign_region(
+                || "",
+                |mut region| {
+                    for (idx, columns) in inputs.iter().enumerate() {
+                        let values = self.inputs.as_ref().map(|inputs| inputs[idx].clone());
+                        for (offset, value) in values.transpose_vec(self.n).into_iter().enumerate()
+                        {
+                            for (column, value) in columns.iter().zip(value.transpose_array()) {
+                                region.assign_advice(|| "", *column, offset, || value)?;
+                            }
+                        }
+                    }
+                    Ok(())
+                },
+            )?;
+            plookup.assign(layouter.namespace(|| "Plookup"), self.n)?;
+            Ok(())
+        }
+    }
+
     #[allow(dead_code)]
     fn assert_constraint_not_satisfied(
         result: Result<(), Vec<VerifyFailure>>,
@@ -865,8 +862,7 @@ mod test {
         const ZK: bool = false;
 
         let k = 9;
-        let n = 1 << k;
-        let circuit = Shuffler::<Fr, T, ZK>::rand(OsRng, n);
+        let circuit = Shuffler::<Fr, T, ZK>::rand(k, OsRng);
 
         let mut cs = ConstraintSystem::default();
         Shuffler::<Fr, T, ZK>::configure(&mut cs);
@@ -878,6 +874,7 @@ mod test {
 
         #[cfg(not(feature = "sanity-check"))]
         {
+            let n = 1 << k;
             let mut circuit = circuit;
             circuit.lhs = mem::take(&mut circuit.lhs).map(|mut value| {
                 value[0][0] += Fr::one();
@@ -910,8 +907,7 @@ mod test {
         const ZK: bool = false;
 
         let k = 9;
-        let n = 1 << k;
-        let circuit = Plookuper::<Fr, W, T, ZK>::rand(OsRng, n);
+        let circuit = Plookuper::<Fr, W, T, ZK>::rand(k, OsRng);
 
         let mut cs = ConstraintSystem::default();
         Plookuper::<Fr, W, T, ZK>::configure(&mut cs);
@@ -923,6 +919,7 @@ mod test {
 
         #[cfg(not(feature = "sanity-check"))]
         {
+            let n = 1 << k;
             let mut circuit = circuit;
             circuit.inputs = mem::take(&mut circuit.inputs).map(|mut inputs| {
                 inputs[0][0][0] += Fr::one();

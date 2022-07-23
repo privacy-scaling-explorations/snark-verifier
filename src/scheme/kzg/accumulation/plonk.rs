@@ -3,6 +3,7 @@ use crate::{
     protocol::Protocol,
     scheme::kzg::{
         accumulation::{AccumulationScheme, AccumulationStrategy, Accumulator},
+        cost::{Cost, CostEstimation},
         langranges,
         msm::MSM,
     },
@@ -114,7 +115,12 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
         statements: Vec<Vec<L::LoadedScalar>>,
         transcript: &mut T,
     ) -> Result<Self, Error> {
-        if statements.len() != protocol.num_statement {
+        if protocol.num_statement
+            != statements
+                .iter()
+                .map(|statements| statements.len())
+                .collect::<Vec<_>>()
+        {
             return Err(Error::InvalidInstances);
         }
         for statements in statements.iter() {
@@ -191,7 +197,7 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
                     .enumerate(),
             )
             .chain({
-                let auxiliary_offset = protocol.preprocessed.len() + protocol.num_statement;
+                let auxiliary_offset = protocol.preprocessed.len() + protocol.num_statement.len();
                 self.auxiliaries
                     .iter()
                     .cloned()
@@ -338,4 +344,30 @@ fn rotation_sets<C: Curve>(protocol: &Protocol<C>) -> Vec<RotationSet> {
         }
         sets
     })
+}
+
+impl CostEstimation for PlonkAccumulationScheme {
+    fn estimate_cost<C: Curve>(protocol: &Protocol<C>) -> Cost {
+        let num_quotient = protocol
+            .relations
+            .iter()
+            .map(Expression::degree)
+            .max()
+            .unwrap()
+            - 1;
+        let num_w = rotation_sets(protocol).len();
+        let num_accumulator = protocol
+            .accumulator_indices
+            .as_ref()
+            .map(|accumulator_indices| accumulator_indices.len())
+            .unwrap_or_default();
+
+        let num_statement = protocol.num_statement.iter().sum();
+        let num_commitment = protocol.num_auxiliary.iter().sum::<usize>() + num_quotient + num_w;
+        let num_evaluation = protocol.evaluations.len();
+        let num_msm =
+            protocol.preprocessed.len() + num_commitment + 1 + num_w + 2 * num_accumulator;
+
+        Cost::new(num_statement, num_commitment, num_evaluation, num_msm)
+    }
 }
