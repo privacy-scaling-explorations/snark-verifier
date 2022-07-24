@@ -4,13 +4,15 @@ use crate::{
 };
 
 mod accumulation;
+mod accumulator;
 mod cost;
 mod msm;
 
 pub use accumulation::{
     plonk::PlonkAccumulationScheme, shplonk::ShplonkAccumulationScheme, AccumulationScheme,
-    AccumulationStrategy, Accumulator, SameCurveAccumulation,
+    AccumulationStrategy, SameCurveAccumulation,
 };
+pub use accumulator::Accumulator;
 pub use cost::{Cost, CostEstimation};
 pub use msm::MSM;
 
