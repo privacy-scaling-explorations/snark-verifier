@@ -204,7 +204,11 @@ impl<F: FieldOps + Clone> Fraction<F> {
     }
 }
 
-pub fn big_to_fe<F: PrimeField>(big: BigUint) -> F {
+pub fn modulus<F: PrimeField>() -> BigUint {
+    fe_to_big(-F::one()) + 1usize
+}
+
+pub fn fe_from_big<F: PrimeField>(big: BigUint) -> F {
     let bytes = big.to_bytes_le();
     let mut repr = F::Repr::default();
     assert!(bytes.len() <= repr.as_ref().len());
@@ -212,10 +216,18 @@ pub fn big_to_fe<F: PrimeField>(big: BigUint) -> F {
     F::from_repr(repr).unwrap()
 }
 
+pub fn fe_to_big<F: PrimeField>(fe: F) -> BigUint {
+    BigUint::from_bytes_le(fe.to_repr().as_ref())
+}
+
+pub fn fe_to_fe<F1: PrimeField, F2: PrimeField>(fe: F1) -> F2 {
+    fe_from_big(fe_to_big(fe) % modulus::<F2>())
+}
+
 pub fn fe_from_limbs<F1: PrimeField, F2: PrimeField, const LIMBS: usize, const BITS: usize>(
     limbs: [F1; LIMBS],
 ) -> F2 {
-    big_to_fe(
+    fe_from_big(
         limbs
             .iter()
             .map(|limb| BigUint::from_bytes_le(limb.to_repr().as_ref()))
@@ -234,7 +246,7 @@ pub fn fe_to_limbs<F1: PrimeField, F2: PrimeField, const LIMBS: usize, const BIT
     (0usize..)
         .step_by(BITS)
         .take(LIMBS)
-        .map(move |shift| big_to_fe((&big >> shift) & &mask))
+        .map(move |shift| fe_from_big((&big >> shift) & &mask))
         .collect_vec()
         .try_into()
         .unwrap()

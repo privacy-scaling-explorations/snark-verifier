@@ -54,6 +54,13 @@ where
     ) -> Result<Self::Output, Error>;
 }
 
+/// Accumulation strategy that does accumulation on the same curve.
+///
+/// Since in circuit everything are in scalar field, but while doing elliptic
+/// curve operation we need to operate in base field, so we need to emulate
+/// base field in scalar field.
+/// The const generic `LIMBS` and `BITS` respectively represents how many limbs
+/// a base field element are split into and how many bits each limbs could has.
 pub struct SameCurveAccumulation<C: Curve, L: Loader<C>, const LIMBS: usize, const BITS: usize> {
     pub accumulator: Option<Accumulator<C, L>>,
 }

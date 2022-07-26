@@ -8,9 +8,39 @@ use crate::{
 use ethereum_types::U256;
 use halo2_curves::{
     bn256::{G1Affine, G2Affine, G1},
-    CurveAffine,
+    CurveAffine, CurveExt,
 };
-use std::{ops::Neg, rc::Rc};
+use std::{iter, ops::Neg, rc::Rc};
+
+impl<C: CurveExt> UncompressedEncoding for C
+where
+    <C::AffineExt as CurveAffine>::Base: PrimeField<Repr = [u8; 32]>,
+{
+    type Uncompressed = [u8; 64];
+
+    fn to_uncompressed(&self) -> [u8; 64] {
+        let coordinates = self.to_affine().coordinates().unwrap();
+        iter::empty()
+            .chain(coordinates.x().to_repr().as_ref())
+            .chain(coordinates.y().to_repr().as_ref())
+            .cloned()
+            .collect_vec()
+            .try_into()
+            .unwrap()
+    }
+
+    fn from_uncompressed(uncompressed: [u8; 64]) -> Option<Self> {
+        let x = Option::from(<C::AffineExt as CurveAffine>::Base::from_repr(
+            uncompressed[..32].to_vec().try_into().unwrap(),
+        ))?;
+        let y = Option::from(<C::AffineExt as CurveAffine>::Base::from_repr(
+            uncompressed[32..].to_vec().try_into().unwrap(),
+        ))?;
+        C::AffineExt::from_xy(x, y)
+            .map(|ec_point| ec_point.to_curve())
+            .into()
+    }
+}
 
 impl<const LIMBS: usize, const BITS: usize> SameCurveAccumulation<G1, Rc<EvmLoader>, LIMBS, BITS> {
     pub fn code(self, g1: G1Affine, g2: G2Affine, s_g2: G2Affine) -> Vec<u8> {

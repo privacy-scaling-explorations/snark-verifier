@@ -5,12 +5,9 @@ use halo2_proofs::{
     plonk::{Any, Circuit, Column, ConstraintSystem, Error, Fixed},
     poly::Rotation,
 };
-use halo2_wrong_ecc::{
-    maingate::{
-        decompose, AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip,
-        RangeConfig, RangeInstructions, RegionCtx, Term,
-    },
-    EccConfig,
+use halo2_wrong_ecc::maingate::{
+    decompose, AssignedValue, MainGate, MainGateConfig, MainGateInstructions, RangeChip,
+    RangeConfig, RangeInstructions, RegionCtx, Term,
 };
 use rand::RngCore;
 use std::{collections::BTreeMap, iter};
@@ -36,14 +33,12 @@ impl MainGateWithRangeConfig {
         }
     }
 
-    pub fn ecc_config(&self) -> EccConfig {
-        EccConfig::new(self.range_config.clone(), self.main_gate_config.clone())
+    pub fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
+        MainGate::new(self.main_gate_config.clone())
     }
 
-    pub fn load_table<F: FieldExt>(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
-        let range_chip = RangeChip::<F>::new(self.range_config.clone());
-        range_chip.load_table(layouter)?;
-        Ok(())
+    pub fn range_chip<F: FieldExt>(&self) -> RangeChip<F> {
+        RangeChip::new(self.range_config.clone())
     }
 }
 
@@ -53,10 +48,6 @@ pub struct MainGateWithRange<F>(Vec<F>);
 impl<F: FieldExt> MainGateWithRange<F> {
     pub fn new(inner: Vec<F>) -> Self {
         Self(inner)
-    }
-
-    pub fn rand<R: RngCore>(mut rng: R) -> Self {
-        Self::new(vec![F::from(rng.next_u32() as u64)])
     }
 
     pub fn instances(&self) -> Vec<Vec<F>> {
@@ -81,15 +72,14 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
         config: Self::Config,
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
-        let main_gate = MainGate::new(config.main_gate_config);
-        let range_chip = RangeChip::new(config.range_config);
+        let main_gate = config.main_gate();
+        let range_chip = config.range_chip();
         range_chip.load_table(&mut layouter)?;
 
         let a = layouter.assign_region(
             || "",
-            |mut region| {
-                let mut offset = 0;
-                let mut ctx = RegionCtx::new(&mut region, &mut offset);
+            |region| {
+                let mut ctx = RegionCtx::new(region, 0);
                 range_chip.decompose(&mut ctx, Value::known(F::from(u64::MAX)), 8, 64)?;
                 range_chip.decompose(&mut ctx, Value::known(F::from(u32::MAX as u64)), 8, 39)?;
                 let a = range_chip.assign(&mut ctx, Value::known(self.0[0]), 8, 68)?;
@@ -108,23 +98,24 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
 }
 
 #[derive(Clone, Debug)]
-pub struct PlookupRangeConfig<F: FieldExt> {
+pub struct PlookupRangeConfig<F: FieldExt, const ZK: bool> {
     main_gate_config: MainGateConfig,
-    plookup_config: PlookupConfig<F, 2, false>,
+    plookup_config: PlookupConfig<F, 2, ZK>,
     table: [Column<Fixed>; 2],
     q_limb: [Column<Fixed>; 2],
     q_overflow: [Column<Fixed>; 2],
     bits: BTreeMap<usize, usize>,
 }
 
-pub struct PlookupRangeChip<F: FieldExt> {
+#[derive(Clone, Debug)]
+pub struct PlookupRangeChip<F: FieldExt, const ZK: bool> {
     n: usize,
-    config: PlookupRangeConfig<F>,
+    config: PlookupRangeConfig<F, ZK>,
     main_gate: MainGate<F>,
 }
 
-impl<F: FieldExt> PlookupRangeChip<F> {
-    pub fn new(config: PlookupRangeConfig<F>, n: usize) -> Self {
+impl<F: FieldExt, const ZK: bool> PlookupRangeChip<F, ZK> {
+    pub fn new(n: usize, config: PlookupRangeConfig<F, ZK>) -> Self {
         let main_gate = MainGate::new(config.main_gate_config.clone());
         Self {
             n,
@@ -137,7 +128,7 @@ impl<F: FieldExt> PlookupRangeChip<F> {
         meta: &mut ConstraintSystem<F>,
         main_gate_config: MainGateConfig,
         bits: impl IntoIterator<Item = usize>,
-    ) -> PlookupRangeConfig<F> {
+    ) -> PlookupRangeConfig<F, ZK> {
         let table = [(); 2].map(|_| meta.fixed_column());
         let q_limb = [(); 2].map(|_| meta.fixed_column());
         let q_overflow = [(); 2].map(|_| meta.fixed_column());
@@ -183,8 +174,8 @@ impl<F: FieldExt> PlookupRangeChip<F> {
     }
 }
 
-impl<F: FieldExt> Chip<F> for PlookupRangeChip<F> {
-    type Config = PlookupRangeConfig<F>;
+impl<F: FieldExt, const ZK: bool> Chip<F> for PlookupRangeChip<F, ZK> {
+    type Config = PlookupRangeConfig<F, ZK>;
 
     type Loaded = ();
 
@@ -197,10 +188,10 @@ impl<F: FieldExt> Chip<F> for PlookupRangeChip<F> {
     }
 }
 
-impl<F: FieldExt> RangeInstructions<F> for PlookupRangeChip<F> {
+impl<F: FieldExt, const ZK: bool> RangeInstructions<F> for PlookupRangeChip<F, ZK> {
     fn assign(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         value: Value<F>,
         limb_bit: usize,
         bit: usize,
@@ -211,7 +202,7 @@ impl<F: FieldExt> RangeInstructions<F> for PlookupRangeChip<F> {
 
     fn decompose(
         &self,
-        ctx: &mut RegionCtx<'_, '_, F>,
+        ctx: &mut RegionCtx<'_, F>,
         value: Value<F>,
         limb_bit: usize,
         bit: usize,
@@ -297,12 +288,12 @@ impl<F: FieldExt> RangeInstructions<F> for PlookupRangeChip<F> {
 }
 
 #[derive(Clone)]
-pub struct MainGateWithPlookupConfig<F: FieldExt> {
+pub struct MainGateWithPlookupRangeConfig<F: FieldExt, const ZK: bool> {
     main_gate_config: MainGateConfig,
-    plookup_range_config: PlookupRangeConfig<F>,
+    plookup_range_config: PlookupRangeConfig<F, ZK>,
 }
 
-impl<F: FieldExt> MainGateWithPlookupConfig<F> {
+impl<F: FieldExt, const ZK: bool> MainGateWithPlookupRangeConfig<F, ZK> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         bits: impl IntoIterator<Item = usize>,
@@ -313,22 +304,34 @@ impl<F: FieldExt> MainGateWithPlookupConfig<F> {
 
         assert_eq!(meta.degree::<false>(), 3);
 
-        MainGateWithPlookupConfig {
+        MainGateWithPlookupRangeConfig {
             main_gate_config,
             plookup_range_config,
         }
     }
+
+    pub fn main_gate(&self) -> MainGate<F> {
+        MainGate::new(self.main_gate_config.clone())
+    }
+
+    pub fn range_chip(&self, n: usize) -> PlookupRangeChip<F, ZK> {
+        PlookupRangeChip::new(n, self.plookup_range_config.clone())
+    }
 }
 
 #[derive(Clone, Default)]
-pub struct MainGateWithPlookup<F> {
+pub struct MainGateWithPlookupRange<F: FieldExt, const ZK: bool> {
     n: usize,
     inner: Vec<F>,
 }
 
-impl<F: FieldExt> MainGateWithPlookup<F> {
+impl<F: FieldExt, const ZK: bool> MainGateWithPlookupRange<F, ZK> {
     pub fn new(k: u32, inner: Vec<F>) -> Self {
         Self { n: 1 << k, inner }
+    }
+
+    pub fn rand<R: RngCore>(k: u32, mut rng: R) -> Self {
+        Self::new(k, vec![F::from(rng.next_u32() as u64)])
     }
 
     pub fn instances(&self) -> Vec<Vec<F>> {
@@ -336,8 +339,8 @@ impl<F: FieldExt> MainGateWithPlookup<F> {
     }
 }
 
-impl<F: FieldExt> Circuit<F> for MainGateWithPlookup<F> {
-    type Config = MainGateWithPlookupConfig<F>;
+impl<F: FieldExt, const ZK: bool> Circuit<F> for MainGateWithPlookupRange<F, ZK> {
+    type Config = MainGateWithPlookupRangeConfig<F, ZK>;
     type FloorPlanner = V1;
 
     fn without_witnesses(&self) -> Self {
@@ -348,7 +351,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithPlookup<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        MainGateWithPlookupConfig::configure(meta, [1, 7, 8])
+        MainGateWithPlookupRangeConfig::configure(meta, [1, 7, 8])
     }
 
     fn synthesize(
@@ -357,16 +360,15 @@ impl<F: FieldExt> Circuit<F> for MainGateWithPlookup<F> {
         mut layouter: impl Layouter<F>,
     ) -> Result<(), Error> {
         let main_gate = MainGate::<F>::new(config.main_gate_config.clone());
-        let range_chip = PlookupRangeChip::new(config.plookup_range_config, self.n);
+        let range_chip = PlookupRangeChip::new(self.n, config.plookup_range_config);
 
         range_chip.load_table(&mut layouter)?;
         range_chip.assign_inner(layouter.namespace(|| ""), self.n)?;
 
         let a = layouter.assign_region(
             || "",
-            |mut region| {
-                let mut offset = 0;
-                let mut ctx = RegionCtx::new(&mut region, &mut offset);
+            |region| {
+                let mut ctx = RegionCtx::new(region, 0);
                 range_chip.decompose(&mut ctx, Value::known(F::from(u64::MAX)), 8, 64)?;
                 range_chip.decompose(&mut ctx, Value::known(F::from(u32::MAX as u64)), 8, 39)?;
                 let a = range_chip.assign(&mut ctx, Value::known(self.inner[0]), 8, 68)?;

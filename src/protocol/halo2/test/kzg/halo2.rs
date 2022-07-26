@@ -5,8 +5,9 @@ use crate::{
     protocol::{
         halo2::{
             test::{
+                circuit::maingate::PlookupRangeChip,
                 kzg::{BITS, LIMBS},
-                MainGateWithRange, MainGateWithRangeConfig, StandardPlonk,
+                MainGateWithPlookupRange, MainGateWithPlookupRangeConfig, StandardPlonk,
             },
             util::halo2::ChallengeScalar,
         },
@@ -15,7 +16,10 @@ use crate::{
     scheme::kzg::{self, AccumulationScheme, ShplonkAccumulationScheme},
     util::{fe_to_limbs, Curve, Group, Itertools, PrimeCurveAffine},
 };
-use halo2_curves::bn256::{Fr, G1Affine, G1};
+use halo2_curves::{
+    bn256::{Fq, Fr, G1Affine, G1},
+    CurveAffine,
+};
 use halo2_proofs::{
     circuit::{floor_planner::V1, Layouter, Value},
     plonk,
@@ -29,21 +33,46 @@ use halo2_proofs::{
     },
     transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer},
 };
-use halo2_wrong_ecc::{self, maingate::RegionCtx};
+use halo2_wrong_ecc::{
+    self,
+    integer::{rns::Rns, IntegerChip},
+    maingate::{MainGate, MainGateInstructions, RangeInstructions, RegionCtx},
+};
 use halo2_wrong_transcript::NativeRepresentation;
 use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
-use std::rc::Rc;
+use std::{iter, rc::Rc};
 
 const T: usize = 5;
 const RATE: usize = 4;
 const R_F: usize = 8;
 const R_P: usize = 57;
 
-type BaseFieldEccChip<C> = halo2_wrong_ecc::BaseFieldEccChip<C, LIMBS, BITS>;
-type Halo2Loader<'a, 'b, C> = halo2::Halo2Loader<'a, 'b, C, LIMBS, BITS>;
-type PoseidonTranscript<C, L, S, B> =
-    halo2::PoseidonTranscript<C, L, S, B, NativeRepresentation, LIMBS, BITS, T, RATE, R_F, R_P>;
+type BaseFieldEccChip<C> = halo2_wrong_ecc::BaseFieldEccChip<
+    C,
+    IntegerChip<
+        <C as CurveAffine>::Base,
+        <C as CurveAffine>::ScalarExt,
+        MainGate<<C as CurveAffine>::ScalarExt>,
+        PlookupRangeChip<<C as CurveAffine>::ScalarExt, false>,
+        LIMBS,
+        BITS,
+    >,
+>;
+type Halo2Loader<'a, C> =
+    halo2::Halo2Loader<'a, C, <C as CurveAffine>::ScalarExt, BaseFieldEccChip<C>>;
+type PoseidonTranscript<C, L, S, B> = halo2::PoseidonTranscript<
+    C,
+    <C as CurveAffine>::ScalarExt,
+    NativeRepresentation<C, <C as CurveAffine>::ScalarExt, BaseFieldEccChip<C>, LIMBS, BITS>,
+    L,
+    S,
+    B,
+    T,
+    RATE,
+    R_F,
+    R_P,
+>;
 type SameCurveAccumulation<C, L> = kzg::SameCurveAccumulation<C, L, LIMBS, BITS>;
 
 pub struct SnarkWitness<C: Curve> {
@@ -80,9 +109,9 @@ impl<C: Curve> SnarkWitness<C> {
     }
 }
 
-pub fn accumulate<'a, 'b>(
-    loader: &Rc<Halo2Loader<'a, 'b, G1Affine>>,
-    stretagy: &mut SameCurveAccumulation<G1, Rc<Halo2Loader<'a, 'b, G1Affine>>>,
+pub fn accumulate<'a>(
+    loader: &Rc<Halo2Loader<'a, G1Affine>>,
+    stretagy: &mut SameCurveAccumulation<G1, Rc<Halo2Loader<'a, G1Affine>>>,
     snark: &SnarkWitness<G1>,
 ) -> Result<(), plonk::Error> {
     let mut transcript = PoseidonTranscript::<_, Rc<Halo2Loader<G1Affine>>, _, _>::new(
@@ -111,6 +140,7 @@ pub fn accumulate<'a, 'b>(
 }
 
 pub struct Accumulation {
+    n: usize,
     g1: G1Affine,
     snarks: Vec<SnarkWitness<G1>>,
     instances: Vec<Fr>,
@@ -121,13 +151,12 @@ impl Accumulation {
         (0..4 * LIMBS).map(|idx| (0, idx)).collect()
     }
 
-    pub fn two_snark(zk: bool) -> Self {
-        const K: u32 = 9;
-
+    pub fn two_snark(k: u32) -> Self {
         let (params, snark1) = {
+            const K: u32 = 9;
             let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
                 K,
-                halo2_kzg_config!(zk, 1),
+                halo2_kzg_config!(true, 1),
                 StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
             );
             let snark = halo2_kzg_create_snark!(
@@ -145,10 +174,14 @@ impl Accumulation {
             (params, snark)
         };
         let snark2 = {
+            const K: u32 = 9;
             let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
                 K,
-                halo2_kzg_config!(zk, 1),
-                MainGateWithRange::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+                halo2_kzg_config!(false, 1),
+                MainGateWithPlookupRange::<_, false>::rand(
+                    K,
+                    ChaCha20Rng::from_seed(Default::default())
+                )
             );
             halo2_kzg_create_snark!(
                 &params,
@@ -192,20 +225,22 @@ impl Accumulation {
         .concat();
 
         Self {
+            n: 1 << k,
             g1,
             snarks: vec![snark1.into(), snark2.into()],
             instances,
         }
     }
 
-    pub fn two_snark_with_accumulator(zk: bool) -> Self {
-        const K: u32 = 21;
-
-        let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
-            K,
-            halo2_kzg_config!(zk, 2, Self::accumulator_indices()),
-            Self::two_snark(zk)
-        );
+    pub fn two_snark_with_accumulator(k: u32) -> Self {
+        let (params, pk, protocol, circuits) = {
+            const K: u32 = 21;
+            halo2_kzg_prepare!(
+                K,
+                halo2_kzg_config!(false, 2, Self::accumulator_indices()),
+                Self::two_snark(K)
+            )
+        };
         let snark = halo2_kzg_create_snark!(
             &params,
             &pk,
@@ -240,6 +275,7 @@ impl Accumulation {
         .concat();
 
         Self {
+            n: 1 << k,
             g1,
             snarks: vec![snark.into()],
             instances,
@@ -252,11 +288,12 @@ impl Accumulation {
 }
 
 impl Circuit<Fr> for Accumulation {
-    type Config = MainGateWithRangeConfig;
+    type Config = MainGateWithPlookupRangeConfig<Fr, false>;
     type FloorPlanner = V1;
 
     fn without_witnesses(&self) -> Self {
         Self {
+            n: self.n,
             g1: self.g1,
             snarks: self
                 .snarks
@@ -268,10 +305,12 @@ impl Circuit<Fr> for Accumulation {
     }
 
     fn configure(meta: &mut plonk::ConstraintSystem<Fr>) -> Self::Config {
-        MainGateWithRangeConfig::configure::<Fr>(
+        MainGateWithPlookupRangeConfig::configure(
             meta,
-            vec![BITS / LIMBS],
-            BaseFieldEccChip::<G1Affine>::rns().overflow_lengths(),
+            Rns::<Fq, Fr, LIMBS, BITS>::construct()
+                .overflow_lengths()
+                .into_iter()
+                .chain(Some(BITS / LIMBS)),
         )
     }
 
@@ -280,15 +319,24 @@ impl Circuit<Fr> for Accumulation {
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
     ) -> Result<(), plonk::Error> {
-        config.load_table(&mut layouter)?;
+        let main_gate = config.main_gate();
+        let range_chip = config.range_chip(self.n);
+
+        range_chip.load_table(&mut layouter)?;
+        range_chip.assign_inner(layouter.namespace(|| ""), self.n)?;
 
         let (lhs, rhs) = layouter.assign_region(
             || "",
-            |mut region| {
-                let mut offset = 0;
-                let ctx = RegionCtx::new(&mut region, &mut offset);
+            |region| {
+                let ctx = RegionCtx::new(region, 0);
 
-                let loader = Halo2Loader::<G1Affine>::new(config.ecc_config(), ctx);
+                let base_field_chip = IntegerChip::new(
+                    main_gate.clone(),
+                    range_chip.clone(),
+                    Rc::new(Rns::construct()),
+                );
+                let ecc_chip = BaseFieldEccChip::new(base_field_chip);
+                let loader = Halo2Loader::<G1Affine>::new(ecc_chip, ctx);
                 let mut stretagy = SameCurveAccumulation::default();
                 for snark in self.snarks.iter() {
                     accumulate(&loader, &mut stretagy, snark)?;
@@ -296,15 +344,21 @@ impl Circuit<Fr> for Accumulation {
                 let (lhs, rhs) = stretagy.finalize(self.g1);
 
                 loader.print_row_metering();
-                println!("Total: {}", offset);
+                println!("Total row cost: {}", loader.ctx().offset());
 
                 Ok((lhs, rhs))
             },
         )?;
 
-        let ecc_chip = BaseFieldEccChip::<G1Affine>::new(config.ecc_config());
-        ecc_chip.expose_public(layouter.namespace(|| ""), lhs, 0)?;
-        ecc_chip.expose_public(layouter.namespace(|| ""), rhs, 2 * LIMBS)?;
+        for (limb, row) in iter::empty()
+            .chain(lhs.get_x().limbs())
+            .chain(lhs.get_y().limbs())
+            .chain(rhs.get_x().limbs())
+            .chain(rhs.get_y().limbs())
+            .zip(0..)
+        {
+            main_gate.expose_public(layouter.namespace(|| ""), limb.into(), row)?;
+        }
 
         Ok(())
     }
@@ -352,29 +406,15 @@ macro_rules! test {
 
 test!(
     #[ignore = "cause it requires 16GB memory to run"],
-    zk_accumulation_two_snark,
-    21,
-    halo2_kzg_config!(true, 1, Accumulation::accumulator_indices()),
-    Accumulation::two_snark(true)
-);
-test!(
-    #[ignore = "cause it requires 32GB memory to run"],
-    zk_accumulation_two_snark_with_accumulator,
-    22,
-    halo2_kzg_config!(true, 1, Accumulation::accumulator_indices()),
-    Accumulation::two_snark_with_accumulator(true)
-);
-test!(
-    #[ignore = "cause it requires 16GB memory to run"],
     accumulation_two_snark,
     21,
     halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
-    Accumulation::two_snark(false)
+    Accumulation::two_snark(21)
 );
 test!(
     #[ignore = "cause it requires 32GB memory to run"],
     accumulation_two_snark_with_accumulator,
     22,
     halo2_kzg_config!(false, 1, Accumulation::accumulator_indices()),
-    Accumulation::two_snark_with_accumulator(false)
+    Accumulation::two_snark_with_accumulator(22)
 );

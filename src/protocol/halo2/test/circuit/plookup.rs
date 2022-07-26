@@ -8,6 +8,7 @@ use halo2_proofs::{
     },
     poly::Rotation,
 };
+use rayon::prelude::*;
 use std::{collections::BTreeMap, convert::TryFrom, iter, ops::Mul};
 
 fn query<F: FieldExt, T>(
@@ -267,38 +268,50 @@ impl<F: FieldExt, const ZK: bool> ShuffleConfig<F, ZK> {
             .lhs
             .iter()
             .map(|expression| layouter.evaluate_committed(expression))
-            .fold(Value::known(Vec::new()), |acc, evaluated| {
-                acc.zip(evaluated).map(|(mut acc, evaluated)| {
-                    acc.extend(evaluated);
-                    acc
-                })
-            });
+            .fold(
+                Value::known(Vec::with_capacity(self.lhs.len() * n)),
+                |acc, evaluated| {
+                    acc.zip(evaluated).map(|(mut acc, evaluated)| {
+                        acc.extend(evaluated);
+                        acc
+                    })
+                },
+            );
         let rhs = self
             .rhs
             .iter()
             .map(|expression| layouter.evaluate_committed(expression))
-            .fold(Value::known(Vec::new()), |acc, evaluated| {
-                acc.zip(evaluated).map(|(mut acc, evaluated)| {
-                    acc.extend(evaluated);
-                    acc
-                })
-            });
+            .fold(
+                Value::known(Vec::with_capacity(self.rhs.len() * n)),
+                |acc, evaluated| {
+                    acc.zip(evaluated).map(|(mut acc, evaluated)| {
+                        acc.extend(evaluated);
+                        acc
+                    })
+                },
+            );
 
         let z = lhs
             .zip(rhs)
-            .map(|(lhs, mut rhs)| {
+            .map(|(mut lhs, mut rhs)| {
                 rhs.iter_mut().batch_invert();
 
-                let products = lhs
-                    .into_iter()
-                    .zip_longest(rhs)
-                    .map(|pair| match pair {
-                        EitherOrBoth::Left(value) | EitherOrBoth::Right(value) => value,
-                        EitherOrBoth::Both(lhs, rhs) => lhs * rhs,
-                    })
-                    .collect_vec();
+                let min_len = lhs.len().min(rhs.len());
+                let trailing = if lhs.len() > min_len {
+                    lhs.drain(min_len..).collect_vec()
+                } else {
+                    rhs.drain(min_len..).collect_vec()
+                };
 
-                let mut z = vec![F::one()];
+                let products = lhs
+                    .into_par_iter()
+                    .zip(rhs)
+                    .map(|(lhs, rhs)| lhs * rhs)
+                    .chain(trailing)
+                    .collect::<Vec<_>>();
+
+                let mut z = Vec::with_capacity(self.zs.len() * n + 1);
+                z.push(F::one());
                 for i in 0..n {
                     for j in (i..).step_by(n).take(self.zs.len()) {
                         z.push(products[j] * z.last().unwrap());
@@ -318,10 +331,9 @@ impl<F: FieldExt, const ZK: bool> ShuffleConfig<F, ZK> {
             |mut region| {
                 self.l_0.enable(&mut region, 0)?;
 
-                let mut z = z.iter();
-                for offset in 0..n {
-                    for column in self.zs.iter() {
-                        region.assign_advice(|| "", *column, offset, || *z.next().unwrap())?;
+                for (idx, column) in self.zs.iter().enumerate() {
+                    for (offset, value) in z.iter().skip(idx).step_by(self.zs.len()).enumerate() {
+                        region.assign_advice(|| "", *column, offset, || *value)?;
                     }
                 }
 
@@ -353,13 +365,21 @@ fn powers<T: Clone + Mul<Output = T>>(one: T, base: T) -> impl Iterator<Item = T
 
 fn ordered_multiset<F: FieldExt>(inputs: &[Vec<F>], table: &[F]) -> Vec<F> {
     let mut input_counts = inputs
-        .iter()
+        .par_iter()
         .flatten()
-        .fold(BTreeMap::new(), |mut map, value| {
+        .fold(BTreeMap::new, |mut map, value| {
             map.entry(value)
                 .and_modify(|count| *count += 1)
                 .or_insert(1);
             map
+        })
+        .reduce(BTreeMap::new, |mut acc, map| {
+            map.into_iter().for_each(|(value, count)| {
+                acc.entry(value)
+                    .and_modify(|acc| *acc += count)
+                    .or_insert(count);
+            });
+            acc
         });
 
     let mut ordered = Vec::with_capacity((inputs.len() + 1) * inputs[0].len());
@@ -565,10 +585,9 @@ impl<F: FieldExt, const W: usize, const ZK: bool> PlookupConfig<F, W, ZK> {
         layouter.assign_region(
             || "mixes",
             |mut region| {
-                let mut mix = mix.iter();
-                for offset in 0..n {
-                    for column in self.mixes.iter() {
-                        region.assign_advice(|| "", *column, offset, || *mix.next().unwrap())?;
+                for (idx, column) in self.mixes.iter().enumerate() {
+                    for (offset, value) in mix.iter().skip(idx).step_by(self.mixes.len()).enumerate() {
+                        region.assign_advice(|| "", *column, offset, || *value)?;
                     }
                 }
 

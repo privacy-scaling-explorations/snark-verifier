@@ -1,27 +1,51 @@
 use crate::{
     loader::{
-        halo2::loader::{Halo2Loader, Scalar},
+        halo2::{
+            loader::{Halo2Loader, Scalar},
+            Valuetools,
+        },
         LoadedEcPoint,
     },
     protocol::Protocol,
     scheme::kzg::{AccumulationStrategy, Accumulator, SameCurveAccumulation, MSM},
-    util::{Itertools, Transcript},
+    util::{fe_from_limbs, Itertools, Transcript},
     Error,
 };
 use halo2_curves::CurveAffine;
-use halo2_wrong_ecc::AssignedPoint;
-use std::rc::Rc;
+use halo2_proofs::circuit::Value;
+use halo2_wrong_ecc::{
+    integer::AssignedInteger, maingate::AssignedValue, AssignedPoint, EccInstructions,
+};
+use std::{iter, rc::Rc};
 
-impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
-    SameCurveAccumulation<C::CurveExt, Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>, LIMBS, BITS>
+fn ec_point_from_assigned_limbs<C: CurveAffine, const LIMBS: usize, const BITS: usize>(
+    limbs: &[AssignedValue<C::Scalar>],
+) -> Value<C> {
+    assert_eq!(limbs.len(), 2 * LIMBS);
+
+    let [x, y] = [&limbs[..LIMBS], &limbs[LIMBS..]].map(|limbs| {
+        limbs
+            .iter()
+            .map(|assigned| assigned.value())
+            .fold_zipped(Vec::new(), |mut acc, limb| {
+                acc.push(*limb);
+                acc
+            })
+            .map(|limbs| fe_from_limbs::<_, _, LIMBS, BITS>(limbs.try_into().unwrap()))
+    });
+
+    x.zip(y).map(|(x, y)| C::from_xy(x, y).unwrap())
+}
+
+impl<
+        'a,
+        C: CurveAffine,
+        EccChip: EccInstructions<C, C::Scalar>,
+        const LIMBS: usize,
+        const BITS: usize,
+    > SameCurveAccumulation<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>, LIMBS, BITS>
 {
-    pub fn finalize(
-        self,
-        g1: C,
-    ) -> (
-        AssignedPoint<C::Base, C::Scalar, LIMBS, BITS>,
-        AssignedPoint<C::Base, C::Scalar, LIMBS, BITS>,
-    ) {
+    pub fn finalize(self, g1: C) -> (EccChip::AssignedPoint, EccChip::AssignedPoint) {
         let (lhs, rhs) = self.accumulator.unwrap().evaluate(g1.to_curve());
         let loader = lhs.loader();
         (
@@ -31,22 +55,34 @@ impl<'a, 'b, C: CurveAffine, const LIMBS: usize, const BITS: usize>
     }
 }
 
-impl<'a, 'b, C, T, P, const LIMBS: usize, const BITS: usize>
-    AccumulationStrategy<C::CurveExt, Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>, T, P>
-    for SameCurveAccumulation<C::CurveExt, Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>, LIMBS, BITS>
+impl<
+        'a,
+        C: CurveAffine,
+        EccChip: EccInstructions<
+            C,
+            C::Scalar,
+            AssignedPoint = AssignedPoint<AssignedInteger<C::Base, C::Scalar, LIMBS, BITS>>,
+            AssignedScalar = AssignedValue<C::Scalar>,
+        >,
+        T,
+        P,
+        const LIMBS: usize,
+        const BITS: usize,
+    > AccumulationStrategy<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>, T, P>
+    for SameCurveAccumulation<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>, LIMBS, BITS>
 where
     C: CurveAffine,
-    T: Transcript<C::CurveExt, Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>>,
+    T: Transcript<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>>,
 {
     type Output = ();
 
     fn extract_accumulator(
         &self,
         protocol: &Protocol<C::CurveExt>,
-        loader: &Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>,
+        loader: &Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>,
         transcript: &mut T,
-        statements: &[Vec<Scalar<'a, 'b, C, LIMBS, BITS>>],
-    ) -> Option<Accumulator<C::CurveExt, Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>>> {
+        statements: &[Vec<Scalar<'a, C, C::Scalar, EccChip>>],
+    ) -> Option<Accumulator<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>>> {
         let accumulator_indices = protocol.accumulator_indices.as_ref()?;
 
         let challenges = transcript.squeeze_n_challenges(accumulator_indices.len());
@@ -54,18 +90,31 @@ where
             .iter()
             .map(|indices| {
                 assert_eq!(indices.len(), 4 * LIMBS);
-                let assinged = indices
+                let assigned_limbs = indices
                     .iter()
                     .map(|index| statements[index.0][index.1].assigned())
                     .collect_vec();
-                let lhs = loader.assign_ec_point_from_limbs(
-                    assinged[..LIMBS].to_vec().try_into().unwrap(),
-                    assinged[LIMBS..2 * LIMBS].to_vec().try_into().unwrap(),
+                let [lhs, rhs] = [&assigned_limbs[..2 * LIMBS], &assigned_limbs[2 * LIMBS..]].map(
+                    |assigned_limbs| {
+                        let ec_point =
+                            ec_point_from_assigned_limbs::<_, LIMBS, BITS>(assigned_limbs);
+                        loader.assign_ec_point(ec_point)
+                    },
                 );
-                let rhs = loader.assign_ec_point_from_limbs(
-                    assinged[2 * LIMBS..3 * LIMBS].to_vec().try_into().unwrap(),
-                    assinged[3 * LIMBS..].to_vec().try_into().unwrap(),
-                );
+
+                for (src, dst) in assigned_limbs.iter().zip(
+                    iter::empty()
+                        .chain(lhs.assigned().get_x().limbs())
+                        .chain(lhs.assigned().get_y().limbs())
+                        .chain(rhs.assigned().get_x().limbs())
+                        .chain(rhs.assigned().get_y().limbs()),
+                ) {
+                    loader
+                        .ctx_mut()
+                        .constrain_equal(src.cell(), dst.as_ref().cell())
+                        .unwrap();
+                }
+
                 Accumulator::new(MSM::base(lhs), MSM::base(rhs))
             })
             .collect_vec();
@@ -77,10 +126,10 @@ where
 
     fn process(
         &mut self,
-        _: &Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>,
+        _: &Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>,
         transcript: &mut T,
         _: P,
-        accumulator: Accumulator<C::CurveExt, Rc<Halo2Loader<'a, 'b, C, LIMBS, BITS>>>,
+        accumulator: Accumulator<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>>,
     ) -> Result<Self::Output, Error> {
         self.accumulator = Some(match self.accumulator.take() {
             Some(curr_accumulator) => {

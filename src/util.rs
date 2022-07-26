@@ -3,9 +3,9 @@ mod expression;
 mod transcript;
 
 pub use arithmetic::{
-    batch_invert, batch_invert_and_mul, fe_from_limbs, fe_to_limbs, BatchInvert, Curve, Domain,
-    Field, FieldOps, Fraction, Group, GroupEncoding, GroupOps, PrimeCurveAffine, PrimeField,
-    Rotation, UncompressedEncoding,
+    batch_invert, batch_invert_and_mul, fe_from_limbs, fe_to_big, fe_to_fe, fe_to_limbs, modulus,
+    BatchInvert, Curve, Domain, Field, FieldOps, Fraction, Group, GroupEncoding, GroupOps,
+    PrimeCurveAffine, PrimeField, Rotation, UncompressedEncoding,
 };
 pub use expression::{CommonPolynomial, CommonPolynomialEvaluation, Expression, Query};
 pub use transcript::{Transcript, TranscriptRead};

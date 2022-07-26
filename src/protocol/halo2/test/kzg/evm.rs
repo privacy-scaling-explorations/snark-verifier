@@ -56,7 +56,7 @@ macro_rules! halo2_kzg_evm_verify {
         let code = strategy.code($params.get_g()[0], $params.g2(), $params.s_g2());
         let (accept, total_cost, costs) = execute(code, encode_calldata($statements, $proof));
         loader.print_gas_metering(costs);
-        println!("Total: {}", total_cost);
+        println!("Total gas cost: {}", total_cost);
         assert!(accept);
     }};
 }
@@ -120,20 +120,13 @@ test!(
     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
 );
-test!(
-    #[ignore = "cause it requires 16GB memory to run"],
-    zk_accumulation_two_snark,
-    21,
-    halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    Accumulation::two_snark(true)
-);
-test!(
-    #[ignore = "cause it requires 32GB memory to run"],
-    zk_accumulation_two_snark_with_accumulator,
-    22,
-    halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    Accumulation::two_snark_with_accumulator(true)
-);
+// TODO: Enable when `PlookupConfig` supports zk
+// test!(
+//     zk_main_gate_with_plookup_with_mock_kzg_accumulator,
+//     9,
+//     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
+//     main_gate_with_plookup_with_mock_kzg_accumulator::<Bn256, true>(9)
+// );
 test!(
     standard_plonk_rand,
     9,
@@ -150,19 +143,19 @@ test!(
     main_gate_with_plookup_with_mock_kzg_accumulator,
     9,
     halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    main_gate_with_plookup_with_mock_kzg_accumulator::<Bn256>(9)
+    main_gate_with_plookup_with_mock_kzg_accumulator::<Bn256, false>(9)
 );
 test!(
     #[ignore = "cause it requires 16GB memory to run"],
     accumulation_two_snark,
     21,
     halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    Accumulation::two_snark(false)
+    Accumulation::two_snark(21)
 );
 test!(
     #[ignore = "cause it requires 32GB memory to run"],
     accumulation_two_snark_with_accumulator,
     22,
     halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    Accumulation::two_snark_with_accumulator(false)
+    Accumulation::two_snark_with_accumulator(22)
 );

@@ -8,7 +8,7 @@ use halo2_proofs::transcript::{
     EncodedChallenge, Transcript, TranscriptRead, TranscriptReadBuffer, TranscriptWrite,
     TranscriptWriterBuffer,
 };
-use halo2_wrong_transcript::NativeRepresentation;
+use halo2_wrong_transcript::PointRepresentation;
 use poseidon::Poseidon;
 use std::io::{self, Read, Write};
 
@@ -28,9 +28,8 @@ impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {
 
 impl<
         C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar>,
         S,
-        const LIMBS: usize,
-        const BITS: usize,
         const T: usize,
         const RATE: usize,
         const R_F: usize,
@@ -38,12 +37,11 @@ impl<
     > Transcript<C, ChallengeScalar<C>>
     for PoseidonTranscript<
         C,
+        C::Scalar,
+        E,
         NativeLoader,
         S,
         Poseidon<C::Scalar, T, RATE>,
-        NativeRepresentation,
-        LIMBS,
-        BITS,
         T,
         RATE,
         R_F,
@@ -73,9 +71,8 @@ impl<
 
 impl<
         C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar>,
         R: Read,
-        const LIMBS: usize,
-        const BITS: usize,
         const T: usize,
         const RATE: usize,
         const R_F: usize,
@@ -83,12 +80,11 @@ impl<
     > TranscriptRead<C, ChallengeScalar<C>>
     for PoseidonTranscript<
         C,
+        C::Scalar,
+        E,
         NativeLoader,
         R,
         Poseidon<C::Scalar, T, RATE>,
-        NativeRepresentation,
-        LIMBS,
-        BITS,
         T,
         RATE,
         R_F,
@@ -114,9 +110,8 @@ impl<
 
 impl<
         C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar>,
         R: Read,
-        const LIMBS: usize,
-        const BITS: usize,
         const T: usize,
         const RATE: usize,
         const R_F: usize,
@@ -124,12 +119,11 @@ impl<
     > TranscriptReadBuffer<R, C, ChallengeScalar<C>>
     for PoseidonTranscript<
         C,
+        C::Scalar,
+        E,
         NativeLoader,
         R,
         Poseidon<C::Scalar, T, RATE>,
-        NativeRepresentation,
-        LIMBS,
-        BITS,
         T,
         RATE,
         R_F,
@@ -143,9 +137,8 @@ impl<
 
 impl<
         C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar>,
         W: Write,
-        const LIMBS: usize,
-        const BITS: usize,
         const T: usize,
         const RATE: usize,
         const R_F: usize,
@@ -153,12 +146,11 @@ impl<
     > TranscriptWrite<C, ChallengeScalar<C>>
     for PoseidonTranscript<
         C,
+        C::Scalar,
+        E,
         NativeLoader,
         W,
         Poseidon<C::Scalar, T, RATE>,
-        NativeRepresentation,
-        LIMBS,
-        BITS,
         T,
         RATE,
         R_F,
@@ -180,9 +172,8 @@ impl<
 
 impl<
         C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar>,
         W: Write,
-        const LIMBS: usize,
-        const BITS: usize,
         const T: usize,
         const RATE: usize,
         const R_F: usize,
@@ -190,12 +181,11 @@ impl<
     > TranscriptWriterBuffer<W, C, ChallengeScalar<C>>
     for PoseidonTranscript<
         C,
+        C::Scalar,
+        E,
         NativeLoader,
         W,
         Poseidon<C::Scalar, T, RATE>,
-        NativeRepresentation,
-        LIMBS,
-        BITS,
         T,
         RATE,
         R_F,

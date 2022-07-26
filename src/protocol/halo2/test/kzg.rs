@@ -1,5 +1,5 @@
 use crate::{
-    protocol::halo2::test::{MainGateWithPlookup, MainGateWithRange},
+    protocol::halo2::test::{MainGateWithPlookupRange, MainGateWithRange},
     util::fe_to_limbs,
 };
 use halo2_curves::{pairing::Engine, CurveAffine};
@@ -46,12 +46,12 @@ pub fn main_gate_with_range_with_mock_kzg_accumulator<E: Engine + Debug>(
     )
 }
 
-pub fn main_gate_with_plookup_with_mock_kzg_accumulator<E: Engine + Debug>(
+pub fn main_gate_with_plookup_with_mock_kzg_accumulator<E: Engine + Debug, const ZK: bool>(
     k: u32,
-) -> MainGateWithPlookup<E::Scalar> {
+) -> MainGateWithPlookupRange<E::Scalar, ZK> {
     let srs = read_or_create_srs::<E>(1);
     let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());
-    MainGateWithPlookup::new(
+    MainGateWithPlookupRange::new(
         k,
         [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
             .iter()
