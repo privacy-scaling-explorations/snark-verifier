@@ -4,8 +4,8 @@ use crate::{
 };
 use halo2_curves::{pairing::Engine, CurveAffine};
 use halo2_proofs::poly::{
-    commitment::{CommitmentScheme, Params, ParamsProver},
-    kzg::commitment::{KZGCommitmentScheme, ParamsKZG},
+    commitment::{Params, ParamsProver},
+    kzg::commitment::ParamsKZG,
 };
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use std::{fmt::Debug, fs};
@@ -26,10 +26,8 @@ pub fn read_or_create_srs<E: Engine + Debug>(k: u32) -> ParamsKZG<E> {
         Ok(mut file) => ParamsKZG::<E>::read(&mut file).unwrap(),
         Err(_) => {
             fs::create_dir_all(DIR).unwrap();
-            let params =
-                KZGCommitmentScheme::<E>::new_params(k, ChaCha20Rng::from_seed(Default::default()));
-            let mut file = fs::File::create(path.as_str()).unwrap();
-            params.write(&mut file).unwrap();
+            let params = ParamsKZG::<E>::setup(k, ChaCha20Rng::from_seed(Default::default()));
+            params.write(&mut fs::File::create(path).unwrap()).unwrap();
             params
         }
     }
@@ -37,8 +35,8 @@ pub fn read_or_create_srs<E: Engine + Debug>(k: u32) -> ParamsKZG<E> {
 
 pub fn main_gate_with_range_with_mock_kzg_accumulator<E: Engine + Debug>(
 ) -> MainGateWithRange<E::Scalar> {
-    let g = read_or_create_srs::<E>(3).get_g();
-    let [g1, s_g1] = [g[0], g[1]].map(|point| point.coordinates().unwrap());
+    let srs = read_or_create_srs::<E>(1);
+    let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());
     MainGateWithRange::new(
         [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
             .iter()
@@ -51,8 +49,8 @@ pub fn main_gate_with_range_with_mock_kzg_accumulator<E: Engine + Debug>(
 pub fn main_gate_with_plookup_with_mock_kzg_accumulator<E: Engine + Debug>(
     k: u32,
 ) -> MainGateWithPlookup<E::Scalar> {
-    let g = read_or_create_srs::<E>(3).get_g();
-    let [g1, s_g1] = [g[0], g[1]].map(|point| point.coordinates().unwrap());
+    let srs = read_or_create_srs::<E>(1);
+    let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());
     MainGateWithPlookup::new(
         k,
         [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
@@ -95,7 +93,6 @@ macro_rules! halo2_kzg_prepare {
         use halo2_curves::bn256::{Bn256, G1};
         use halo2_proofs::{
             plonk::{keygen_pk, keygen_vk},
-            poly::kzg::commitment::KZGCommitmentScheme,
         };
         use std::{iter};
 
@@ -105,12 +102,12 @@ macro_rules! halo2_kzg_prepare {
 
         let params = read_or_create_srs::<Bn256>($k);
         let pk = if $config.zk {
-            let vk = keygen_vk::<KZGCommitmentScheme<_>, _, true>(&params, &circuits[0]).unwrap();
-            let pk = keygen_pk::<KZGCommitmentScheme<_>, _, true>(&params, vk, &circuits[0]).unwrap();
+            let vk = keygen_vk::<_, _, _, true>(&params, &circuits[0]).unwrap();
+            let pk = keygen_pk::<_, _, _, true>(&params, vk, &circuits[0]).unwrap();
             pk
         } else {
-            let vk = keygen_vk::<KZGCommitmentScheme<_>, _, false>(&params, &circuits[0]).unwrap();
-            let pk = keygen_pk::<KZGCommitmentScheme<_>, _, false>(&params, vk, &circuits[0]).unwrap();
+            let vk = keygen_vk::<_, _, _, false>(&params, &circuits[0]).unwrap();
+            let pk = keygen_pk::<_, _, _, false>(&params, vk, &circuits[0]).unwrap();
             pk
         };
 

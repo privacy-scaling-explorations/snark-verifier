@@ -10,7 +10,6 @@ use halo2_proofs::{
     plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey},
     poly::{
         commitment::{CommitmentScheme, Params, ParamsProver, Prover, Verifier},
-        kzg::commitment::KZGCommitmentScheme,
         Rotation, VerificationStrategy,
     },
     transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
@@ -92,8 +91,8 @@ fn test_compile_standard_plonk() {
     let circuit = StandardPlonk::rand(ChaCha20Rng::from_seed(Default::default()));
 
     let params = kzg::read_or_create_srs::<Bn256>(9);
-    let vk = keygen_vk::<KZGCommitmentScheme<_>, _, false>(&params, &circuit).unwrap();
-    let pk = keygen_pk::<KZGCommitmentScheme<_>, _, false>(&params, vk, &circuit).unwrap();
+    let vk = keygen_vk::<_, _, _, false>(&params, &circuit).unwrap();
+    let pk = keygen_pk::<_, _, _, false>(&params, vk, &circuit).unwrap();
 
     let protocol = compile::<G1>(
         pk.get_vk(),
