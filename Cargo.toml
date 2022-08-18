@@ -15,42 +15,36 @@ rand_chacha = "0.3.1"
 halo2_curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "0.2.1", package = "halo2curves" }
 
 # halo2
-blake2b_simd = { version = "1.0.0", optional = true }
-halo2_proofs = { version = "0.2.0", optional = true }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2022_08_19", optional = true }
 halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", package = "ecc", optional = true }
 halo2_wrong_transcript = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", package = "transcript", optional = true }
 poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon", branch = "padding", optional = true }
-rayon = { version = "1.5.1", optional = true }
 
 # evm
 ethereum_types = { package = "ethereum-types", version = "0.13.1", default-features = false, features = ["std"], optional = true }
-foundry_evm = { git = "https://github.com/foundry-rs/foundry", package = "foundry-evm", rev = "93ee742d", optional = true }
-crossterm = { version = "0.22.1", optional = true }
-tui = { version = "0.16.0", default-features = false, features = ["crossterm"], optional = true }
 sha3 = { version = "0.10.1", optional = true }
 
 [dev-dependencies]
 paste = "1.0.7"
 
+# evm
+foundry_evm = { git = "https://github.com/foundry-rs/foundry", package = "foundry-evm", rev = "93ee742d" }
+crossterm = { version = "0.22.1" }
+tui = { version = "0.16.0", default-features = false, features = ["crossterm"] }
+
 [features]
 default = ["halo2", "evm"]
 test = ["halo2", "evm"]
 
-halo2 = ["dep:blake2b_simd", "dep:halo2_proofs", "dep:halo2_wrong_ecc", "dep:halo2_wrong_transcript", "dep:poseidon", "dep:rayon"]
-evm = ["dep:foundry_evm", "dep:crossterm", "dep:tui", "dep:ethereum_types", "dep:sha3"]
+halo2 = ["dep:halo2_proofs", "dep:halo2_wrong_ecc", "dep:halo2_wrong_transcript", "dep:poseidon"]
+evm = ["dep:ethereum_types", "dep:sha3"]
 sanity-check = []
 
-[patch.crates-io]
-halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "experiment", package = "halo2_proofs" }
-
 [patch."https://github.com/privacy-scaling-explorations/halo2"]
-halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "experiment", package = "halo2_proofs" }
-
-[patch."https://github.com/privacy-scaling-explorations/halo2curves"]
-halo2_curves = { git = "https://github.com//privacy-scaling-explorations/halo2curves", tag = "0.2.1", package = "halo2curves" }
+halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "feature/configurable-instance-query", package = "halo2_proofs" }
 
 [patch."https://github.com/privacy-scaling-explorations/halo2wrong"]
-halo2_wrong = { git = "https://github.com/han0110/halo2wrong", branch = "feature/generic-instructions", package = "halo2wrong" }
-halo2_wrong_ecc = { git = "https://github.com/han0110/halo2wrong", branch = "feature/generic-instructions", package = "ecc" }
-halo2_wrong_maingate = { git = "https://github.com/han0110/halo2wrong", branch = "feature/generic-instructions", package = "maingate" }
-halo2_wrong_transcript = { git = "https://github.com/han0110/halo2wrong", branch = "feature/generic-instructions", package = "transcript" }
+halo2_wrong = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "halo2wrong" }
+halo2_wrong_ecc = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "ecc" }
+halo2_wrong_maingate = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "maingate" }
+halo2_wrong_transcript = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "transcript" }

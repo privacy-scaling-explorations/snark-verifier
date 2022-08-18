@@ -2,10 +2,7 @@ use crate::{
     collect_slice, halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify,
     halo2_kzg_prepare,
     protocol::halo2::test::{
-        kzg::{
-            main_gate_with_plookup_with_mock_kzg_accumulator,
-            main_gate_with_range_with_mock_kzg_accumulator, LIMBS,
-        },
+        kzg::{main_gate_with_range_with_mock_kzg_accumulator, LIMBS},
         StandardPlonk,
     },
     scheme::kzg::{PlonkAccumulationScheme, ShplonkAccumulationScheme},
@@ -70,29 +67,4 @@ test!(
     9,
     halo2_kzg_config!(true, 2, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
-);
-// TODO: Enable when `PlookupConfig` supports zk
-// test!(
-//     zk_main_gate_with_plookup_with_mock_kzg_accumulator,
-//     9,
-//     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-//     main_gate_with_plookup_with_mock_kzg_accumulator::<Bn256, true>(9)
-// );
-test!(
-    standard_plonk_rand,
-    9,
-    halo2_kzg_config!(false, 2),
-    StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
-);
-test!(
-    main_gate_with_range_with_mock_kzg_accumulator,
-    9,
-    halo2_kzg_config!(false, 2, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
-);
-test!(
-    main_gate_with_plookup_with_mock_kzg_accumulator,
-    9,
-    halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    main_gate_with_plookup_with_mock_kzg_accumulator::<Bn256, false>(9)
 );

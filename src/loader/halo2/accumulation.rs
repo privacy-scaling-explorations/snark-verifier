@@ -1,7 +1,7 @@
 use crate::{
     loader::{
         halo2::{
-            loader::{Halo2Loader, Scalar},
+            loader::{Halo2Loader, Scalar},shim::EccInstructions,
             Valuetools,
         },
         LoadedEcPoint,
@@ -14,7 +14,7 @@ use crate::{
 use halo2_curves::CurveAffine;
 use halo2_proofs::circuit::Value;
 use halo2_wrong_ecc::{
-    integer::AssignedInteger, maingate::AssignedValue, AssignedPoint, EccInstructions,
+     maingate::AssignedValue, AssignedPoint,
 };
 use std::{iter, rc::Rc};
 
@@ -61,7 +61,7 @@ impl<
         EccChip: EccInstructions<
             C,
             C::Scalar,
-            AssignedPoint = AssignedPoint<AssignedInteger<C::Base, C::Scalar, LIMBS, BITS>>,
+            AssignedPoint = AssignedPoint<C::Base, C::Scalar, LIMBS, BITS>,
             AssignedScalar = AssignedValue<C::Scalar>,
         >,
         T,

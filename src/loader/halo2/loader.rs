@@ -1,14 +1,13 @@
 use crate::{
-    loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
+    loader::{
+        halo2::shim::{EccInstructions, IntegerInstructions},
+        EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader,
+    },
     util::{Curve, Field, FieldOps, Group, Itertools},
 };
 use halo2_curves::{CurveAffine, FieldExt};
 use halo2_proofs::circuit;
-use halo2_wrong_ecc::{
-    integer::{IntegerInstructions, Range},
-    maingate::RegionCtx,
-    EccInstructions,
-};
+use halo2_wrong_ecc::maingate::RegionCtx;
 use rand::rngs::OsRng;
 use std::{
     cell::{Ref, RefCell},
@@ -54,10 +53,8 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         self.ecc_chip.borrow()
     }
 
-    pub fn scalar_chip(&self) -> impl Deref<Target = EccChip::ScalarFieldChip> + '_ {
-        Ref::map(self.ecc_chip.borrow(), |ecc_chip| {
-            ecc_chip.scalar_field_chip()
-        })
+    pub fn scalar_chip(&self) -> impl Deref<Target = EccChip::ScalarChip> + '_ {
+        Ref::map(self.ecc_chip.borrow(), |ecc_chip| ecc_chip.scalar_chip())
     }
 
     pub fn ctx(&self) -> impl Deref<Target = RegionCtx<'a, N>> + '_ {
@@ -82,7 +79,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
     ) -> Scalar<'a, C, N, EccChip> {
         let assigned = self
             .scalar_chip()
-            .assign_integer(&mut self.ctx_mut(), scalar, Range::Remainder)
+            .assign_integer(&mut self.ctx_mut(), scalar)
             .unwrap();
         self.scalar(Value::Assigned(assigned))
     }
@@ -249,9 +246,12 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         let output = match &scalar.value {
             Value::Constant(constant) => Value::Constant(Field::invert(constant).unwrap()),
             Value::Assigned(assigned) => Value::Assigned(
-                self.scalar_chip()
-                    .invert_incomplete(&mut self.ctx_mut(), assigned)
-                    .unwrap(),
+                IntegerInstructions::invert(
+                    self.scalar_chip().deref(),
+                    &mut self.ctx_mut(),
+                    assigned,
+                )
+                .unwrap(),
             ),
         };
         self.scalar(output)
@@ -320,7 +320,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> FieldOps
     for Scalar<'a, C, N, EccChip>
 {
     fn invert(&self) -> Option<Self> {
-        Some((&self.loader).invert(self))
+        Some(self.loader.invert(self))
     }
 }
 
@@ -330,7 +330,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Add
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        (&self.loader).add(&self, &rhs)
+        Halo2Loader::add(&self.loader, &self, &rhs)
     }
 }
 
@@ -340,7 +340,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Sub
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        (&self.loader).sub(&self, &rhs)
+        Halo2Loader::sub(&self.loader, &self, &rhs)
     }
 }
 
@@ -350,7 +350,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Mul
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        (&self.loader).mul(&self, &rhs)
+        Halo2Loader::mul(&self.loader, &self, &rhs)
     }
 }
 
@@ -360,7 +360,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Neg
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        (&self.loader).neg(&self)
+        Halo2Loader::neg(&self.loader, &self)
     }
 }
 
@@ -370,7 +370,7 @@ impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Add<&'
     type Output = Self;
 
     fn add(self, rhs: &'b Self) -> Self::Output {
-        (&self.loader).add(&self, rhs)
+        Halo2Loader::add(&self.loader, &self, rhs)
     }
 }
 
@@ -380,7 +380,7 @@ impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Sub<&'
     type Output = Self;
 
     fn sub(self, rhs: &'b Self) -> Self::Output {
-        (&self.loader).sub(&self, rhs)
+        Halo2Loader::sub(&self.loader, &self, rhs)
     }
 }
 
@@ -390,7 +390,7 @@ impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Mul<&'
     type Output = Self;
 
     fn mul(self, rhs: &'b Self) -> Self::Output {
-        (&self.loader).mul(&self, rhs)
+        Halo2Loader::mul(&self.loader, &self, rhs)
     }
 }
 
@@ -398,7 +398,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> AddAssign
     for Scalar<'a, C, N, EccChip>
 {
     fn add_assign(&mut self, rhs: Self) {
-        *self = (&self.loader).add(self, &rhs)
+        *self = Halo2Loader::add(&self.loader, self, &rhs)
     }
 }
 
@@ -406,7 +406,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> SubAssign
     for Scalar<'a, C, N, EccChip>
 {
     fn sub_assign(&mut self, rhs: Self) {
-        *self = (&self.loader).sub(self, &rhs)
+        *self = Halo2Loader::sub(&self.loader, self, &rhs)
     }
 }
 
@@ -414,7 +414,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> MulAssign
     for Scalar<'a, C, N, EccChip>
 {
     fn mul_assign(&mut self, rhs: Self) {
-        *self = (&self.loader).mul(self, &rhs)
+        *self = Halo2Loader::mul(&self.loader, self, &rhs)
     }
 }
 
@@ -422,7 +422,7 @@ impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> AddAss
     for Scalar<'a, C, N, EccChip>
 {
     fn add_assign(&mut self, rhs: &'b Self) {
-        *self = (&self.loader).add(self, rhs)
+        *self = Halo2Loader::add(&self.loader, self, rhs)
     }
 }
 
@@ -430,7 +430,7 @@ impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> SubAss
     for Scalar<'a, C, N, EccChip>
 {
     fn sub_assign(&mut self, rhs: &'b Self) {
-        *self = (&self.loader).sub(self, rhs)
+        *self = Halo2Loader::sub(&self.loader, self, rhs)
     }
 }
 
@@ -438,7 +438,7 @@ impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> MulAss
     for Scalar<'a, C, N, EccChip>
 {
     fn mul_assign(&mut self, rhs: &'b Self) {
-        *self = (&self.loader).mul(self, rhs)
+        *self = Halo2Loader::mul(&self.loader, self, rhs)
     }
 }
 

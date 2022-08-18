@@ -4,7 +4,7 @@ use crate::{
 };
 use halo2_proofs::{
     arithmetic::{CurveAffine, CurveExt, FieldExt},
-    plonk::{self, Any, ConstraintSystem, FirstPhase, SecondPhase, ThirdPhase, VerifyingKey},
+    plonk::{self, Any, ConstraintSystem, VerifyingKey},
     poly,
     transcript::{EncodedChallenge, Transcript},
 };
@@ -33,7 +33,7 @@ pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, config: Config) -> 
         accumulator_indices,
     } = config;
 
-    let k = vk.get_domain().empty_lagrange().len().log2();
+    let k = vk.get_domain().empty_lagrange().len().ilog2();
     let domain = Domain::new(k as usize);
 
     let preprocessed = vk
@@ -115,8 +115,6 @@ struct Polynomials<'a, F: FieldExt> {
     num_instance: Vec<usize>,
     num_advice: Vec<usize>,
     num_challenge: Vec<usize>,
-    advice_index: Vec<usize>,
-    challenge_index: Vec<usize>,
     num_lookup_permuted: usize,
     permutation_chunk_size: usize,
     num_permutation_z: usize,
@@ -131,40 +129,13 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         num_instance: Vec<usize>,
         num_proof: usize,
     ) -> Self {
-        let degree = if zk {
-            cs.degree::<true>()
-        } else {
-            cs.degree::<false>()
-        };
+        // TODO: Re-enable optional-zk when it's merged in pse/halo2.
+        let degree = if zk { cs.degree() } else { unimplemented!() };
         let permutation_chunk_size = if zk || cs.permutation().get_columns().len() >= degree {
             degree - 2
         } else {
             degree - 1
         };
-
-        let num_phase = *cs.advice_column_phase().iter().max().unwrap() as usize + 1;
-        let remapping = |phase: Vec<u8>| {
-            let num = phase.iter().fold(vec![0; num_phase], |mut num, phase| {
-                num[*phase as usize] += 1;
-                num
-            });
-            let index = phase
-                .iter()
-                .scan(vec![0; num_phase], |state, phase| {
-                    let index = state[*phase as usize];
-                    state[*phase as usize] += 1;
-                    Some(index)
-                })
-                .collect_vec();
-            (num, index)
-        };
-
-        let (num_advice, advice_index) = remapping(cs.advice_column_phase());
-        let (num_challenge, challenge_index) = remapping(cs.challenge_phase());
-        assert_eq!(num_advice.iter().sum::<usize>(), cs.num_advice_columns());
-        assert_eq!(num_challenge.iter().sum::<usize>(), cs.num_challenges());
-
-        assert_eq!(cs.num_instance_columns(), num_instance.len());
 
         Self {
             cs,
@@ -174,10 +145,8 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             num_fixed: cs.num_fixed_columns(),
             num_permutation_fixed: cs.permutation().get_columns().len(),
             num_instance,
-            num_advice,
-            num_challenge,
-            advice_index,
-            challenge_index,
+            num_advice: vec![cs.num_advice_columns()],
+            num_challenge: vec![0],
             num_lookup_permuted: 2 * cs.lookups().len(),
             permutation_chunk_size,
             num_permutation_z: cs
@@ -247,23 +216,14 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     fn query<C: Into<Any> + Copy, R: Into<Rotation>>(
         &self,
         column_type: C,
-        mut column_index: usize,
+        column_index: usize,
         rotation: R,
         t: usize,
     ) -> Query {
         let offset = match column_type.into() {
             Any::Fixed => 0,
             Any::Instance => self.instance_offset() + t * self.num_instance.len(),
-            Any::Advice(advice) => {
-                column_index = self.advice_index[column_index];
-                let phase_offset = self.num_proof
-                    * self.num_advice[..advice.phase() as usize]
-                        .iter()
-                        .sum::<usize>();
-                self.auxiliary_offset()
-                    + phase_offset
-                    + t * self.num_advice[advice.phase() as usize]
-            }
+            Any::Advice => self.auxiliary_offset() + t * self.num_advice.iter().sum::<usize>(),
         };
         Query::new(offset + column_index, rotation.into())
     }
@@ -405,28 +365,12 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     .into()
             },
             &|query| {
-                self.query(
-                    match query.phase() {
-                        0 => Any::advice_in(FirstPhase),
-                        1 => Any::advice_in(SecondPhase),
-                        2 => Any::advice_in(ThirdPhase),
-                        _ => unreachable!(),
-                    },
-                    query.column_index(),
-                    query.rotation(),
-                    t,
-                )
-                .into()
+                self.query(Any::Advice, query.column_index(), query.rotation(), t)
+                    .into()
             },
             &|query| {
                 self.query(Any::Instance, query.column_index(), query.rotation(), t)
                     .into()
-            },
-            &|challenge| {
-                let phase_offset = self.num_challenge[..challenge.phase() as usize]
-                    .iter()
-                    .sum::<usize>();
-                Expression::Challenge(phase_offset + self.challenge_index[challenge.index()])
             },
             &|a| -a,
             &|a, b| a + b,
@@ -444,7 +388,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 
     fn rotation_last(&self) -> Rotation {
-        Rotation(-((self.cs.blinding_factors::<true>() + 1) as i32))
+        Rotation(-((self.cs.blinding_factors() + 1) as i32))
     }
 
     fn l_last(&self) -> Expression<F> {

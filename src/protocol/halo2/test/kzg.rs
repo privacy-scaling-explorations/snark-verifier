@@ -1,7 +1,4 @@
-use crate::{
-    protocol::halo2::test::{MainGateWithPlookupRange, MainGateWithRange},
-    util::fe_to_limbs,
-};
+use crate::{protocol::halo2::test::MainGateWithRange, util::fe_to_limbs};
 use halo2_curves::{pairing::Engine, CurveAffine};
 use halo2_proofs::poly::{
     commitment::{Params, ParamsProver},
@@ -38,21 +35,6 @@ pub fn main_gate_with_range_with_mock_kzg_accumulator<E: Engine + Debug>(
     let srs = read_or_create_srs::<E>(1);
     let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());
     MainGateWithRange::new(
-        [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
-            .iter()
-            .cloned()
-            .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
-            .collect(),
-    )
-}
-
-pub fn main_gate_with_plookup_with_mock_kzg_accumulator<E: Engine + Debug, const ZK: bool>(
-    k: u32,
-) -> MainGateWithPlookupRange<E::Scalar, ZK> {
-    let srs = read_or_create_srs::<E>(1);
-    let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());
-    MainGateWithPlookupRange::new(
-        k,
         [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
             .iter()
             .cloned()
@@ -102,13 +84,12 @@ macro_rules! halo2_kzg_prepare {
 
         let params = read_or_create_srs::<Bn256>($k);
         let pk = if $config.zk {
-            let vk = keygen_vk::<_, _, _, true>(&params, &circuits[0]).unwrap();
-            let pk = keygen_pk::<_, _, _, true>(&params, vk, &circuits[0]).unwrap();
+            let vk = keygen_vk(&params, &circuits[0]).unwrap();
+            let pk = keygen_pk(&params, vk, &circuits[0]).unwrap();
             pk
         } else {
-            let vk = keygen_vk::<_, _, _, false>(&params, &circuits[0]).unwrap();
-            let pk = keygen_pk::<_, _, _, false>(&params, vk, &circuits[0]).unwrap();
-            pk
+            // TODO: Re-enable optional-zk when it's merged in pse/halo2.
+            unimplemented!()
         };
 
         let mut config = $config;
@@ -156,7 +137,6 @@ macro_rules! halo2_kzg_create_snark {
                     $transcript_write,
                     $encoded_challenge,
                     _,
-                    true,
                 >(
                     $params,
                     $pk,
@@ -165,24 +145,7 @@ macro_rules! halo2_kzg_create_snark {
                     &mut ChaCha20Rng::from_seed(Default::default()),
                 )
             } else {
-                create_proof_checked::<
-                    KZGCommitmentScheme<_>,
-                    _,
-                    $prover,
-                    $verifier,
-                    $verification_strategy,
-                    $transcript_read,
-                    $transcript_write,
-                    $encoded_challenge,
-                    _,
-                    false,
-                >(
-                    $params,
-                    $pk,
-                    $circuits,
-                    &instances,
-                    &mut ChaCha20Rng::from_seed(Default::default()),
-                )
+                unimplemented!()
             }
         };
 

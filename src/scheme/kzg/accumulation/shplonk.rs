@@ -484,7 +484,7 @@ fn intermediate_sets<C: Curve, L: Loader<C>>(
             .unwrap()
             - 1)
         .next_power_of_two()
-        .log2() as usize
+        .ilog2() as usize
             + 1,
     );
     let powers_of_z = z.powers(size);

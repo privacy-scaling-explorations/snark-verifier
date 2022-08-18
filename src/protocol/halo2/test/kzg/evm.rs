@@ -4,10 +4,7 @@ use crate::{
     loader::evm::EvmTranscript,
     protocol::halo2::{
         test::{
-            kzg::{
-                halo2::Accumulation, main_gate_with_plookup_with_mock_kzg_accumulator,
-                main_gate_with_range_with_mock_kzg_accumulator, LIMBS,
-            },
+            kzg::{halo2::Accumulation, main_gate_with_range_with_mock_kzg_accumulator, LIMBS},
             StandardPlonk,
         },
         util::evm::ChallengeEvm,
@@ -120,42 +117,17 @@ test!(
     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
 );
-// TODO: Enable when `PlookupConfig` supports zk
-// test!(
-//     zk_main_gate_with_plookup_with_mock_kzg_accumulator,
-//     9,
-//     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-//     main_gate_with_plookup_with_mock_kzg_accumulator::<Bn256, true>(9)
-// );
-test!(
-    standard_plonk_rand,
-    9,
-    halo2_kzg_config!(false, 1),
-    StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
-);
-test!(
-    main_gate_with_range_with_mock_kzg_accumulator,
-    9,
-    halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
-);
-test!(
-    main_gate_with_plookup_with_mock_kzg_accumulator,
-    9,
-    halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    main_gate_with_plookup_with_mock_kzg_accumulator::<Bn256, false>(9)
-);
 test!(
     #[ignore = "cause it requires 16GB memory to run"],
-    accumulation_two_snark,
+    zk_accumulation_two_snark,
     21,
-    halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    Accumulation::two_snark(21)
+    halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
+    Accumulation::two_snark()
 );
 test!(
     #[ignore = "cause it requires 32GB memory to run"],
-    accumulation_two_snark_with_accumulator,
+    zk_accumulation_two_snark_with_accumulator,
     22,
-    halo2_kzg_config!(false, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    Accumulation::two_snark_with_accumulator(22)
+    halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
+    Accumulation::two_snark_with_accumulator()
 );

@@ -1,9 +1,11 @@
 use halo2_proofs::circuit::Value;
 
+mod shim;
 mod accumulation;
 mod loader;
 mod transcript;
 
+pub use shim::{IntegerInstructions, EccInstructions};
 pub use loader::Halo2Loader;
 pub use transcript::PoseidonTranscript;
 
