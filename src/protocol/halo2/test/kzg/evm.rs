@@ -32,25 +32,28 @@ macro_rules! halo2_kzg_evm_verify {
         };
 
         let loader = EvmLoader::new::<Fq, Fr>();
-        let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
-        let instances = $instances
-            .iter()
-            .map(|instance| {
-                iter::repeat_with(|| transcript.read_scalar().unwrap())
-                    .take(instance.len())
-                    .collect_vec()
-            })
-            .collect_vec();
-        let mut strategy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
-        <$scheme>::accumulate(
-            $protocol,
-            &loader,
-            instances,
-            &mut transcript,
-            &mut strategy,
-        )
-        .unwrap();
-        let code = strategy.code($params.get_g()[0], $params.g2(), $params.s_g2());
+        let code = {
+            let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
+            let instances = $instances
+                .iter()
+                .map(|instance| {
+                    iter::repeat_with(|| transcript.read_scalar().unwrap())
+                        .take(instance.len())
+                        .collect_vec()
+                })
+                .collect_vec();
+            let mut strategy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
+            <$scheme>::accumulate(
+                $protocol,
+                &loader,
+                instances,
+                &mut transcript,
+                &mut strategy,
+            )
+            .unwrap();
+            strategy.finalize($params.get_g()[0], $params.g2(), $params.s_g2());
+            loader.code()
+        };
         let (accept, total_cost, costs) = execute(code, encode_calldata($instances, $proof));
         loader.print_gas_metering(costs);
         println!("Total gas cost: {}", total_cost);

@@ -43,7 +43,7 @@ where
 }
 
 impl<const LIMBS: usize, const BITS: usize> SameCurveAccumulation<G1, Rc<EvmLoader>, LIMBS, BITS> {
-    pub fn code(self, g1: G1Affine, g2: G2Affine, s_g2: G2Affine) -> Vec<u8> {
+    pub fn finalize(self, g1: G1Affine, g2: G2Affine, s_g2: G2Affine) {
         let (lhs, rhs) = self.accumulator.unwrap().evaluate(g1.to_curve());
         let loader = lhs.loader();
 
@@ -59,8 +59,6 @@ impl<const LIMBS: usize, const BITS: usize> SameCurveAccumulation<G1, Rc<EvmLoad
             )
         });
         loader.pairing(&lhs, g2, &rhs, minus_s_g2);
-
-        loader.code()
     }
 }
 
