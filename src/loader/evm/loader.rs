@@ -52,6 +52,10 @@ impl EvmLoader {
         })
     }
 
+    pub fn deployment_code(self: &Rc<Self>) -> Vec<u8> {
+        Code::deployment(self.code())
+    }
+
     pub fn code(self: &Rc<Self>) -> Vec<u8> {
         let mut code = self.code.borrow().clone();
         let dst = code.len() + 9;

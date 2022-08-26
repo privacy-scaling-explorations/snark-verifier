@@ -1,6 +1,6 @@
 use crate::util::Itertools;
 use ethereum_types::U256;
-use std::collections::HashMap;
+use std::{collections::HashMap, iter};
 
 pub enum Precompiled {
     BigModExp = 0x05,
@@ -34,6 +34,33 @@ impl Code {
                 .map(|(idx, value)| (value, idx)),
         );
         code
+    }
+
+    pub fn deployment(code: Vec<u8>) -> Vec<u8> {
+        let code_len = code.len();
+        assert_ne!(code_len, 0);
+
+        iter::empty()
+            .chain([
+                PUSH1 + 1,
+                (code_len >> 8) as u8,
+                (code_len & 0xff) as u8,
+                PUSH1,
+                14,
+                PUSH1,
+                0,
+                CODECOPY,
+            ])
+            .chain([
+                PUSH1 + 1,
+                (code_len >> 8) as u8,
+                (code_len & 0xff) as u8,
+                PUSH1,
+                0,
+                RETURN,
+            ])
+            .chain(code)
+            .collect()
     }
 
     pub fn len(&self) -> usize {

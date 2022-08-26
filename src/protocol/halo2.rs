@@ -16,11 +16,11 @@ mod util;
 mod test;
 
 pub struct Config {
-    zk: bool,
-    query_instance: bool,
-    num_instance: Vec<usize>,
-    num_proof: usize,
-    accumulator_indices: Option<Vec<(usize, usize)>>,
+    pub zk: bool,
+    pub query_instance: bool,
+    pub num_instance: Vec<usize>,
+    pub num_proof: usize,
+    pub accumulator_indices: Option<Vec<(usize, usize)>>,
 }
 
 pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, config: Config) -> Protocol<C> {
