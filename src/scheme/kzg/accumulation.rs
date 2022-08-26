@@ -21,7 +21,7 @@ where
     fn accumulate(
         protocol: &Protocol<C>,
         loader: &L,
-        statements: Vec<Vec<L::LoadedScalar>>,
+        instances: Vec<Vec<L::LoadedScalar>>,
         transcript: &mut T,
         strategy: &mut S,
     ) -> Result<S::Output, Error>;

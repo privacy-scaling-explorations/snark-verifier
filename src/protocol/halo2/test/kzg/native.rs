@@ -43,7 +43,7 @@ macro_rules! test {
                 halo2_kzg_native_verify!(
                     params,
                     &snark.protocol,
-                    snark.statements,
+                    snark.instances,
                     $scheme,
                     &mut Blake2bRead::<_, G1Affine, _>::init(snark.proof.as_slice())
                 );

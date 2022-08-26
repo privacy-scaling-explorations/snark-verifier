@@ -262,4 +262,3 @@ const CREATE2: u8 = 0xF5;
 const STATICCALL: u8 = 0xFA;
 const REVERT: u8 = 0xFD;
 const SELFDESTRUCT: u8 = 0xFF;
-

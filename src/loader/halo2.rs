@@ -1,12 +1,12 @@
 use halo2_proofs::circuit::Value;
 
-mod shim;
 mod accumulation;
 mod loader;
+mod shim;
 mod transcript;
 
-pub use shim::{IntegerInstructions, EccInstructions};
 pub use loader::Halo2Loader;
+pub use shim::{EccInstructions, IntegerInstructions};
 pub use transcript::PoseidonTranscript;
 
 pub trait Valuetools<V>: Iterator<Item = Value<V>> {

@@ -18,7 +18,7 @@ pub use msm::MSM;
 
 pub fn langranges<C: Curve, T>(
     protocol: &Protocol<C>,
-    statements: &[Vec<T>],
+    instances: &[Vec<T>],
 ) -> impl IntoIterator<Item = i32> {
     protocol
         .relations
@@ -28,9 +28,9 @@ pub fn langranges<C: Curve, T>(
         .used_langrange()
         .into_iter()
         .chain(
-            0..statements
+            0..instances
                 .iter()
-                .map(|statement| statement.len())
+                .map(|instance| instance.len())
                 .max()
                 .unwrap_or_default() as i32,
         )

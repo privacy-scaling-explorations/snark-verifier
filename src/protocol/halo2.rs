@@ -88,8 +88,8 @@ pub fn compile<C: CurveExt>(vk: &VerifyingKey<C::AffineExt>, config: Config) -> 
         zk: config.zk,
         domain,
         preprocessed,
-        num_statement: polynomials.num_statement(),
-        num_auxiliary: polynomials.num_auxiliary(),
+        num_instance: polynomials.num_instance(),
+        num_witness: polynomials.num_witness(),
         num_challenge: polynomials.num_challenge(),
         evaluations,
         queries,
@@ -162,14 +162,14 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         self.num_fixed + self.num_permutation_fixed
     }
 
-    fn num_statement(&self) -> Vec<usize> {
+    fn num_instance(&self) -> Vec<usize> {
         iter::repeat(self.num_instance.clone())
             .take(self.num_proof)
             .flatten()
             .collect()
     }
 
-    fn num_auxiliary(&self) -> Vec<usize> {
+    fn num_witness(&self) -> Vec<usize> {
         iter::empty()
             .chain(
                 self.num_advice
@@ -200,14 +200,14 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         self.num_preprocessed()
     }
 
-    fn auxiliary_offset(&self) -> usize {
-        self.instance_offset() + self.num_statement().len()
+    fn witness_offset(&self) -> usize {
+        self.instance_offset() + self.num_instance().len()
     }
 
-    fn cs_auxiliary_offset(&self) -> usize {
-        self.auxiliary_offset()
+    fn cs_witness_offset(&self) -> usize {
+        self.witness_offset()
             + self
-                .num_auxiliary()
+                .num_witness()
                 .iter()
                 .take(self.num_advice.len())
                 .sum::<usize>()
@@ -223,7 +223,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         let offset = match column_type.into() {
             Any::Fixed => 0,
             Any::Instance => self.instance_offset() + t * self.num_instance.len(),
-            Any::Advice => self.auxiliary_offset() + t * self.num_advice.iter().sum::<usize>(),
+            Any::Advice => self.witness_offset() + t * self.num_advice.iter().sum::<usize>(),
         };
         Query::new(offset + column_index, rotation.into())
     }
@@ -265,7 +265,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 
     fn permutation_poly(&'a self, t: usize, i: usize) -> usize {
-        let z_offset = self.cs_auxiliary_offset() + self.num_auxiliary()[self.num_advice.len()];
+        let z_offset = self.cs_witness_offset() + self.num_witness()[self.num_advice.len()];
         z_offset + t * self.num_permutation_z + i
     }
 
@@ -306,9 +306,9 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 
     fn lookup_poly(&'a self, t: usize, i: usize) -> (usize, usize, usize) {
-        let permuted_offset = self.cs_auxiliary_offset();
+        let permuted_offset = self.cs_witness_offset();
         let z_offset = permuted_offset
-            + self.num_auxiliary()[self.num_advice.len()]
+            + self.num_witness()[self.num_advice.len()]
             + self.num_proof * self.num_permutation_z;
         let z = z_offset + t * self.num_lookup_z + i;
         let permuted_input = permuted_offset + 2 * (t * self.num_lookup_z + i);
@@ -344,14 +344,14 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
 
     fn vanishing_query(&self) -> Query {
         Query::new(
-            self.auxiliary_offset() + self.num_auxiliary().iter().sum::<usize>(),
+            self.witness_offset() + self.num_witness().iter().sum::<usize>(),
             0,
         )
     }
 
     fn random_query(&self) -> Option<Query> {
         self.zk.then_some(Query::new(
-            self.auxiliary_offset() + self.num_auxiliary().iter().sum::<usize>() - 1,
+            self.witness_offset() + self.num_witness().iter().sum::<usize>() - 1,
             0,
         ))
     }

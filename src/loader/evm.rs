@@ -60,7 +60,7 @@ where
 }
 
 pub fn estimate_gas(cost: Cost) -> usize {
-    let proof_size = cost.num_commitment * 64 + (cost.num_evaluation + cost.num_statement) * 32;
+    let proof_size = cost.num_commitment * 64 + (cost.num_evaluation + cost.num_instance) * 32;
 
     let intrinsic_cost = 21000;
     let calldata_cost = (proof_size as f64 * 15.25).ceil() as usize;

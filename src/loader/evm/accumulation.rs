@@ -79,13 +79,13 @@ where
         protocol: &Protocol<C>,
         loader: &Rc<EvmLoader>,
         transcript: &mut T,
-        statements: &[Vec<Scalar>],
+        instances: &[Vec<Scalar>],
     ) -> Option<Accumulator<C, Rc<EvmLoader>>> {
         let accumulator_indices = protocol.accumulator_indices.as_ref()?;
 
-        let num_statements = statements
+        let num_instances = instances
             .iter()
-            .map(|statements| statements.len())
+            .map(|instances| instances.len())
             .collect_vec();
 
         let challenges = transcript.squeeze_n_challenges(accumulator_indices.len());
@@ -98,7 +98,7 @@ where
                     .enumerate()
                     .all(|(idx, index)| indices[0] == (index.0, index.1 - idx)));
                 let offset =
-                    (num_statements[..indices[0].0].iter().sum::<usize>() + indices[0].1) * 0x20;
+                    (num_instances[..indices[0].0].iter().sum::<usize>() + indices[0].1) * 0x20;
                 let lhs = loader.calldataload_ec_point_from_limbs::<LIMBS, BITS>(offset);
                 let rhs = loader.calldataload_ec_point_from_limbs::<LIMBS, BITS>(offset + 0x100);
                 Accumulator::new(MSM::base(lhs), MSM::base(rhs))

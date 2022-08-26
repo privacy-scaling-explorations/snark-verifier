@@ -30,21 +30,21 @@ where
     fn accumulate(
         protocol: &Protocol<C>,
         loader: &L,
-        statements: Vec<Vec<L::LoadedScalar>>,
+        instances: Vec<Vec<L::LoadedScalar>>,
         transcript: &mut T,
         strategy: &mut S,
     ) -> Result<S::Output, Error> {
         transcript.common_scalar(&loader.load_const(&protocol.transcript_initial_state))?;
 
-        let proof = PlonkProof::read(protocol, statements, transcript)?;
+        let proof = PlonkProof::read(protocol, instances, transcript)?;
         let old_accumulator =
-            strategy.extract_accumulator(protocol, loader, transcript, &proof.statements);
+            strategy.extract_accumulator(protocol, loader, transcript, &proof.instances);
 
         let common_poly_eval = {
             let mut common_poly_eval = CommonPolynomialEvaluation::new(
                 &protocol.domain,
                 loader,
-                langranges(protocol, &proof.statements),
+                langranges(protocol, &proof.instances),
                 &proof.z,
             );
 
@@ -97,7 +97,7 @@ where
 }
 
 pub struct PlonkProof<C: Curve, L: Loader<C>> {
-    statements: Vec<Vec<L::LoadedScalar>>,
+    instances: Vec<Vec<L::LoadedScalar>>,
     auxiliaries: Vec<L::LoadedEcPoint>,
     challenges: Vec<L::LoadedScalar>,
     alpha: L::LoadedScalar,
@@ -112,26 +112,26 @@ pub struct PlonkProof<C: Curve, L: Loader<C>> {
 impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
     fn read<T: TranscriptRead<C, L>>(
         protocol: &Protocol<C>,
-        statements: Vec<Vec<L::LoadedScalar>>,
+        instances: Vec<Vec<L::LoadedScalar>>,
         transcript: &mut T,
     ) -> Result<Self, Error> {
-        if protocol.num_statement
-            != statements
+        if protocol.num_instance
+            != instances
                 .iter()
-                .map(|statements| statements.len())
+                .map(|instances| instances.len())
                 .collect_vec()
         {
             return Err(Error::InvalidInstances);
         }
-        for statements in statements.iter() {
-            for statement in statements.iter() {
-                transcript.common_scalar(statement)?;
+        for instances in instances.iter() {
+            for instance in instances.iter() {
+                transcript.common_scalar(instance)?;
             }
         }
 
         let (auxiliaries, challenges) = {
             let (auxiliaries, challenges) = protocol
-                .num_auxiliary
+                .num_witness
                 .iter()
                 .zip(protocol.num_challenge.iter())
                 .map(|(&n, &m)| {
@@ -169,7 +169,7 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
         let u = transcript.squeeze_challenge();
 
         Ok(Self {
-            statements,
+            instances,
             auxiliaries,
             challenges,
             alpha,
@@ -197,12 +197,12 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
                     .enumerate(),
             )
             .chain({
-                let auxiliary_offset = protocol.preprocessed.len() + protocol.num_statement.len();
+                let witness_offset = protocol.preprocessed.len() + protocol.num_instance.len();
                 self.auxiliaries
                     .iter()
                     .cloned()
                     .enumerate()
-                    .map(move |(i, auxiliary)| (auxiliary_offset + i, MSM::base(auxiliary)))
+                    .map(move |(i, witness)| (witness_offset + i, MSM::base(witness)))
             })
             .chain(iter::once((
                 protocol.vanishing_poly(),
@@ -223,13 +223,13 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
         loader: &L,
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
     ) -> Result<HashMap<Query, L::LoadedScalar>, Error> {
-        let statement_evaluations = self.statements.iter().map(|statements| {
+        let instance_evaluations = self.instances.iter().map(|instances| {
             L::LoadedScalar::sum(
-                &statements
+                &instances
                     .iter()
                     .enumerate()
-                    .map(|(i, statement)| {
-                        common_poly_eval.get(CommonPolynomial::Lagrange(i as i32)) * statement
+                    .map(|(i, instance)| {
+                        common_poly_eval.get(CommonPolynomial::Lagrange(i as i32)) * instance
                     })
                     .collect_vec(),
             )
@@ -237,7 +237,7 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
         let mut evaluations = HashMap::<Query, L::LoadedScalar>::from_iter(
             iter::empty()
                 .chain(
-                    statement_evaluations
+                    instance_evaluations
                         .into_iter()
                         .enumerate()
                         .map(|(i, evaluation)| {
@@ -362,12 +362,12 @@ impl CostEstimation for PlonkAccumulationScheme {
             .map(|accumulator_indices| accumulator_indices.len())
             .unwrap_or_default();
 
-        let num_statement = protocol.num_statement.iter().sum();
-        let num_commitment = protocol.num_auxiliary.iter().sum::<usize>() + num_quotient + num_w;
+        let num_instance = protocol.num_instance.iter().sum();
+        let num_commitment = protocol.num_witness.iter().sum::<usize>() + num_quotient + num_w;
         let num_evaluation = protocol.evaluations.len();
         let num_msm =
             protocol.preprocessed.len() + num_commitment + 1 + num_w + 2 * num_accumulator;
 
-        Cost::new(num_statement, num_commitment, num_evaluation, num_msm)
+        Cost::new(num_instance, num_commitment, num_evaluation, num_msm)
     }
 }

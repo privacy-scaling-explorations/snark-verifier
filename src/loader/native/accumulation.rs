@@ -53,7 +53,7 @@ where
         protocol: &Protocol<C>,
         _: &NativeLoader,
         transcript: &mut T,
-        statements: &[Vec<C::ScalarExt>],
+        instances: &[Vec<C::ScalarExt>],
     ) -> Option<Accumulator<C, NativeLoader>> {
         let accumulator_indices = protocol.accumulator_indices.as_ref()?;
 
@@ -69,7 +69,7 @@ where
                         fe_from_limbs::<_, _, LIMBS, BITS>(
                             indices
                                 .iter()
-                                .map(|index| statements[index.0][index.1])
+                                .map(|index| instances[index.0][index.1])
                                 .collect_vec()
                                 .try_into()
                                 .unwrap(),

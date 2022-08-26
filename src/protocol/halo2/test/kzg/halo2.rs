@@ -68,7 +68,7 @@ type SameCurveAccumulation<C, L> = kzg::SameCurveAccumulation<C, L, LIMBS, BITS>
 
 pub struct SnarkWitness<C: Curve> {
     protocol: Protocol<C>,
-    statements: Vec<Vec<Value<<C as Group>::Scalar>>>,
+    instances: Vec<Vec<Value<<C as Group>::Scalar>>>,
     proof: Value<Vec<u8>>,
 }
 
@@ -76,10 +76,10 @@ impl<C: Curve> From<Snark<C>> for SnarkWitness<C> {
     fn from(snark: Snark<C>) -> Self {
         Self {
             protocol: snark.protocol,
-            statements: snark
-                .statements
+            instances: snark
+                .instances
                 .into_iter()
-                .map(|statements| statements.into_iter().map(Value::known).collect_vec())
+                .map(|instances| instances.into_iter().map(Value::known).collect_vec())
                 .collect(),
             proof: Value::known(snark.proof),
         }
@@ -90,10 +90,10 @@ impl<C: Curve> SnarkWitness<C> {
     pub fn without_witnesses(&self) -> Self {
         SnarkWitness {
             protocol: self.protocol.clone(),
-            statements: self
-                .statements
+            instances: self
+                .instances
                 .iter()
-                .map(|statements| vec![Value::unknown(); statements.len()])
+                .map(|instances| vec![Value::unknown(); instances.len()])
                 .collect(),
             proof: Value::unknown(),
         }
@@ -109,20 +109,20 @@ pub fn accumulate<'a>(
         loader,
         snark.proof.as_ref().map(|proof| proof.as_slice()),
     );
-    let statements = snark
-        .statements
+    let instances = snark
+        .instances
         .iter()
-        .map(|statements| {
-            statements
+        .map(|instances| {
+            instances
                 .iter()
-                .map(|statement| loader.assign_scalar(*statement))
+                .map(|instance| loader.assign_scalar(*instance))
                 .collect_vec()
         })
         .collect_vec();
     ShplonkAccumulationScheme::accumulate(
         &snark.protocol,
         loader,
-        statements,
+        instances,
         &mut transcript,
         stretagy,
     )
@@ -187,14 +187,14 @@ impl Accumulation {
         let mut strategy = SameCurveAccumulation::<G1, NativeLoader>::default();
         halo2_kzg_native_accumulate!(
             &snark1.protocol,
-            snark1.statements.clone(),
+            snark1.instances.clone(),
             ShplonkAccumulationScheme,
             &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark1.proof.as_slice()),
             &mut strategy
         );
         halo2_kzg_native_accumulate!(
             &snark2.protocol,
-            snark2.statements.clone(),
+            snark2.instances.clone(),
             ShplonkAccumulationScheme,
             &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark2.proof.as_slice()),
             &mut strategy
@@ -243,7 +243,7 @@ impl Accumulation {
         let mut strategy = SameCurveAccumulation::<G1, NativeLoader>::default();
         halo2_kzg_native_accumulate!(
             &snark.protocol,
-            snark.statements.clone(),
+            snark.instances.clone(),
             ShplonkAccumulationScheme,
             &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark.proof.as_slice()),
             &mut strategy
@@ -365,7 +365,7 @@ macro_rules! test {
                 halo2_kzg_native_verify!(
                     params,
                     &snark.protocol,
-                    snark.statements,
+                    snark.instances,
                     ShplonkAccumulationScheme,
                     &mut Blake2bRead::<_, G1Affine, _>::init(snark.proof.as_slice())
                 );

@@ -1,7 +1,8 @@
 use crate::{
     loader::{
         halo2::{
-            loader::{Halo2Loader, Scalar},shim::EccInstructions,
+            loader::{Halo2Loader, Scalar},
+            shim::EccInstructions,
             Valuetools,
         },
         LoadedEcPoint,
@@ -13,9 +14,7 @@ use crate::{
 };
 use halo2_curves::CurveAffine;
 use halo2_proofs::circuit::Value;
-use halo2_wrong_ecc::{
-     maingate::AssignedValue, AssignedPoint,
-};
+use halo2_wrong_ecc::{maingate::AssignedValue, AssignedPoint};
 use std::{iter, rc::Rc};
 
 fn ec_point_from_assigned_limbs<C: CurveAffine, const LIMBS: usize, const BITS: usize>(
@@ -81,7 +80,7 @@ where
         protocol: &Protocol<C::CurveExt>,
         loader: &Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>,
         transcript: &mut T,
-        statements: &[Vec<Scalar<'a, C, C::Scalar, EccChip>>],
+        instances: &[Vec<Scalar<'a, C, C::Scalar, EccChip>>],
     ) -> Option<Accumulator<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>>> {
         let accumulator_indices = protocol.accumulator_indices.as_ref()?;
 
@@ -92,7 +91,7 @@ where
                 assert_eq!(indices.len(), 4 * LIMBS);
                 let assigned_limbs = indices
                     .iter()
-                    .map(|index| statements[index.0][index.1].assigned())
+                    .map(|index| instances[index.0][index.1].assigned())
                     .collect_vec();
                 let [lhs, rhs] = [&assigned_limbs[..2 * LIMBS], &assigned_limbs[2 * LIMBS..]].map(
                     |assigned_limbs| {

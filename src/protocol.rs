@@ -8,8 +8,8 @@ pub struct Protocol<C: Curve> {
     pub zk: bool,
     pub domain: Domain<C::Scalar>,
     pub preprocessed: Vec<C>,
-    pub num_statement: Vec<usize>,
-    pub num_auxiliary: Vec<usize>,
+    pub num_instance: Vec<usize>,
+    pub num_witness: Vec<usize>,
     pub num_challenge: Vec<usize>,
     pub evaluations: Vec<Query>,
     pub queries: Vec<Query>,
@@ -20,34 +20,32 @@ pub struct Protocol<C: Curve> {
 
 impl<C: Curve> Protocol<C> {
     pub fn vanishing_poly(&self) -> usize {
-        self.preprocessed.len()
-            + self.num_statement.len()
-            + self.num_auxiliary.iter().sum::<usize>()
+        self.preprocessed.len() + self.num_instance.len() + self.num_witness.iter().sum::<usize>()
     }
 }
 
 pub struct Snark<C: Curve> {
     pub protocol: Protocol<C>,
-    pub statements: Vec<Vec<<C as Group>::Scalar>>,
+    pub instances: Vec<Vec<<C as Group>::Scalar>>,
     pub proof: Vec<u8>,
 }
 
 impl<C: Curve> Snark<C> {
     pub fn new(
         protocol: Protocol<C>,
-        statements: Vec<Vec<<C as Group>::Scalar>>,
+        instances: Vec<Vec<<C as Group>::Scalar>>,
         proof: Vec<u8>,
     ) -> Self {
         assert_eq!(
-            protocol.num_statement,
-            statements
+            protocol.num_instance,
+            instances
                 .iter()
-                .map(|statements| statements.len())
+                .map(|instances| instances.len())
                 .collect_vec()
         );
         Snark {
             protocol,
-            statements,
+            instances,
             proof,
         }
     }

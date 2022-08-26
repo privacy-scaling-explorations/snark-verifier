@@ -20,7 +20,7 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 #[macro_export]
 macro_rules! halo2_kzg_evm_verify {
-    ($params:expr, $protocol:expr, $statements:expr, $proof:expr, $scheme:ty) => {{
+    ($params:expr, $protocol:expr, $instances:expr, $proof:expr, $scheme:ty) => {{
         use halo2_curves::bn256::{Fq, Fr};
         use halo2_proofs::poly::commitment::ParamsProver;
         use std::{iter, rc::Rc};
@@ -33,7 +33,7 @@ macro_rules! halo2_kzg_evm_verify {
 
         let loader = EvmLoader::new::<Fq, Fr>();
         let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
-        let statements = $statements
+        let instances = $instances
             .iter()
             .map(|instance| {
                 iter::repeat_with(|| transcript.read_scalar().unwrap())
@@ -45,13 +45,13 @@ macro_rules! halo2_kzg_evm_verify {
         <$scheme>::accumulate(
             $protocol,
             &loader,
-            statements,
+            instances,
             &mut transcript,
             &mut strategy,
         )
         .unwrap();
         let code = strategy.code($params.get_g()[0], $params.g2(), $params.s_g2());
-        let (accept, total_cost, costs) = execute(code, encode_calldata($statements, $proof));
+        let (accept, total_cost, costs) = execute(code, encode_calldata($instances, $proof));
         loader.print_gas_metering(costs);
         println!("Total gas cost: {}", total_cost);
         assert!(accept);
@@ -83,14 +83,14 @@ macro_rules! test {
                 halo2_kzg_native_verify!(
                     params,
                     &snark.protocol,
-                    snark.statements.clone(),
+                    snark.instances.clone(),
                     PlonkAccumulationScheme,
                     &mut EvmTranscript::<_, NativeLoader, _, _>::new(snark.proof.as_slice())
                 );
                 halo2_kzg_evm_verify!(
                     params,
                     &snark.protocol,
-                    snark.statements,
+                    snark.instances,
                     snark.proof,
                     PlonkAccumulationScheme
                 );
