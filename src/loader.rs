@@ -39,11 +39,13 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + FieldOps {
             } else {
                 Some(loader.load_const(constant))
             })
-            .chain(
-                values
-                    .iter()
-                    .map(|(coeff, value)| loader.load_const(coeff) * value),
-            )
+            .chain(values.iter().map(|(coeff, value)| {
+                if *coeff == F::one() {
+                    value.clone()
+                } else {
+                    loader.load_const(coeff) * value
+                }
+            }))
             .reduce(|acc, term| acc + term)
             .unwrap()
     }
@@ -58,17 +60,33 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + FieldOps {
             } else {
                 Some(loader.load_const(constant))
             })
-            .chain(
-                values
-                    .iter()
-                    .map(|(coeff, lhs, rhs)| loader.load_const(coeff) * lhs * rhs),
-            )
+            .chain(values.iter().map(|(coeff, lhs, rhs)| {
+                if *coeff == F::one() {
+                    lhs.clone() * rhs
+                } else {
+                    loader.load_const(coeff) * lhs * rhs
+                }
+            }))
             .reduce(|acc, term| acc + term)
             .unwrap()
     }
 
     fn sum_with_coeff(values: &[(F, Self)]) -> Self {
         Self::sum_with_coeff_and_constant(values, &F::zero())
+    }
+
+    fn sum_products_with_coeff(values: &[(F, Self, Self)]) -> Self {
+        Self::sum_products_with_coeff_and_constant(values, &F::zero())
+    }
+
+    fn sum_products(values: &[(Self, Self)]) -> Self {
+        Self::sum_products_with_coeff_and_constant(
+            &values
+                .iter()
+                .map(|(lhs, rhs)| (F::one(), lhs.clone(), rhs.clone()))
+                .collect_vec(),
+            &F::zero(),
+        )
     }
 
     fn sum_with_const(values: &[Self], constant: &F) -> Self {

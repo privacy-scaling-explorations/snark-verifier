@@ -50,5 +50,9 @@ halo2_wrong_maingate = { git = "https://github.com/han0110/halo2wrong", branch =
 halo2_wrong_transcript = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "transcript" }
 
 [[example]]
-name = "evm-verifier-codegen"
+name = "evm-verifier"
+required-features = ["halo2", "evm"]
+
+[[example]]
+name = "evm-verifier-with-accumulator"
 required-features = ["halo2", "evm"]

@@ -17,6 +17,12 @@ fn debug() -> bool {
 }
 
 pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64, Vec<u64>) {
+    assert!(
+        code.len() <= 0x6000,
+        "Contract size {} exceeds the limit 24576",
+        code.len()
+    );
+
     let debug = debug();
     let caller = Address::from_low_u64_be(0xfe);
     let callee = Address::from_low_u64_be(0xff);

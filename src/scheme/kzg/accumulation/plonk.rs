@@ -224,12 +224,15 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
     ) -> Result<HashMap<Query, L::LoadedScalar>, Error> {
         let instance_evaluations = self.instances.iter().map(|instances| {
-            L::LoadedScalar::sum(
+            L::LoadedScalar::sum_products(
                 &instances
                     .iter()
                     .enumerate()
                     .map(|(i, instance)| {
-                        common_poly_eval.get(CommonPolynomial::Lagrange(i as i32)) * instance
+                        (
+                            common_poly_eval.get(CommonPolynomial::Lagrange(i as i32)),
+                            instance.clone(),
+                        )
                     })
                     .collect_vec(),
             )
@@ -260,36 +263,38 @@ impl<C: Curve, L: Loader<C>> PlonkProof<C, L> {
         );
 
         let powers_of_alpha = self.alpha.powers(protocol.relations.len());
-        let quotient_evaluation = L::LoadedScalar::sum(
+        let relation_evaluations = protocol
+            .relations
+            .iter()
+            .map(|relation| {
+                relation.evaluate(
+                    &|scalar| Ok(loader.load_const(&scalar)),
+                    &|poly| Ok(common_poly_eval.get(poly)),
+                    &|index| {
+                        evaluations
+                            .get(&index)
+                            .cloned()
+                            .ok_or(Error::MissingQuery(index))
+                    },
+                    &|index| {
+                        self.challenges
+                            .get(index)
+                            .cloned()
+                            .ok_or(Error::MissingChallenge(index))
+                    },
+                    &|a| a.map(|a| -a),
+                    &|a, b| a.and_then(|a| Ok(a + b?)),
+                    &|a, b| a.and_then(|a| Ok(a * b?)),
+                    &|a, scalar| a.map(|a| a * loader.load_const(&scalar)),
+                )
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let quotient_evaluation = L::LoadedScalar::sum_products(
             &powers_of_alpha
                 .into_iter()
                 .rev()
-                .zip(protocol.relations.iter())
-                .map(|(power_of_alpha, relation)| {
-                    relation
-                        .evaluate(
-                            &|scalar| Ok(loader.load_const(&scalar)),
-                            &|poly| Ok(common_poly_eval.get(poly)),
-                            &|index| {
-                                evaluations
-                                    .get(&index)
-                                    .cloned()
-                                    .ok_or(Error::MissingQuery(index))
-                            },
-                            &|index| {
-                                self.challenges
-                                    .get(index)
-                                    .cloned()
-                                    .ok_or(Error::MissingChallenge(index))
-                            },
-                            &|a| a.map(|a| -a),
-                            &|a, b| a.and_then(|a| Ok(a + b?)),
-                            &|a, b| a.and_then(|a| Ok(a * b?)),
-                            &|a, scalar| a.map(|a| a * loader.load_const(&scalar)),
-                        )
-                        .map(|evaluation| power_of_alpha * evaluation)
-                })
-                .collect::<Result<Vec<_>, Error>>()?,
+                .zip(relation_evaluations)
+                .collect_vec(),
         ) * &common_poly_eval.zn_minus_one_inv();
 
         evaluations.insert(
@@ -324,7 +329,7 @@ impl RotationSet {
                     .get(&Query::new(*poly, self.rotation))
                     .unwrap()
                     .clone();
-                commitment - MSM::scalar(evalaution)
+                commitment - MSM::constant(evalaution)
             })
             .zip(powers_of_v.iter())
             .map(|(msm, power_of_v)| msm * power_of_v)

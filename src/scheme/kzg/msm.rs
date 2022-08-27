@@ -10,7 +10,7 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub struct MSM<C: Curve, L: Loader<C>> {
-    pub scalar: Option<L::LoadedScalar>,
+    constant: Option<L::LoadedScalar>,
     bases: Vec<L::LoadedEcPoint>,
     scalars: Vec<L::LoadedScalar>,
 }
@@ -18,7 +18,7 @@ pub struct MSM<C: Curve, L: Loader<C>> {
 impl<C: Curve, L: Loader<C>> Default for MSM<C, L> {
     fn default() -> Self {
         Self {
-            scalar: None,
+            constant: None,
             scalars: Vec::new(),
             bases: Vec::new(),
         }
@@ -26,9 +26,9 @@ impl<C: Curve, L: Loader<C>> Default for MSM<C, L> {
 }
 
 impl<C: Curve, L: Loader<C>> MSM<C, L> {
-    pub fn scalar(scalar: L::LoadedScalar) -> Self {
+    pub fn constant(constant: L::LoadedScalar) -> Self {
         MSM {
-            scalar: Some(scalar),
+            constant: Some(constant),
             ..Default::default()
         }
     }
@@ -51,37 +51,37 @@ impl<C: Curve, L: Loader<C>> MSM<C, L> {
             .ec_point_load_const(&gen);
         L::LoadedEcPoint::multi_scalar_multiplication(
             iter::empty()
-                .chain(self.scalar.map(|scalar| (scalar, gen)))
+                .chain(self.constant.map(|constant| (constant, gen)))
                 .chain(self.scalars.into_iter().zip(self.bases.into_iter())),
         )
     }
 
     pub fn scale(&mut self, factor: &L::LoadedScalar) {
-        if let Some(scalar) = self.scalar.as_mut() {
-            *scalar *= factor;
+        if let Some(constant) = self.constant.as_mut() {
+            *constant *= factor;
         }
-        for scalar in self.scalars.iter_mut() {
-            *scalar *= factor
+        for constant in self.scalars.iter_mut() {
+            *constant *= factor
         }
     }
 
-    pub fn push(&mut self, scalar: L::LoadedScalar, base: L::LoadedEcPoint) {
+    pub fn push(&mut self, constant: L::LoadedScalar, base: L::LoadedEcPoint) {
         if let Some(pos) = self.bases.iter().position(|exist| exist.eq(&base)) {
-            self.scalars[pos] += scalar;
+            self.scalars[pos] += constant;
         } else {
-            self.scalars.push(scalar);
+            self.scalars.push(constant);
             self.bases.push(base);
         }
     }
 
     pub fn extend(&mut self, mut other: Self) {
-        match (self.scalar.as_mut(), other.scalar.as_ref()) {
+        match (self.constant.as_mut(), other.constant.as_ref()) {
             (Some(lhs), Some(rhs)) => *lhs += rhs,
-            (None, Some(_)) => self.scalar = other.scalar.take(),
+            (None, Some(_)) => self.constant = other.constant.take(),
             _ => {}
         };
-        for (scalar, base) in other.scalars.into_iter().zip(other.bases) {
-            self.push(scalar, base);
+        for (constant, base) in other.scalars.into_iter().zip(other.bases) {
+            self.push(constant, base);
         }
     }
 }
@@ -134,9 +134,9 @@ impl<C: Curve, L: Loader<C>> MulAssign<&L::LoadedScalar> for MSM<C, L> {
 impl<C: Curve, L: Loader<C>> Neg for MSM<C, L> {
     type Output = MSM<C, L>;
     fn neg(mut self) -> MSM<C, L> {
-        self.scalar = self.scalar.map(|scalar| -scalar);
-        for scalar in self.scalars.iter_mut() {
-            *scalar = -scalar.clone();
+        self.constant = self.constant.map(|constant| -constant);
+        for constant in self.scalars.iter_mut() {
+            *constant = -constant.clone();
         }
         self
     }

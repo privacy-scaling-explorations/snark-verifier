@@ -2,7 +2,7 @@ use crate::{
     loader::{
         evm::{
             loader::{EcPoint, EvmLoader, Scalar, Value},
-            u256_to_field,
+            u256_to_fe,
         },
         native::NativeLoader,
         Loader,
@@ -156,7 +156,7 @@ where
             .collect_vec();
         let hash: [u8; 32] = Keccak256::digest(data).into();
         self.buf = hash.to_vec();
-        u256_to_field(U256::from_big_endian(hash.as_slice()))
+        u256_to_fe(U256::from_big_endian(hash.as_slice()))
     }
 
     fn common_ec_point(&mut self, ec_point: &C) -> Result<(), Error> {

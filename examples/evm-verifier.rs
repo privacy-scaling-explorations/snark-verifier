@@ -2,11 +2,10 @@ use ethereum_types::Address;
 use foundry_evm::executor::{fork::MultiFork, Backend, ExecutorBuilder};
 use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
-    arithmetic::FieldExt,
-    circuit::{floor_planner::V1, Layouter, Value},
+    circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::MockProver,
     plonk::{
-        create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Any, Circuit, Column,
+        create_proof, keygen_pk, keygen_vk, verify_proof, Advice, Circuit, Column,
         ConstraintSystem, Error, Fixed, Instance, ProvingKey, VerifyingKey,
     },
     poly::{
@@ -30,9 +29,8 @@ use plonk_verifier::{
 use rand::{rngs::OsRng, RngCore};
 use std::{iter, rc::Rc};
 
-#[allow(dead_code)]
-#[derive(Clone)]
-pub struct StandardPlonkConfig {
+#[derive(Clone, Copy)]
+struct StandardPlonkConfig {
     a: Column<Advice>,
     b: Column<Advice>,
     c: Column<Advice>,
@@ -41,44 +39,35 @@ pub struct StandardPlonkConfig {
     q_c: Column<Fixed>,
     q_ab: Column<Fixed>,
     constant: Column<Fixed>,
+    #[allow(dead_code)]
     instance: Column<Instance>,
 }
 
 impl StandardPlonkConfig {
-    pub fn configure<F: FieldExt>(meta: &mut ConstraintSystem<F>) -> Self {
-        let a = meta.advice_column();
-        let b = meta.advice_column();
-        let c = meta.advice_column();
-
-        let q_a = meta.fixed_column();
-        let q_b = meta.fixed_column();
-        let q_c = meta.fixed_column();
-
-        let q_ab = meta.fixed_column();
-
-        let constant = meta.fixed_column();
+    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self {
+        let [a, b, c] = [(); 3].map(|_| meta.advice_column());
+        let [q_a, q_b, q_c, q_ab, constant] = [(); 5].map(|_| meta.fixed_column());
         let instance = meta.instance_column();
 
-        meta.enable_equality(a);
-        meta.enable_equality(b);
-        meta.enable_equality(c);
+        [a, b, c].map(|column| meta.enable_equality(column));
 
-        meta.create_gate("", |meta| {
-            let [a, b, c, q_a, q_b, q_c, q_ab, constant, instance] = [
-                a.into(),
-                b.into(),
-                c.into(),
-                q_a.into(),
-                q_b.into(),
-                q_c.into(),
-                q_ab.into(),
-                constant.into(),
-                instance.into(),
-            ]
-            .map(|column: Column<Any>| meta.query_any(column, Rotation::cur()));
-
-            vec![q_a * a.clone() + q_b * b.clone() + q_c * c + q_ab * a * b + constant + instance]
-        });
+        meta.create_gate(
+            "q_a·a + q_b·b + q_c·c + q_ab·a·b + constant + instance = 0",
+            |meta| {
+                let [a, b, c] = [a, b, c].map(|column| meta.query_advice(column, Rotation::cur()));
+                let [q_a, q_b, q_c, q_ab, constant] = [q_a, q_b, q_c, q_ab, constant]
+                    .map(|column| meta.query_fixed(column, Rotation::cur()));
+                let instance = meta.query_instance(instance, Rotation::cur());
+                Some(
+                    q_a * a.clone()
+                        + q_b * b.clone()
+                        + q_c * c
+                        + q_ab * a * b
+                        + constant
+                        + instance,
+                )
+            },
+        );
 
         StandardPlonkConfig {
             a,
@@ -95,27 +84,31 @@ impl StandardPlonkConfig {
 }
 
 #[derive(Clone, Default)]
-pub struct StandardPlonk<F>(F);
+struct StandardPlonk(Fr);
 
-impl<F: FieldExt> StandardPlonk<F> {
-    pub fn rand<R: RngCore>(mut rng: R) -> Self {
-        Self(F::from(rng.next_u32() as u64))
+impl StandardPlonk {
+    fn rand<R: RngCore>(mut rng: R) -> Self {
+        Self(Fr::from(rng.next_u32() as u64))
     }
 
-    pub fn instances(&self) -> Vec<Vec<F>> {
+    fn num_instance() -> Vec<usize> {
+        vec![1]
+    }
+
+    fn instances(&self) -> Vec<Vec<Fr>> {
         vec![vec![self.0]]
     }
 }
 
-impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
+impl Circuit<Fr> for StandardPlonk {
     type Config = StandardPlonkConfig;
-    type FloorPlanner = V1;
+    type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
         Self::default()
     }
 
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         meta.set_minimum_degree(4);
         StandardPlonkConfig::configure(meta)
     }
@@ -123,29 +116,26 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
     fn synthesize(
         &self,
         config: Self::Config,
-        mut layouter: impl Layouter<F>,
+        mut layouter: impl Layouter<Fr>,
     ) -> Result<(), Error> {
         layouter.assign_region(
             || "",
             |mut region| {
                 region.assign_advice(|| "", config.a, 0, || Value::known(self.0))?;
-                region.assign_fixed(|| "", config.q_a, 0, || Value::known(-F::one()))?;
+                region.assign_fixed(|| "", config.q_a, 0, || Value::known(-Fr::one()))?;
 
-                region.assign_advice(|| "", config.a, 1, || Value::known(-F::from(5)))?;
-                for (column, idx) in [
+                region.assign_advice(|| "", config.a, 1, || Value::known(-Fr::from(5)))?;
+                for (idx, column) in (1..).zip([
                     config.q_a,
                     config.q_b,
                     config.q_c,
                     config.q_ab,
                     config.constant,
-                ]
-                .iter()
-                .zip(1..)
-                {
-                    region.assign_fixed(|| "", *column, 1, || Value::known(F::from(idx)))?;
+                ]) {
+                    region.assign_fixed(|| "", column, 1, || Value::known(Fr::from(idx)))?;
                 }
 
-                let a = region.assign_advice(|| "", config.a, 2, || Value::known(F::one()))?;
+                let a = region.assign_advice(|| "", config.a, 2, || Value::known(Fr::one()))?;
                 a.copy_advice(|| "", &mut region, config.b, 3)?;
                 a.copy_advice(|| "", &mut region, config.c, 4)?;
 
@@ -155,16 +145,16 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
     }
 }
 
-fn sample_srs() -> ParamsKZG<Bn256> {
-    ParamsKZG::<Bn256>::setup(8, OsRng)
+fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
+    ParamsKZG::<Bn256>::setup(k, OsRng)
 }
 
-fn sample_pk<C: Circuit<Fr>>(params: &ParamsKZG<Bn256>, circuit: &C) -> ProvingKey<G1Affine> {
+fn gen_pk<C: Circuit<Fr>>(params: &ParamsKZG<Bn256>, circuit: &C) -> ProvingKey<G1Affine> {
     let vk = keygen_vk(params, circuit).unwrap();
     keygen_pk(params, vk, circuit).unwrap()
 }
 
-fn sample_proof<C: Circuit<Fr>>(
+fn gen_proof<C: Circuit<Fr>>(
     params: &ParamsKZG<Bn256>,
     pk: &ProvingKey<G1Affine>,
     circuit: C,
@@ -210,10 +200,10 @@ fn sample_proof<C: Circuit<Fr>>(
     proof
 }
 
-fn evm_verifier_codegen(
+fn gen_evm_verifier(
     params: &ParamsKZG<Bn256>,
     vk: &VerifyingKey<G1Affine>,
-    instances: Vec<Vec<Fr>>,
+    num_instance: Vec<usize>,
 ) -> Vec<u8> {
     const LIMBS: usize = 4;
     const BITS: usize = 68;
@@ -223,10 +213,7 @@ fn evm_verifier_codegen(
         Config {
             zk: true,
             query_instance: false,
-            num_instance: instances
-                .iter()
-                .map(|instances| instances.len())
-                .collect_vec(),
+            num_instance: num_instance.clone(),
             num_proof: 1,
             accumulator_indices: None,
         },
@@ -234,11 +221,11 @@ fn evm_verifier_codegen(
 
     let loader = EvmLoader::new::<Fq, Fr>();
     let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
-    let instances = instances
-        .iter()
-        .map(|instance| {
+    let instances = num_instance
+        .into_iter()
+        .map(|len| {
             iter::repeat_with(|| transcript.read_scalar().unwrap())
-                .take(instance.len())
+                .take(len)
                 .collect_vec()
         })
         .collect_vec();
@@ -272,18 +259,20 @@ fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>)
             .call_raw(caller, verifier, calldata.into(), 0.into())
             .unwrap();
 
+        dbg!(result.gas);
+
         !result.reverted
     };
     assert!(success);
 }
 
 fn main() {
-    let params = sample_srs();
+    let params = gen_srs(8);
 
     let circuit = StandardPlonk::rand(OsRng);
-    let pk = sample_pk(&params, &circuit);
-    let deployment_code = evm_verifier_codegen(&params, pk.get_vk(), circuit.instances());
+    let pk = gen_pk(&params, &circuit);
+    let deployment_code = gen_evm_verifier(&params, pk.get_vk(), StandardPlonk::num_instance());
 
-    let proof = sample_proof(&params, &pk, circuit.clone(), circuit.instances());
+    let proof = gen_proof(&params, &pk, circuit.clone(), circuit.instances());
     evm_verify(deployment_code, circuit.instances(), proof);
 }

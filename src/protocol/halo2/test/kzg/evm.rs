@@ -52,6 +52,7 @@ macro_rules! halo2_kzg_evm_verify {
             )
             .unwrap();
             strategy.finalize($params.get_g()[0], $params.g2(), $params.s_g2());
+
             loader.code()
         };
         let (accept, total_cost, costs) = execute(code, encode_calldata($instances, $proof));
@@ -62,10 +63,10 @@ macro_rules! halo2_kzg_evm_verify {
 }
 
 macro_rules! test {
-    (@ #[$($attr:meta),*], $name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
+    (@ #[$($attr:meta),*], $prefix:ident, $name:ident, $k:expr, $config:expr, $create_circuit:expr, $prover:ty, $verifier:ty, $scheme:ty) => {
         paste! {
             $(#[$attr])*
-            fn [<test_kzg_plonk_ $name>]() {
+            fn [<test_kzg_ $prefix _ $name>]() {
                 let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
                     $k,
                     $config,
@@ -76,8 +77,8 @@ macro_rules! test {
                     &pk,
                     &protocol,
                     &circuits,
-                    ProverGWC<_>,
-                    VerifierGWC<_>,
+                    $prover,
+                    $verifier,
                     AccumulatorStrategy<_>,
                     EvmTranscript<_, _, _, _>,
                     EvmTranscript<_, _, _, _>,
@@ -87,7 +88,7 @@ macro_rules! test {
                     params,
                     &snark.protocol,
                     snark.instances.clone(),
-                    PlonkAccumulationScheme,
+                    $scheme,
                     &mut EvmTranscript::<_, NativeLoader, _, _>::new(snark.proof.as_slice())
                 );
                 halo2_kzg_evm_verify!(
@@ -95,16 +96,18 @@ macro_rules! test {
                     &snark.protocol,
                     snark.instances,
                     snark.proof,
-                    PlonkAccumulationScheme
+                    $scheme
                 );
             }
         }
     };
     ($name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
-        test!(@ #[test], $name, $k, $config, $create_circuit);
+        // TODO: Reduce the size of generated evm verifier
+        // test!(@ #[test], shplonk, $name, $k, $config, $create_circuit, ProverSHPLONK<_>, VerifierSHPLONK<_>, ShplonkAccumulationScheme);
+        test!(@ #[test], plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, PlonkAccumulationScheme);
     };
     (#[ignore = $reason:literal], $name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
-        test!(@ #[test, ignore = $reason], $name, $k, $config, $create_circuit);
+        test!(@ #[test, ignore = $reason], plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, PlonkAccumulationScheme);
     };
 }
 

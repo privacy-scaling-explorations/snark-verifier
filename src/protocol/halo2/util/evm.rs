@@ -1,6 +1,6 @@
 use crate::{
     loader::{
-        evm::{u256_to_field, EvmTranscript},
+        evm::{u256_to_fe, EvmTranscript},
         native::NativeLoader,
     },
     util::{self, Curve, PrimeField, UncompressedEncoding},
@@ -27,7 +27,7 @@ where
     type Input = [u8; 32];
 
     fn new(challenge_input: &[u8; 32]) -> Self {
-        ChallengeEvm(u256_to_field(U256::from_big_endian(challenge_input)))
+        ChallengeEvm(u256_to_fe(U256::from_big_endian(challenge_input)))
     }
 
     fn get_scalar(&self) -> C::Scalar {

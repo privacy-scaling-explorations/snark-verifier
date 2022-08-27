@@ -63,6 +63,10 @@ impl Code {
             .collect()
     }
 
+    pub fn stack_len(&self) -> usize {
+        self.stack_len
+    }
+
     pub fn len(&self) -> usize {
         self.code.len()
     }

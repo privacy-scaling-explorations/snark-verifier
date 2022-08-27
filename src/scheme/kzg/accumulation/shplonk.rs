@@ -224,13 +224,15 @@ impl<C: Curve, L: Loader<C>> ShplonkProof<C, L> {
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
     ) -> Result<HashMap<Query, L::LoadedScalar>, Error> {
         let instance_evaluations = self.instances.iter().map(|instances| {
-            L::LoadedScalar::sum(
+            L::LoadedScalar::sum_products(
                 &instances
                     .iter()
                     .enumerate()
                     .map(|(i, instance)| {
-                        instance.clone()
-                            * common_poly_eval.get(CommonPolynomial::Lagrange(i as i32))
+                        (
+                            common_poly_eval.get(CommonPolynomial::Lagrange(i as i32)),
+                            instance.clone(),
+                        )
                     })
                     .collect_vec(),
             )
@@ -261,36 +263,38 @@ impl<C: Curve, L: Loader<C>> ShplonkProof<C, L> {
         );
 
         let powers_of_alpha = self.alpha.powers(protocol.relations.len());
-        let quotient_evaluation = L::LoadedScalar::sum(
+        let relation_evaluations = protocol
+            .relations
+            .iter()
+            .map(|relation| {
+                relation.evaluate(
+                    &|scalar| Ok(loader.load_const(&scalar)),
+                    &|poly| Ok(common_poly_eval.get(poly)),
+                    &|index| {
+                        evaluations
+                            .get(&index)
+                            .cloned()
+                            .ok_or(Error::MissingQuery(index))
+                    },
+                    &|index| {
+                        self.challenges
+                            .get(index)
+                            .cloned()
+                            .ok_or(Error::MissingChallenge(index))
+                    },
+                    &|a| a.map(|a| -a),
+                    &|a, b| a.and_then(|a| Ok(a + b?)),
+                    &|a, b| a.and_then(|a| Ok(a * b?)),
+                    &|a, scalar| a.map(|a| a * loader.load_const(&scalar)),
+                )
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let quotient_evaluation = L::LoadedScalar::sum_products(
             &powers_of_alpha
                 .into_iter()
                 .rev()
-                .zip(protocol.relations.iter())
-                .map(|(power_of_alpha, relation)| {
-                    relation
-                        .evaluate(
-                            &|scalar| Ok(loader.load_const(&scalar)),
-                            &|poly| Ok(common_poly_eval.get(poly)),
-                            &|index| {
-                                evaluations
-                                    .get(&index)
-                                    .cloned()
-                                    .ok_or(Error::MissingQuery(index))
-                            },
-                            &|index| {
-                                self.challenges
-                                    .get(index)
-                                    .cloned()
-                                    .ok_or(Error::MissingChallenge(index))
-                            },
-                            &|a| a.map(|a| -a),
-                            &|a, b| a.and_then(|a| Ok(a + b?)),
-                            &|a, b| a.and_then(|a| Ok(a * b?)),
-                            &|a, scalar| a.map(|a| a * loader.load_const(&scalar)),
-                        )
-                        .map(|evaluation| power_of_alpha * evaluation)
-                })
-                .collect::<Result<Vec<_>, Error>>()?,
+                .zip(relation_evaluations)
+                .collect_vec(),
         ) * &common_poly_eval.zn_minus_one_inv();
 
         evaluations.insert(
@@ -362,21 +366,18 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
             .iter()
             .zip(normalized_ell_primes.iter())
             .map(|(omega, normalized_ell_prime)| {
-                L::LoadedScalar::sum_products_with_coeff_and_constant(
-                    &[
-                        (
-                            *normalized_ell_prime,
-                            z_pow_k_minus_one.clone(),
-                            z_prime.clone(),
-                        ),
-                        (
-                            -(*normalized_ell_prime * omega),
-                            z_pow_k_minus_one.clone(),
-                            z.clone(),
-                        ),
-                    ],
-                    &C::Scalar::zero(),
-                )
+                L::LoadedScalar::sum_products_with_coeff(&[
+                    (
+                        *normalized_ell_prime,
+                        z_pow_k_minus_one.clone(),
+                        z_prime.clone(),
+                    ),
+                    (
+                        -(*normalized_ell_prime * omega),
+                        z_pow_k_minus_one.clone(),
+                        z.clone(),
+                    ),
+                ])
             })
             .map(Fraction::one_over)
             .collect_vec();
@@ -441,23 +442,23 @@ impl<C: Curve, L: Loader<C>> IntermediateSet<C, L> {
                     })
                     .unwrap_or_else(|| commitments.get(poly).unwrap().clone());
                 let remainder = self.remainder_coeff.as_ref().unwrap().evaluate()
-                    * L::LoadedScalar::sum(
+                    * L::LoadedScalar::sum_products(
                         &self
                             .rotations
                             .iter()
                             .zip(self.evaluation_coeffs.iter())
                             .map(|(rotation, coeff)| {
-                                coeff.evaluate()
-                                    * evaluations
-                                        .get(&Query {
-                                            poly: *poly,
-                                            rotation: *rotation,
-                                        })
+                                (
+                                    coeff.evaluate(),
+                                    evaluations
+                                        .get(&Query::new(*poly, *rotation))
                                         .unwrap()
+                                        .clone(),
+                                )
                             })
                             .collect_vec(),
                     );
-                (commitment - MSM::scalar(remainder)) * power_of_mu
+                (commitment - MSM::constant(remainder)) * power_of_mu
             })
             .sum()
     }

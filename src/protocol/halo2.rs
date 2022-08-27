@@ -10,7 +10,7 @@ use halo2_proofs::{
 };
 use std::{io, iter};
 
-mod util;
+pub mod util;
 
 #[cfg(test)]
 mod test;
