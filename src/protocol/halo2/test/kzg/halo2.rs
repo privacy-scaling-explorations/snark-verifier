@@ -102,7 +102,7 @@ impl<C: Curve> SnarkWitness<C> {
 
 pub fn accumulate<'a>(
     loader: &Rc<Halo2Loader<'a, G1Affine>>,
-    stretagy: &mut SameCurveAccumulation<G1, Rc<Halo2Loader<'a, G1Affine>>>,
+    strategy: &mut SameCurveAccumulation<G1, Rc<Halo2Loader<'a, G1Affine>>>,
     snark: &SnarkWitness<G1>,
 ) -> Result<(), plonk::Error> {
     let mut transcript = PoseidonTranscript::<_, Rc<Halo2Loader<G1Affine>>, _, _>::new(
@@ -124,7 +124,7 @@ pub fn accumulate<'a>(
         loader,
         instances,
         &mut transcript,
-        stretagy,
+        strategy,
     )
     .map_err(|_| plonk::Error::Synthesis)?;
     Ok(())
@@ -313,11 +313,11 @@ impl Circuit<Fr> for Accumulation {
 
                 let ecc_chip = config.ecc_chip();
                 let loader = Halo2Loader::<G1Affine>::new(ecc_chip, ctx);
-                let mut stretagy = SameCurveAccumulation::default();
+                let mut strategy = SameCurveAccumulation::default();
                 for snark in self.snarks.iter() {
-                    accumulate(&loader, &mut stretagy, snark)?;
+                    accumulate(&loader, &mut strategy, snark)?;
                 }
-                let (lhs, rhs) = stretagy.finalize(self.g1);
+                let (lhs, rhs) = strategy.finalize(self.g1);
 
                 loader.print_row_metering();
                 println!("Total row cost: {}", loader.ctx().offset());

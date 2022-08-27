@@ -159,10 +159,10 @@ macro_rules! halo2_kzg_create_snark {
 
 #[macro_export]
 macro_rules! halo2_kzg_native_accumulate {
-    ($protocol:expr, $instances:expr, $scheme:ty, $transcript:expr, $stretagy:expr) => {{
+    ($protocol:expr, $instances:expr, $scheme:ty, $transcript:expr, $strategy:expr) => {{
         use $crate::{loader::native::NativeLoader, scheme::kzg::AccumulationScheme};
 
-        <$scheme>::accumulate($protocol, &NativeLoader, $instances, $transcript, $stretagy)
+        <$scheme>::accumulate($protocol, &NativeLoader, $instances, $transcript, $strategy)
             .unwrap();
     }};
 }
@@ -178,9 +178,9 @@ macro_rules! halo2_kzg_native_verify {
             scheme::kzg::SameCurveAccumulation,
         };
 
-        let mut stretagy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
-        halo2_kzg_native_accumulate!($protocol, $instances, $scheme, $transcript, &mut stretagy);
+        let mut strategy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
+        halo2_kzg_native_accumulate!($protocol, $instances, $scheme, $transcript, &mut strategy);
 
-        assert!(stretagy.decide::<Bn256>($params.get_g()[0], $params.g2(), $params.s_g2()));
+        assert!(strategy.decide::<Bn256>($params.get_g()[0], $params.g2(), $params.s_g2()));
     }};
 }
