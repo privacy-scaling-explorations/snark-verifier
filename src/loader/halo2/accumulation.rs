@@ -103,10 +103,10 @@ where
 
                 for (src, dst) in assigned_limbs.iter().zip(
                     iter::empty()
-                        .chain(lhs.assigned().get_x().limbs())
-                        .chain(lhs.assigned().get_y().limbs())
-                        .chain(rhs.assigned().get_x().limbs())
-                        .chain(rhs.assigned().get_y().limbs()),
+                        .chain(lhs.assigned().x().limbs())
+                        .chain(lhs.assigned().y().limbs())
+                        .chain(rhs.assigned().x().limbs())
+                        .chain(rhs.assigned().y().limbs()),
                 ) {
                     loader
                         .ctx_mut()

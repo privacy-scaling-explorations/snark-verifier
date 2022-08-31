@@ -436,10 +436,10 @@ mod aggregation {
             )?;
 
             for (limb, row) in iter::empty()
-                .chain(lhs.get_x().limbs())
-                .chain(lhs.get_y().limbs())
-                .chain(rhs.get_x().limbs())
-                .chain(rhs.get_y().limbs())
+                .chain(lhs.x().limbs())
+                .chain(lhs.y().limbs())
+                .chain(rhs.x().limbs())
+                .chain(rhs.y().limbs())
                 .zip(0..)
             {
                 main_gate.expose_public(layouter.namespace(|| ""), limb.into(), row)?;
