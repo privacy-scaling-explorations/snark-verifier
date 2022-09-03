@@ -1,6 +1,6 @@
 use ethereum_types::Address;
 use foundry_evm::executor::{fork::MultiFork, Backend, ExecutorBuilder};
-use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine, G1};
+use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
     dev::MockProver,
     plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ProvingKey, VerifyingKey},
@@ -21,15 +21,17 @@ use plonk_verifier::{
         evm::{encode_calldata, EvmLoader, EvmTranscript},
         native::NativeLoader,
     },
-    protocol::halo2::{compile, Config},
-    scheme::kzg::{AccumulationScheme, PlonkAccumulationScheme, SameCurveAccumulation},
-    util::TranscriptRead,
+    pcs::kzg::{Gwc19, KzgOnSameCurve},
+    system::halo2::{compile, Config},
+    util::transcript::TranscriptRead,
+    verifier::{self, PlonkVerifier},
 };
 use rand::rngs::OsRng;
-use std::{io::Cursor, iter, rc::Rc};
+use std::{io::Cursor, rc::Rc};
 
 const LIMBS: usize = 4;
 const BITS: usize = 68;
+type Plonk = verifier::Plonk<KzgOnSameCurve<Bn256, Gwc19<Bn256>, LIMBS, BITS>>;
 
 mod application {
     use halo2_curves::bn256::Fr;
@@ -159,13 +161,9 @@ mod application {
 }
 
 mod aggregation {
-    use super::{BITS, LIMBS};
-    use halo2_curves::{
-        bn256::{Bn256, Fq, Fr, G1Affine, G1},
-        group::{prime::PrimeCurveAffine, Curve},
-    };
+    use super::{Plonk, BITS, LIMBS};
+    use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         plonk::{self, Circuit, ConstraintSystem},
         poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
@@ -182,10 +180,17 @@ mod aggregation {
     use halo2_wrong_transcript::NativeRepresentation;
     use itertools::Itertools;
     use plonk_verifier::{
-        loader::{halo2, native::NativeLoader},
-        protocol::Protocol,
-        scheme::kzg::{self, AccumulationScheme, PlonkAccumulationScheme},
-        util::fe_to_limbs,
+        loader::halo2,
+        pcs::{
+            kzg::{Accumulator, PreAccumulator},
+            PreAccumulator as _,
+        },
+        util::{
+            arithmetic::{fe_to_limbs, FieldExt},
+            transcript::Transcript,
+        },
+        verifier::PlonkVerifier,
+        Protocol,
     };
     use std::{iter, rc::Rc};
 
@@ -210,16 +215,15 @@ mod aggregation {
         R_F,
         R_P,
     >;
-    type SameCurveAccumulation<L> = kzg::SameCurveAccumulation<G1, L, LIMBS, BITS>;
 
     pub struct Snark {
-        protocol: Protocol<G1>,
+        protocol: Protocol<G1Affine>,
         instances: Vec<Vec<Fr>>,
         proof: Vec<u8>,
     }
 
     impl Snark {
-        pub fn new(protocol: Protocol<G1>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) -> Self {
+        pub fn new(protocol: Protocol<G1Affine>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) -> Self {
             Self {
                 protocol,
                 instances,
@@ -244,7 +248,7 @@ mod aggregation {
 
     #[derive(Clone)]
     pub struct SnarkWitness {
-        protocol: Protocol<G1>,
+        protocol: Protocol<G1Affine>,
         instances: Vec<Vec<Value<Fr>>>,
         proof: Value<Vec<u8>>,
     }
@@ -263,11 +267,12 @@ mod aggregation {
         }
     }
 
-    fn accumulate<'a>(
+    pub fn accumulate<'a>(
+        g1: &G1Affine,
         loader: &Rc<Halo2Loader<'a>>,
-        strategy: &mut SameCurveAccumulation<Rc<Halo2Loader<'a>>>,
         snark: &SnarkWitness,
-    ) -> Result<(), plonk::Error> {
+        curr_accumulator: Option<PreAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>,
+    ) -> PreAccumulator<G1Affine, Rc<Halo2Loader<'a>>> {
         let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(
             loader,
             snark.proof.as_ref().map(|proof| proof.as_slice()),
@@ -282,15 +287,14 @@ mod aggregation {
                     .collect_vec()
             })
             .collect_vec();
-        PlonkAccumulationScheme::accumulate(
-            &snark.protocol,
-            loader,
-            instances,
-            &mut transcript,
-            strategy,
-        )
-        .map_err(|_| plonk::Error::Synthesis)?;
-        Ok(())
+        let proof = Plonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
+        let mut accumulator =
+            Plonk::succint_verify(g1, &snark.protocol, &instances, &mut transcript, &proof)
+                .unwrap();
+        if let Some(curr_accumulator) = curr_accumulator {
+            accumulator += curr_accumulator * transcript.squeeze_challenge();
+        }
+        accumulator
     }
 
     #[derive(Clone)]
@@ -339,30 +343,35 @@ mod aggregation {
 
     impl AggregationCircuit {
         pub fn new(params: &ParamsKZG<Bn256>, snarks: impl IntoIterator<Item = Snark>) -> Self {
+            let g1 = params.get_g()[0];
             let snarks = snarks.into_iter().collect_vec();
 
-            let mut strategy = SameCurveAccumulation::default();
-            for snark in snarks.iter() {
-                PlonkAccumulationScheme::accumulate(
-                    &snark.protocol,
-                    &NativeLoader,
-                    snark.instances.clone(),
-                    &mut PoseidonTranscript::init(snark.proof.as_slice()),
-                    &mut strategy,
-                )
+            let accumulator = snarks
+                .iter()
+                .fold(None, |curr_accumulator, snark| {
+                    let mut transcript = PoseidonTranscript::init(snark.proof.as_slice());
+                    let proof =
+                        Plonk::read_proof(&snark.protocol, &snark.instances, &mut transcript)
+                            .unwrap();
+                    let mut accumulator = Plonk::succint_verify(
+                        &g1,
+                        &snark.protocol,
+                        &snark.instances,
+                        &mut transcript,
+                        &proof,
+                    )
+                    .unwrap();
+                    if let Some(curr_accumulator) = curr_accumulator {
+                        accumulator += curr_accumulator * transcript.squeeze_challenge();
+                    }
+                    Some(accumulator)
+                })
                 .unwrap();
-            }
 
-            let g1 = params.get_g()[0];
-            let accumulator = strategy.finalize(g1.to_curve());
-            let instances = [
-                accumulator.0.to_affine().x,
-                accumulator.0.to_affine().y,
-                accumulator.1.to_affine().x,
-                accumulator.1.to_affine().y,
-            ]
-            .map(fe_to_limbs::<_, _, LIMBS, BITS>)
-            .concat();
+            let Accumulator { lhs, rhs } = accumulator.evaluate();
+            let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
+                .map(fe_to_limbs::<_, _, LIMBS, BITS>)
+                .concat();
 
             Self {
                 g1,
@@ -425,13 +434,16 @@ mod aggregation {
 
                     let ecc_chip = config.ecc_chip();
                     let loader = Halo2Loader::new(ecc_chip, ctx);
-                    let mut strategy = SameCurveAccumulation::default();
-                    for snark in self.snarks.iter() {
-                        accumulate(&loader, &mut strategy, snark)?;
-                    }
-                    let (lhs, rhs) = strategy.finalize(self.g1);
+                    let accumulator = self
+                        .snarks
+                        .iter()
+                        .fold(None, |accumulator, snark| {
+                            Some(accumulate(&self.g1, &loader, snark, accumulator))
+                        })
+                        .unwrap();
+                    let Accumulator { lhs, rhs } = accumulator.evaluate();
 
-                    Ok((lhs, rhs))
+                    Ok((lhs.into_normalized(), rhs.into_normalized()))
                 },
             )?;
 
@@ -553,30 +565,25 @@ fn gen_aggregation_evm_verifier(
 
     let loader = EvmLoader::new::<Fq, Fr>();
     let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
+
     let instances = num_instance
         .into_iter()
-        .map(|len| {
-            iter::repeat_with(|| transcript.read_scalar().unwrap())
-                .take(len)
-                .collect_vec()
-        })
+        .map(|len| transcript.read_n_scalars(len).unwrap())
         .collect_vec();
-
-    let mut strategy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
-    PlonkAccumulationScheme::accumulate(
+    Plonk::verify(
+        &params.get_g()[0],
+        &(params.g2(), params.s_g2()),
         &protocol,
-        &loader,
-        instances,
+        &instances,
         &mut transcript,
-        &mut strategy,
     )
     .unwrap();
-    strategy.finalize(params.get_g()[0], params.g2(), params.s_g2());
+
     loader.deployment_code()
 }
 
 fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
-    let calldata = encode_calldata(instances, proof);
+    let calldata = encode_calldata(&instances, &proof);
     let success = {
         let mut evm = ExecutorBuilder::default()
             .with_gas_limit(u64::MAX.into())
@@ -616,7 +623,7 @@ fn main() {
         aggregation::AggregationCircuit::accumulator_indices(),
     );
 
-    let proof = gen_proof::<_, _, EvmTranscript<G1, _, _, _>, EvmTranscript<G1, _, _, _>>(
+    let proof = gen_proof::<_, _, EvmTranscript<G1Affine, _, _, _>, EvmTranscript<G1Affine, _, _, _>>(
         &params,
         &pk,
         agg_circuit.clone(),

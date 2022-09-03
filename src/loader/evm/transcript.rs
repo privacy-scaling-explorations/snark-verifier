@@ -4,10 +4,14 @@ use crate::{
             loader::{EcPoint, EvmLoader, Scalar, Value},
             u256_to_fe,
         },
-        native::NativeLoader,
+        native::{self, NativeLoader},
         Loader,
     },
-    util::{Curve, Group, Itertools, PrimeField, Transcript, TranscriptRead, UncompressedEncoding},
+    util::{
+        arithmetic::{Coordinates, CurveAffine, PrimeField},
+        transcript::{Transcript, TranscriptRead},
+        Itertools,
+    },
     Error,
 };
 use ethereum_types::U256;
@@ -46,7 +50,7 @@ impl MemoryChunk {
     }
 }
 
-pub struct EvmTranscript<C: Curve, L: Loader<C>, S, B> {
+pub struct EvmTranscript<C: CurveAffine, L: Loader<C>, S, B> {
     loader: L,
     stream: S,
     buf: B,
@@ -55,8 +59,8 @@ pub struct EvmTranscript<C: Curve, L: Loader<C>, S, B> {
 
 impl<C> EvmTranscript<C, Rc<EvmLoader>, usize, MemoryChunk>
 where
-    C: Curve + UncompressedEncoding<Uncompressed = [u8; 64]>,
-    C::Scalar: PrimeField<Repr = [u8; 32]>,
+    C: CurveAffine,
+    C::Scalar: PrimeField<Repr = [u8; 0x20]>,
 {
     pub fn new(loader: Rc<EvmLoader>) -> Self {
         let ptr = loader.allocate(0x20);
@@ -72,9 +76,13 @@ where
 
 impl<C> Transcript<C, Rc<EvmLoader>> for EvmTranscript<C, Rc<EvmLoader>, usize, MemoryChunk>
 where
-    C: Curve + UncompressedEncoding<Uncompressed = [u8; 64]>,
-    C::Scalar: PrimeField<Repr = [u8; 32]>,
+    C: CurveAffine,
+    C::Scalar: PrimeField<Repr = [u8; 0x20]>,
 {
+    fn loader(&self) -> &Rc<EvmLoader> {
+        &self.loader
+    }
+
     fn squeeze_challenge(&mut self) -> Scalar {
         let (ptr, scalar) = self.loader.squeeze_challenge(self.buf.ptr, self.buf.len);
         self.buf.reset(ptr);
@@ -106,8 +114,8 @@ where
 
 impl<C> TranscriptRead<C, Rc<EvmLoader>> for EvmTranscript<C, Rc<EvmLoader>, usize, MemoryChunk>
 where
-    C: Curve + UncompressedEncoding<Uncompressed = [u8; 64]>,
-    C::Scalar: PrimeField<Repr = [u8; 32]>,
+    C: CurveAffine,
+    C::Scalar: PrimeField<Repr = [u8; 0x20]>,
 {
     fn read_scalar(&mut self) -> Result<Scalar, Error> {
         let scalar = self.loader.calldataload_scalar(self.stream);
@@ -126,7 +134,7 @@ where
 
 impl<C, S> EvmTranscript<C, NativeLoader, S, Vec<u8>>
 where
-    C: Curve,
+    C: CurveAffine,
 {
     pub fn new(stream: S) -> Self {
         Self {
@@ -140,9 +148,13 @@ where
 
 impl<C, S> Transcript<C, NativeLoader> for EvmTranscript<C, NativeLoader, S, Vec<u8>>
 where
-    C: Curve + UncompressedEncoding<Uncompressed = [u8; 64]>,
-    C::Scalar: PrimeField<Repr = [u8; 32]>,
+    C: CurveAffine,
+    C::Scalar: PrimeField<Repr = [u8; 0x20]>,
 {
+    fn loader(&self) -> &NativeLoader {
+        &native::LOADER
+    }
+
     fn squeeze_challenge(&mut self) -> C::Scalar {
         let data = self
             .buf
@@ -160,9 +172,18 @@ where
     }
 
     fn common_ec_point(&mut self, ec_point: &C) -> Result<(), Error> {
-        let uncopressed = ec_point.to_uncompressed();
-        self.buf.extend(uncopressed[..32].iter().rev().cloned());
-        self.buf.extend(uncopressed[32..].iter().rev().cloned());
+        let coordinates =
+            Option::<Coordinates<C>>::from(ec_point.coordinates()).ok_or_else(|| {
+                Error::Transcript(
+                    io::ErrorKind::Other,
+                    "Cannot write points at infinity to the transcript".to_string(),
+                )
+            })?;
+
+        [coordinates.x(), coordinates.y()].map(|coordinate| {
+            self.buf
+                .extend(coordinate.to_repr().as_ref().iter().rev().cloned());
+        });
 
         Ok(())
     }
@@ -176,8 +197,8 @@ where
 
 impl<C, S> TranscriptRead<C, NativeLoader> for EvmTranscript<C, NativeLoader, S, Vec<u8>>
 where
-    C: Curve + UncompressedEncoding<Uncompressed = [u8; 64]>,
-    C::Scalar: PrimeField<Repr = [u8; 32]>,
+    C: CurveAffine,
+    C::Scalar: PrimeField<Repr = [u8; 0x20]>,
     S: Read,
 {
     fn read_scalar(&mut self) -> Result<C::Scalar, Error> {
@@ -186,7 +207,7 @@ where
             .read_exact(data.as_mut())
             .map_err(|err| Error::Transcript(err.kind(), err.to_string()))?;
         data.reverse();
-        let scalar = <C as Group>::Scalar::from_repr_vartime(data).ok_or_else(|| {
+        let scalar = C::Scalar::from_repr_vartime(data).ok_or_else(|| {
             Error::Transcript(
                 io::ErrorKind::Other,
                 "Invalid scalar encoding in proof".to_string(),
@@ -197,18 +218,24 @@ where
     }
 
     fn read_ec_point(&mut self) -> Result<C, Error> {
-        let mut data = [0; 64];
-        self.stream
-            .read_exact(data.as_mut())
-            .map_err(|err| Error::Transcript(err.kind(), err.to_string()))?;
-        data.as_mut_slice()[..32].reverse();
-        data.as_mut_slice()[32..].reverse();
-        let ec_point = C::from_uncompressed(data).ok_or_else(|| {
-            Error::Transcript(
-                io::ErrorKind::Other,
-                "Invalid elliptic curve point encoding in proof".to_string(),
-            )
-        })?;
+        let [mut x, mut y] = [<C::Base as PrimeField>::Repr::default(); 2];
+        for repr in [&mut x, &mut y] {
+            self.stream
+                .read_exact(repr.as_mut())
+                .map_err(|err| Error::Transcript(err.kind(), err.to_string()))?;
+            repr.as_mut().reverse();
+        }
+        let x = Option::from(<C::Base as PrimeField>::from_repr(x));
+        let y = Option::from(<C::Base as PrimeField>::from_repr(y));
+        let ec_point = x
+            .zip(y)
+            .and_then(|(x, y)| Option::from(C::from_xy(x, y)))
+            .ok_or_else(|| {
+                Error::Transcript(
+                    io::ErrorKind::Other,
+                    "Invalid elliptic curve point encoding in proof".to_string(),
+                )
+            })?;
         self.common_ec_point(&ec_point)?;
         Ok(ec_point)
     }
@@ -216,7 +243,7 @@ where
 
 impl<C, S> EvmTranscript<C, NativeLoader, S, Vec<u8>>
 where
-    C: Curve,
+    C: CurveAffine,
     S: Write,
 {
     pub fn stream_mut(&mut self) -> &mut S {

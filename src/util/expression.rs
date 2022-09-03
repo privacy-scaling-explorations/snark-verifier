@@ -1,6 +1,9 @@
 use crate::{
     loader::{LoadedScalar, Loader},
-    util::{Curve, Domain, Field, Fraction, Itertools, Rotation},
+    util::{
+        arithmetic::{CurveAffine, Domain, Field, Fraction, Rotation},
+        Itertools,
+    },
 };
 use std::{
     cmp::max,
@@ -19,7 +22,7 @@ pub enum CommonPolynomial {
 #[derive(Clone, Debug)]
 pub struct CommonPolynomialEvaluation<C, L>
 where
-    C: Curve,
+    C: CurveAffine,
     L: Loader<C>,
 {
     zn: L::LoadedScalar,
@@ -30,15 +33,16 @@ where
 
 impl<C, L> CommonPolynomialEvaluation<C, L>
 where
-    C: Curve,
+    C: CurveAffine,
     L: Loader<C>,
 {
     pub fn new(
         domain: &Domain<C::Scalar>,
-        loader: &L,
         langranges: impl IntoIterator<Item = i32>,
         z: &L::LoadedScalar,
     ) -> Self {
+        let loader = z.loader();
+
         let zn = z.pow_const(domain.n as u64);
         let langranges = langranges.into_iter().sorted().dedup().collect_vec();
 
@@ -65,18 +69,18 @@ where
         }
     }
 
-    pub fn zn(&self) -> L::LoadedScalar {
-        self.zn.clone()
+    pub fn zn(&self) -> &L::LoadedScalar {
+        &self.zn
     }
 
-    pub fn zn_minus_one_inv(&self) -> L::LoadedScalar {
-        self.zn_minus_one_inv.evaluate()
+    pub fn zn_minus_one_inv(&self) -> &L::LoadedScalar {
+        self.zn_minus_one_inv.evaluated()
     }
 
-    pub fn get(&self, poly: CommonPolynomial) -> L::LoadedScalar {
+    pub fn get(&self, poly: CommonPolynomial) -> &L::LoadedScalar {
         match poly {
-            CommonPolynomial::Identity => self.identity.clone(),
-            CommonPolynomial::Lagrange(i) => self.lagrange.get(&i).unwrap().evaluate(),
+            CommonPolynomial::Identity => &self.identity,
+            CommonPolynomial::Lagrange(i) => self.lagrange.get(&i).unwrap().evaluated(),
         }
     }
 
@@ -86,6 +90,14 @@ where
             .map(|(_, value)| value.denom_mut())
             .chain(iter::once(self.zn_minus_one_inv.denom_mut()))
             .flatten()
+    }
+
+    pub fn evaluate(&mut self) {
+        self.lagrange
+            .iter_mut()
+            .map(|(_, value)| value)
+            .chain(iter::once(&mut self.zn_minus_one_inv))
+            .for_each(Fraction::evaluate)
     }
 }
 

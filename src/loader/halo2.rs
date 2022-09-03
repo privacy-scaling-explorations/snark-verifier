@@ -1,11 +1,10 @@
 use halo2_proofs::circuit::Value;
 
-mod accumulation;
 mod loader;
 mod shim;
 mod transcript;
 
-pub use loader::Halo2Loader;
+pub use loader::{EcPoint, Halo2Loader, Scalar};
 pub use shim::{EccInstructions, IntegerInstructions};
 pub use transcript::PoseidonTranscript;
 

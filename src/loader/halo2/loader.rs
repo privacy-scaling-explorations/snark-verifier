@@ -3,10 +3,12 @@ use crate::{
         halo2::shim::{EccInstructions, IntegerInstructions},
         EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader,
     },
-    util::{Curve, Field, FieldOps, Group, Itertools},
+    util::{
+        arithmetic::{Curve, CurveAffine, Field, FieldExt, FieldOps, Group},
+        Itertools,
+    },
 };
-use halo2_curves::{CurveAffine, FieldExt};
-use halo2_proofs::circuit;
+use halo2_proofs::circuit::{self, Region};
 use halo2_wrong_ecc::maingate::RegionCtx;
 use rand::rngs::OsRng;
 use std::{
@@ -26,9 +28,11 @@ pub enum Value<T, L> {
     Assigned(L),
 }
 
+#[derive(Debug)]
 pub struct Halo2Loader<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> {
     ecc_chip: RefCell<EccChip>,
     ctx: RefCell<RegionCtx<'a, N>>,
+    num_scalar: RefCell<usize>,
     num_ec_point: RefCell<usize>,
     _marker: PhantomData<C>,
     #[cfg(test)]
@@ -42,11 +46,16 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         Rc::new(Self {
             ecc_chip: RefCell::new(ecc_chip),
             ctx: RefCell::new(ctx),
+            num_scalar: RefCell::new(0),
             num_ec_point: RefCell::new(0),
             _marker: PhantomData,
             #[cfg(test)]
             row_meterings: RefCell::new(Vec::new()),
         })
+    }
+
+    pub fn into_region(self) -> Region<'a, N> {
+        self.ctx.into_inner().into_region()
     }
 
     pub fn ecc_chip(&self) -> impl Deref<Target = EccChip> + '_ {
@@ -61,7 +70,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         self.ctx.borrow()
     }
 
-    pub(super) fn ctx_mut(&self) -> impl DerefMut<Target = RegionCtx<'a, N>> + '_ {
+    pub(crate) fn ctx_mut(&self) -> impl DerefMut<Target = RegionCtx<'a, N>> + '_ {
         self.ctx.borrow_mut()
     }
 
@@ -84,12 +93,15 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         self.scalar(Value::Assigned(assigned))
     }
 
-    pub fn scalar(
+    pub(crate) fn scalar(
         self: &Rc<Self>,
         value: Value<C::Scalar, EccChip::AssignedScalar>,
     ) -> Scalar<'a, C, N, EccChip> {
+        let index = *self.num_scalar.borrow();
+        *self.num_scalar.borrow_mut() += 1;
         Scalar {
             loader: self.clone(),
+            index,
             value,
         }
     }
@@ -115,10 +127,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         self.ec_point(assigned)
     }
 
-    pub fn ec_point(
-        self: &Rc<Self>,
-        assigned: EccChip::AssignedPoint,
-    ) -> EcPoint<'a, C, N, EccChip> {
+    fn ec_point(self: &Rc<Self>, assigned: EccChip::AssignedPoint) -> EcPoint<'a, C, N, EccChip> {
         let index = *self.num_ec_point.borrow();
         *self.num_ec_point.borrow_mut() += 1;
         EcPoint {
@@ -126,15 +135,6 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
             index,
             assigned,
         }
-    }
-
-    pub fn ec_point_nomalize(
-        self: &Rc<Self>,
-        assigned: &EccChip::AssignedPoint,
-    ) -> EccChip::AssignedPoint {
-        self.ecc_chip()
-            .normalize(&mut self.ctx_mut(), assigned)
-            .unwrap()
     }
 
     fn add(
@@ -284,15 +284,28 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
 #[derive(Clone)]
 pub struct Scalar<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> {
     loader: Rc<Halo2Loader<'a, C, N, EccChip>>,
+    index: usize,
     value: Value<C::Scalar, EccChip::AssignedScalar>,
 }
 
 impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Scalar<'a, C, N, EccChip> {
-    pub fn assigned(&self) -> EccChip::AssignedScalar {
+    pub fn loader(&self) -> &Rc<Halo2Loader<'a, C, N, EccChip>> {
+        &self.loader
+    }
+
+    pub(crate) fn assigned(&self) -> EccChip::AssignedScalar {
         match &self.value {
             Value::Constant(constant) => self.loader.assign_const_scalar(*constant).assigned(),
             Value::Assigned(assigned) => assigned.clone(),
         }
+    }
+}
+
+impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> PartialEq
+    for Scalar<'a, C, N, EccChip>
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
     }
 }
 
@@ -450,8 +463,15 @@ pub struct EcPoint<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, 
 }
 
 impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> EcPoint<'a, C, N, EccChip> {
-    pub fn assigned(&self) -> EccChip::AssignedPoint {
+    pub(crate) fn assigned(&self) -> EccChip::AssignedPoint {
         self.assigned.clone()
+    }
+
+    pub fn into_normalized(self) -> EccChip::AssignedPoint {
+        self.loader
+            .ecc_chip()
+            .normalize(&mut self.loader.ctx_mut(), &self.assigned)
+            .unwrap()
     }
 }
 
@@ -463,7 +483,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> PartialEq
     }
 }
 
-impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> LoadedEcPoint<C::CurveExt>
+impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> LoadedEcPoint<C>
     for EcPoint<'a, C, N, EccChip>
 {
     type Loader = Rc<Halo2Loader<'a, C, N, EccChip>>;
@@ -495,7 +515,7 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> LoadedEcPo
             .chain(if scaled.is_empty() {
                 None
             } else {
-                let aux_generator = <C as CurveAffine>::CurveExt::random(OsRng).to_affine();
+                let aux_generator = C::CurveExt::random(OsRng).to_affine();
                 loader
                     .ecc_chip
                     .borrow_mut()
@@ -543,88 +563,6 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Debug
     }
 }
 
-impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Add
-    for EcPoint<'a, C, N, EccChip>
-{
-    type Output = Self;
-
-    fn add(self, _: Self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Sub
-    for EcPoint<'a, C, N, EccChip>
-{
-    type Output = Self;
-
-    fn sub(self, _: Self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Neg
-    for EcPoint<'a, C, N, EccChip>
-{
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Add<&'b Self>
-    for EcPoint<'a, C, N, EccChip>
-{
-    type Output = Self;
-
-    fn add(self, rhs: &'b Self) -> Self::Output {
-        self + rhs.clone()
-    }
-}
-
-impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Sub<&'b Self>
-    for EcPoint<'a, C, N, EccChip>
-{
-    type Output = Self;
-
-    fn sub(self, rhs: &'b Self) -> Self::Output {
-        self - rhs.clone()
-    }
-}
-
-impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> AddAssign
-    for EcPoint<'a, C, N, EccChip>
-{
-    fn add_assign(&mut self, rhs: Self) {
-        *self = self.clone() + rhs
-    }
-}
-
-impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> SubAssign
-    for EcPoint<'a, C, N, EccChip>
-{
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = self.clone() - rhs
-    }
-}
-
-impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> AddAssign<&'b Self>
-    for EcPoint<'a, C, N, EccChip>
-{
-    fn add_assign(&mut self, rhs: &'b Self) {
-        *self = self.clone() + rhs
-    }
-}
-
-impl<'a, 'b, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> SubAssign<&'b Self>
-    for EcPoint<'a, C, N, EccChip>
-{
-    fn sub_assign(&mut self, rhs: &'b Self) {
-        *self = self.clone() - rhs
-    }
-}
-
 impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> ScalarLoader<C::Scalar>
     for Rc<Halo2Loader<'a, C, N, EccChip>>
 {
@@ -635,17 +573,17 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> ScalarLoad
     }
 }
 
-impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> EcPointLoader<C::CurveExt>
+impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> EcPointLoader<C>
     for Rc<Halo2Loader<'a, C, N, EccChip>>
 {
     type LoadedEcPoint = EcPoint<'a, C, N, EccChip>;
 
-    fn ec_point_load_const(&self, ec_point: &C::CurveExt) -> EcPoint<'a, C, N, EccChip> {
-        self.assign_const_ec_point(ec_point.to_affine())
+    fn ec_point_load_const(&self, ec_point: &C) -> EcPoint<'a, C, N, EccChip> {
+        self.assign_const_ec_point(*ec_point)
     }
 }
 
-impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Loader<C::CurveExt>
+impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> Loader<C>
     for Rc<Halo2Loader<'a, C, N, EccChip>>
 {
     #[cfg(test)]

@@ -8,43 +8,34 @@ use std::{
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
-pub use ff::{BatchInvert, Field, PrimeField};
-pub use group::{prime::PrimeCurveAffine, Curve, Group, GroupEncoding};
+pub use halo2_curves::{
+    group::{
+        ff::{BatchInvert, Field, PrimeField},
+        prime::PrimeCurveAffine,
+        Curve, Group, GroupEncoding,
+    },
+    pairing::MillerLoopResult,
+    Coordinates, CurveAffine, FieldExt,
+};
 
-pub trait GroupOps:
-    Sized
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + Neg<Output = Self>
-    + for<'a> Add<&'a Self, Output = Self>
-    + for<'a> Sub<&'a Self, Output = Self>
-    + AddAssign
-    + SubAssign
-    + for<'a> AddAssign<&'a Self>
-    + for<'a> SubAssign<&'a Self>
-{
-}
+pub trait MultiMillerLoop: halo2_curves::pairing::MultiMillerLoop + Debug {}
 
-impl<T> GroupOps for T where
-    T: Sized
-        + Add<Output = Self>
-        + Sub<Output = Self>
-        + Neg<Output = Self>
-        + for<'a> Add<&'a Self, Output = Self>
-        + for<'a> Sub<&'a Self, Output = Self>
-        + AddAssign
-        + SubAssign
-        + for<'a> AddAssign<&'a Self>
-        + for<'a> SubAssign<&'a Self>
-{
-}
+impl<M: halo2_curves::pairing::MultiMillerLoop + Debug> MultiMillerLoop for M {}
 
 pub trait FieldOps:
     Sized
-    + GroupOps
+    + Neg<Output = Self>
+    + Add<Output = Self>
+    + Sub<Output = Self>
     + Mul<Output = Self>
+    + for<'a> Add<&'a Self, Output = Self>
+    + for<'a> Sub<&'a Self, Output = Self>
     + for<'a> Mul<&'a Self, Output = Self>
+    + AddAssign
+    + SubAssign
     + MulAssign
+    + for<'a> AddAssign<&'a Self>
+    + for<'a> SubAssign<&'a Self>
     + for<'a> MulAssign<&'a Self>
 {
     fn invert(&self) -> Option<Self>;
@@ -87,14 +78,6 @@ pub fn root_of_unity<F: PrimeField>(k: usize) -> F {
         .unwrap()
 }
 
-pub trait UncompressedEncoding: Sized {
-    type Uncompressed: AsRef<[u8]> + AsMut<[u8]>;
-
-    fn to_uncompressed(&self) -> Self::Uncompressed;
-
-    fn from_uncompressed(uncompressed: Self::Uncompressed) -> Option<Self>;
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rotation(pub i32);
 
@@ -128,10 +111,9 @@ pub struct Domain<F: PrimeField> {
 }
 
 impl<F: PrimeField> Domain<F> {
-    pub fn new(k: usize) -> Self {
+    pub fn new(k: usize, gen: F) -> Self {
         let n = 1 << k;
         let n_inv = F::from(n as u64).invert().unwrap();
-        let gen = root_of_unity::<F>(k);
         let gen_inv = gen.invert().unwrap();
 
         Self {
@@ -156,6 +138,7 @@ impl<F: PrimeField> Domain<F> {
 pub struct Fraction<F> {
     numer: Option<F>,
     denom: F,
+    eval: Option<F>,
     inv: bool,
 }
 
@@ -164,6 +147,7 @@ impl<F> Fraction<F> {
         Self {
             numer: Some(numer),
             denom,
+            eval: None,
             inv: false,
         }
     }
@@ -172,6 +156,7 @@ impl<F> Fraction<F> {
         Self {
             numer: None,
             denom,
+            eval: None,
             inv: false,
         }
     }
@@ -195,16 +180,22 @@ impl<F> Fraction<F> {
 }
 
 impl<F: FieldOps + Clone> Fraction<F> {
-    pub fn evaluate(&self) -> F {
-        let denom = if self.inv {
-            self.denom.clone()
-        } else {
-            self.denom.invert().unwrap()
-        };
-        self.numer
-            .clone()
-            .map(|numer| numer * &denom)
-            .unwrap_or(denom)
+    pub fn evaluate(&mut self) {
+        assert!(self.inv);
+        assert!(self.eval.is_none());
+
+        self.eval = Some(
+            self.numer
+                .as_ref()
+                .map(|numer| numer.clone() * &self.denom)
+                .unwrap_or_else(|| self.denom.clone()),
+        );
+    }
+
+    pub fn evaluated(&self) -> &F {
+        assert!(self.inv);
+
+        self.eval.as_ref().unwrap()
     }
 }
 

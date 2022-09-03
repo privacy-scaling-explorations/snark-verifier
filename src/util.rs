@@ -1,16 +1,9 @@
-mod arithmetic;
-mod expression;
-mod transcript;
+pub mod arithmetic;
+pub mod expression;
+pub mod msm;
+pub mod transcript;
 
-pub use arithmetic::{
-    batch_invert, batch_invert_and_mul, fe_from_limbs, fe_to_big, fe_to_fe, fe_to_limbs, modulus,
-    root_of_unity, BatchInvert, Curve, Domain, Field, FieldOps, Fraction, Group, GroupEncoding,
-    GroupOps, PrimeCurveAffine, PrimeField, Rotation, UncompressedEncoding,
-};
-pub use expression::{CommonPolynomial, CommonPolynomialEvaluation, Expression, Query};
-pub use transcript::{Transcript, TranscriptRead};
-
-pub use itertools::{EitherOrBoth, Itertools};
+pub(crate) use itertools::Itertools;
 
 #[macro_export]
 macro_rules! collect_slice {

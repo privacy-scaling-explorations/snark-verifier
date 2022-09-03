@@ -1,12 +1,14 @@
 use crate::{
     loader::{
         halo2::loader::{EcPoint, Halo2Loader, Scalar, Value},
-        native::NativeLoader,
+        native::{self, NativeLoader},
     },
-    util::{Curve, GroupEncoding, PrimeField, Transcript, TranscriptRead},
+    util::{
+        arithmetic::{CurveAffine, FieldExt, PrimeField},
+        transcript::{Transcript, TranscriptRead},
+    },
     Error,
 };
-use halo2_curves::{CurveAffine, FieldExt};
 use halo2_proofs::circuit;
 use halo2_wrong_ecc::BaseFieldEccChip;
 use halo2_wrong_transcript::{PointRepresentation, TranscriptChip};
@@ -95,7 +97,7 @@ impl<
         const RATE: usize,
         const R_F: usize,
         const R_P: usize,
-    > Transcript<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>>>
+    > Transcript<C, Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>>>
     for PoseidonTranscript<
         C,
         C::Scalar,
@@ -111,6 +113,10 @@ impl<
         R_P,
     >
 {
+    fn loader(&self) -> &Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>> {
+        &self.loader
+    }
+
     fn squeeze_challenge(&mut self) -> Scalar<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>> {
         let assigned = self.buf.squeeze(&mut self.loader.ctx_mut()).unwrap();
         self.loader.scalar(Value::Assigned(assigned))
@@ -146,8 +152,7 @@ impl<
         const RATE: usize,
         const R_F: usize,
         const R_P: usize,
-    >
-    TranscriptRead<C::CurveExt, Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>>>
+    > TranscriptRead<C, Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>>>
     for PoseidonTranscript<
         C,
         C::Scalar,
@@ -244,7 +249,7 @@ impl<
         const RATE: usize,
         const R_F: usize,
         const R_P: usize,
-    > Transcript<C::CurveExt, NativeLoader>
+    > Transcript<C, NativeLoader>
     for PoseidonTranscript<
         C,
         C::Scalar,
@@ -260,6 +265,10 @@ impl<
         R_P,
     >
 {
+    fn loader(&self) -> &NativeLoader {
+        &native::LOADER
+    }
+
     fn squeeze_challenge(&mut self) -> C::Scalar {
         self.buf.squeeze()
     }
@@ -269,8 +278,8 @@ impl<
         Ok(())
     }
 
-    fn common_ec_point(&mut self, ec_point: &C::CurveExt) -> Result<(), Error> {
-        E::encode(ec_point.to_affine())
+    fn common_ec_point(&mut self, ec_point: &C) -> Result<(), Error> {
+        E::encode(*ec_point)
             .map(|encoded| {
                 self.buf.update(&encoded);
             })
@@ -293,7 +302,7 @@ impl<
         const RATE: usize,
         const R_F: usize,
         const R_P: usize,
-    > TranscriptRead<C::CurveExt, NativeLoader>
+    > TranscriptRead<C, NativeLoader>
     for PoseidonTranscript<
         C,
         C::Scalar,
@@ -324,15 +333,12 @@ impl<
         Ok(scalar)
     }
 
-    fn read_ec_point(&mut self) -> Result<C::CurveExt, Error> {
+    fn read_ec_point(&mut self) -> Result<C, Error> {
         let mut data = C::Repr::default();
         self.stream
             .read_exact(data.as_mut())
             .map_err(|err| Error::Transcript(err.kind(), err.to_string()))?;
-        let ec_point = Option::<C::CurveExt>::from(
-            <C as GroupEncoding>::from_bytes(&data).map(|ec_point| ec_point.to_curve()),
-        )
-        .ok_or_else(|| {
+        let ec_point = Option::<C>::from(C::from_bytes(&data)).ok_or_else(|| {
             Error::Transcript(
                 io::ErrorKind::Other,
                 "Invalid elliptic curve point encoding in proof".to_string(),

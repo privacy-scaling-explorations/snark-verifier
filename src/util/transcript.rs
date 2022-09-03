@@ -1,13 +1,15 @@
 use crate::{
     loader::Loader,
-    {util::Curve, Error},
+    {util::arithmetic::CurveAffine, Error},
 };
 
 pub trait Transcript<C, L>
 where
-    C: Curve,
+    C: CurveAffine,
     L: Loader<C>,
 {
+    fn loader(&self) -> &L;
+
     fn squeeze_challenge(&mut self) -> L::LoadedScalar;
 
     fn squeeze_n_challenges(&mut self, n: usize) -> Vec<L::LoadedScalar> {
@@ -21,7 +23,7 @@ where
 
 pub trait TranscriptRead<C, L>: Transcript<C, L>
 where
-    C: Curve,
+    C: CurveAffine,
     L: Loader<C>,
 {
     fn read_scalar(&mut self) -> Result<L::LoadedScalar, Error>;

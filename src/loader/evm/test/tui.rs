@@ -60,7 +60,7 @@ impl Tui {
                 .expect("unable to execute disable mouse capture");
             println!("{e}");
         }));
-        let tick_rate = Duration::from_millis(200);
+        let tick_rate = Duration::from_millis(60);
 
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {

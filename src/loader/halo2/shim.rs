@@ -1,4 +1,4 @@
-use halo2_curves::{CurveAffine, FieldExt};
+use crate::util::arithmetic::{CurveAffine, FieldExt};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use halo2_wrong_ecc::{
     maingate::{
@@ -122,7 +122,7 @@ pub trait EccInstructions<C: CurveAffine, N: FieldExt>: Clone + Debug {
 
     fn mul_batch_1d_horizontal(
         &self,
-        region: &mut RegionCtx<'_, N>,
+        ctx: &mut RegionCtx<'_, N>,
         pairs: Vec<(Self::AssignedPoint, Self::AssignedScalar)>,
         window_size: usize,
     ) -> Result<Self::AssignedPoint, Error>;
@@ -287,11 +287,11 @@ impl<C: CurveAffine, const LIMBS: usize, const BITS: usize> EccInstructions<C, C
 
     fn mul_batch_1d_horizontal(
         &self,
-        region: &mut RegionCtx<'_, C::Scalar>,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
         pairs: Vec<(Self::AssignedPoint, Self::AssignedScalar)>,
         window_size: usize,
     ) -> Result<Self::AssignedPoint, Error> {
-        self.mul_batch_1d_horizontal(region, pairs, window_size)
+        self.mul_batch_1d_horizontal(ctx, pairs, window_size)
     }
 
     fn normalize(

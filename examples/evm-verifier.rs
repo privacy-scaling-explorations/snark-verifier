@@ -22,12 +22,17 @@ use halo2_proofs::{
 use itertools::Itertools;
 use plonk_verifier::{
     loader::evm::{encode_calldata, EvmLoader, EvmTranscript},
-    protocol::halo2::{compile, Config},
-    scheme::kzg::{AccumulationScheme, PlonkAccumulationScheme, SameCurveAccumulation},
-    util::TranscriptRead,
+    pcs::kzg::{Gwc19, KzgOnSameCurve},
+    system::halo2::{compile, Config},
+    util::transcript::TranscriptRead,
+    verifier::{self, PlonkVerifier},
 };
 use rand::{rngs::OsRng, RngCore};
-use std::{iter, rc::Rc};
+use std::rc::Rc;
+
+const LIMBS: usize = 4;
+const BITS: usize = 68;
+type Plonk = verifier::Plonk<KzgOnSameCurve<Bn256, Gwc19<Bn256>, LIMBS, BITS>>;
 
 #[derive(Clone, Copy)]
 struct StandardPlonkConfig {
@@ -205,9 +210,6 @@ fn gen_evm_verifier(
     vk: &VerifyingKey<G1Affine>,
     num_instance: Vec<usize>,
 ) -> Vec<u8> {
-    const LIMBS: usize = 4;
-    const BITS: usize = 68;
-
     let protocol = compile(
         vk,
         Config {
@@ -221,30 +223,25 @@ fn gen_evm_verifier(
 
     let loader = EvmLoader::new::<Fq, Fr>();
     let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
+
     let instances = num_instance
         .into_iter()
-        .map(|len| {
-            iter::repeat_with(|| transcript.read_scalar().unwrap())
-                .take(len)
-                .collect_vec()
-        })
+        .map(|len| transcript.read_n_scalars(len).unwrap())
         .collect_vec();
-
-    let mut strategy = SameCurveAccumulation::<_, _, LIMBS, BITS>::default();
-    PlonkAccumulationScheme::accumulate(
+    Plonk::verify(
+        &params.get_g()[0],
+        &(params.g2(), params.s_g2()),
         &protocol,
-        &loader,
-        instances,
+        &instances,
         &mut transcript,
-        &mut strategy,
     )
     .unwrap();
-    strategy.finalize(params.get_g()[0], params.g2(), params.s_g2());
+
     loader.deployment_code()
 }
 
 fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
-    let calldata = encode_calldata(instances, proof);
+    let calldata = encode_calldata(&instances, &proof);
     let success = {
         let mut evm = ExecutorBuilder::default()
             .with_gas_limit(u64::MAX.into())

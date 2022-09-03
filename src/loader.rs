@@ -1,15 +1,18 @@
-use crate::util::{Curve, FieldOps, GroupOps, Itertools, PrimeField};
+use crate::util::{
+    arithmetic::{CurveAffine, FieldOps, PrimeField},
+    Itertools,
+};
 use std::{fmt::Debug, iter};
 
 pub mod native;
 
-#[cfg(feature = "evm")]
+#[cfg(feature = "loader_evm")]
 pub mod evm;
 
-#[cfg(feature = "halo2")]
+#[cfg(feature = "loader_halo2")]
 pub mod halo2;
 
-pub trait LoadedEcPoint<C: Curve>: Clone + Debug + GroupOps + PartialEq {
+pub trait LoadedEcPoint<C: CurveAffine>: Clone + Debug + PartialEq {
     type Loader: Loader<C, LoadedEcPoint = Self>;
 
     fn loader(&self) -> &Self::Loader;
@@ -24,83 +27,80 @@ pub trait LoadedEcPoint<C: Curve>: Clone + Debug + GroupOps + PartialEq {
     ) -> Self;
 }
 
-pub trait LoadedScalar<F: PrimeField>: Clone + Debug + FieldOps {
+pub trait LoadedScalar<F: PrimeField>: Clone + Debug + PartialEq + FieldOps {
     type Loader: ScalarLoader<F, LoadedScalar = Self>;
 
     fn loader(&self) -> &Self::Loader;
 
-    fn sum_with_coeff_and_constant(values: &[(F, Self)], constant: &F) -> Self {
+    fn sum_with_coeff_and_constant(values: &[(F, &Self)], constant: F) -> Self {
         assert!(!values.is_empty());
 
         let loader = values.first().unwrap().1.loader();
         iter::empty()
-            .chain(if *constant == F::zero() {
+            .chain(if constant == F::zero() {
                 None
             } else {
-                Some(loader.load_const(constant))
+                Some(loader.load_const(&constant))
             })
-            .chain(values.iter().map(|(coeff, value)| {
-                if *coeff == F::one() {
+            .chain(values.iter().map(|&(coeff, value)| {
+                if coeff == F::one() {
                     value.clone()
                 } else {
-                    loader.load_const(coeff) * value
+                    loader.load_const(&coeff) * value
                 }
             }))
             .reduce(|acc, term| acc + term)
             .unwrap()
     }
 
-    fn sum_products_with_coeff_and_constant(values: &[(F, Self, Self)], constant: &F) -> Self {
+    fn sum_products_with_coeff_and_constant(values: &[(F, &Self, &Self)], constant: F) -> Self {
         assert!(!values.is_empty());
 
         let loader = values.first().unwrap().1.loader();
         iter::empty()
-            .chain(if *constant == F::zero() {
+            .chain(if constant == F::zero() {
                 None
             } else {
-                Some(loader.load_const(constant))
+                Some(loader.load_const(&constant))
             })
-            .chain(values.iter().map(|(coeff, lhs, rhs)| {
-                if *coeff == F::one() {
+            .chain(values.iter().map(|&(coeff, lhs, rhs)| {
+                if coeff == F::one() {
                     lhs.clone() * rhs
                 } else {
-                    loader.load_const(coeff) * lhs * rhs
+                    loader.load_const(&coeff) * lhs * rhs
                 }
             }))
             .reduce(|acc, term| acc + term)
             .unwrap()
     }
 
-    fn sum_with_coeff(values: &[(F, Self)]) -> Self {
-        Self::sum_with_coeff_and_constant(values, &F::zero())
+    fn sum_with_coeff(values: &[(F, &Self)]) -> Self {
+        Self::sum_with_coeff_and_constant(values, F::zero())
     }
 
-    fn sum_products_with_coeff(values: &[(F, Self, Self)]) -> Self {
-        Self::sum_products_with_coeff_and_constant(values, &F::zero())
+    fn sum_products_with_coeff(values: &[(F, &Self, &Self)]) -> Self {
+        Self::sum_products_with_coeff_and_constant(values, F::zero())
     }
 
-    fn sum_products(values: &[(Self, Self)]) -> Self {
+    fn sum_products(values: &[(&Self, &Self)]) -> Self {
         Self::sum_products_with_coeff_and_constant(
             &values
                 .iter()
-                .map(|(lhs, rhs)| (F::one(), lhs.clone(), rhs.clone()))
+                .map(|&(lhs, rhs)| (F::one(), lhs, rhs))
                 .collect_vec(),
-            &F::zero(),
+            F::zero(),
         )
     }
 
-    fn sum_with_const(values: &[Self], constant: &F) -> Self {
+    fn sum_with_const(values: &[&Self], constant: F) -> Self {
         Self::sum_with_coeff_and_constant(
-            &values
-                .iter()
-                .map(|value| (F::one(), value.clone()))
-                .collect_vec(),
+            &values.iter().map(|&value| (F::one(), value)).collect_vec(),
             constant,
         )
     }
 
-    fn sum(values: &[Self]) -> Self {
-        Self::sum_with_const(values, &F::zero())
+    fn sum(values: &[&Self]) -> Self {
+        Self::sum_with_const(values, F::zero())
     }
 
     fn square(&self) -> Self {
@@ -151,7 +151,7 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + FieldOps {
     }
 }
 
-pub trait EcPointLoader<C: Curve> {
+pub trait EcPointLoader<C: CurveAffine> {
     type LoadedEcPoint: LoadedEcPoint<C, Loader = Self>;
 
     fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint;
@@ -179,7 +179,9 @@ pub trait ScalarLoader<F: PrimeField> {
     }
 }
 
-pub trait Loader<C: Curve>: EcPointLoader<C> + ScalarLoader<C::Scalar> + Clone {
+pub trait Loader<C: CurveAffine>:
+    EcPointLoader<C> + ScalarLoader<C::ScalarExt> + Clone + Debug
+{
     fn start_cost_metering(&self, _: &str) {}
 
     fn end_cost_metering(&self) {}
