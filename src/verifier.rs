@@ -10,27 +10,27 @@ mod plonk;
 
 pub use plonk::{Plonk, PlonkProof};
 
-pub trait PlonkVerifier<C, L, PCS, AS, T>
+pub trait PlonkVerifier<C, L, PCS, AS>
 where
     C: CurveAffine,
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
     AS: AccumulationStrategy<C, L, PCS>,
-    T: TranscriptRead<C, L>,
 {
     type Proof: Debug;
 
-    fn read_proof(
+    fn read_proof<T>(
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
-    ) -> Result<Self::Proof, Error>;
+    ) -> Result<Self::Proof, Error>
+    where
+        T: TranscriptRead<C, L>;
 
     fn succint_verify(
         svk: &PCS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
-        transcript: &mut T,
         proof: &Self::Proof,
     ) -> Result<PCS::PreAccumulator, Error>;
 
@@ -39,10 +39,9 @@ where
         dk: &PCS::DecidingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
-        transcript: &mut T,
+        proof: &Self::Proof,
     ) -> Result<AS::Output, Error> {
-        let proof = Self::read_proof(protocol, instances, transcript).unwrap();
-        let accumulator = Self::succint_verify(svk, protocol, instances, transcript, &proof)
+        let accumulator = Self::succint_verify(svk, protocol, instances, proof)
             .unwrap()
             .evaluate();
         AS::finalize(dk, accumulator)

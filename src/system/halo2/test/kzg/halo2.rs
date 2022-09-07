@@ -119,8 +119,7 @@ pub fn accumulate<'a>(
         })
         .collect_vec();
     let proof = Shplonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
-    let mut accumulator =
-        Shplonk::succint_verify(g1, &snark.protocol, &instances, &mut transcript, &proof).unwrap();
+    let mut accumulator = Shplonk::succint_verify(g1, &snark.protocol, &instances, &proof).unwrap();
     if let Some(curr_accumulator) = curr_accumulator {
         accumulator += curr_accumulator * transcript.squeeze_challenge();
     }
@@ -151,14 +150,9 @@ impl Accumulation {
                 let mut transcript = PoseidonTranscript::init(snark.proof.as_slice());
                 let proof = Shplonk::read_proof(&snark.protocol, &snark.instances, &mut transcript)
                     .unwrap();
-                let mut accumulator = Shplonk::succint_verify(
-                    &g1,
-                    &snark.protocol,
-                    &snark.instances,
-                    &mut transcript,
-                    &proof,
-                )
-                .unwrap();
+                let mut accumulator =
+                    Shplonk::succint_verify(&g1, &snark.protocol, &snark.instances, &proof)
+                        .unwrap();
                 if let Some(curr_accumulator) = curr_accumulator {
                     accumulator += curr_accumulator * transcript.squeeze_challenge();
                 }

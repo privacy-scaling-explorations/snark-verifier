@@ -16,21 +16,23 @@ use std::{collections::HashMap, iter, marker::PhantomData};
 
 pub struct Plonk<AS>(PhantomData<AS>);
 
-impl<C, L, PCS, AS, T> PlonkVerifier<C, L, PCS, AS, T> for Plonk<AS>
+impl<C, L, PCS, AS> PlonkVerifier<C, L, PCS, AS> for Plonk<AS>
 where
     C: CurveAffine,
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
     AS: AccumulationStrategy<C, L, PCS>,
-    T: TranscriptRead<C, L>,
 {
-    type Proof = PlonkProof<C, L, PCS>;
+    type Proof = PlonkProof<C, L, PCS, AS>;
 
-    fn read_proof(
+    fn read_proof<T>(
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
-    ) -> Result<Self::Proof, Error> {
+    ) -> Result<Self::Proof, Error>
+    where
+        T: TranscriptRead<C, L>,
+    {
         PlonkProof::read(protocol, instances, transcript)
     }
 
@@ -38,7 +40,6 @@ where
         svk: &PCS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
-        transcript: &mut T,
         proof: &Self::Proof,
     ) -> Result<PCS::PreAccumulator, Error> {
         let common_poly_eval = {
@@ -59,19 +60,22 @@ where
 
         let mut accumulator =
             PCS::succinct_verify(svk, &commitments, &proof.z, &queries, &proof.pcs)?;
-        for old_accumulator in AS::extract_accumulators(&protocol.accumulator_indices, instances)? {
-            accumulator += (transcript.squeeze_challenge(), old_accumulator);
+
+        for old_accumulator in proof.old_accumulators.iter() {
+            accumulator += old_accumulator;
         }
+
         Ok(accumulator)
     }
 }
 
 #[derive(Debug)]
-pub struct PlonkProof<C, L, PCS>
+pub struct PlonkProof<C, L, PCS, AS>
 where
     C: CurveAffine,
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
+    AS: AccumulationStrategy<C, L, PCS>,
 {
     witnesses: Vec<L::LoadedEcPoint>,
     challenges: Vec<L::LoadedScalar>,
@@ -80,13 +84,16 @@ where
     z: L::LoadedScalar,
     evaluations: Vec<L::LoadedScalar>,
     pcs: PCS::Proof,
+    old_accumulators: Vec<(L::LoadedScalar, PCS::Accumulator)>,
+    _marker: PhantomData<AS>,
 }
 
-impl<C, L, PCS> PlonkProof<C, L, PCS>
+impl<C, L, PCS, AS> PlonkProof<C, L, PCS, AS>
 where
     C: CurveAffine,
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
+    AS: AccumulationStrategy<C, L, PCS>,
 {
     fn read<T>(
         protocol: &Protocol<C>,
@@ -150,6 +157,15 @@ where
 
         let pcs = PCS::read_proof(&Self::empty_queries(protocol), transcript)?;
 
+        let old_accumulators = AS::extract_accumulators(&protocol.accumulator_indices, instances)
+            .map(|old_accumulators| {
+            transcript
+                .squeeze_n_challenges(old_accumulators.len())
+                .into_iter()
+                .zip(old_accumulators)
+                .collect_vec()
+        })?;
+
         Ok(Self {
             witnesses,
             challenges,
@@ -158,6 +174,8 @@ where
             z,
             evaluations,
             pcs,
+            old_accumulators,
+            _marker: PhantomData,
         })
     }
 
@@ -329,8 +347,10 @@ where
             let num_msm = protocol.preprocessed.len() + num_commitment + 1 + 2 * num_accumulator;
             Cost::new(num_instance, num_commitment, num_evaluation, num_msm)
         };
-        let pcs_cost =
-            PCS::estimate_cost(&PlonkProof::<C, NativeLoader, PCS>::empty_queries(protocol));
+        let pcs_cost = {
+            let queries = PlonkProof::<C, NativeLoader, PCS, AS>::empty_queries(protocol);
+            PCS::estimate_cost(&queries)
+        };
         plonk_cost + pcs_cost
     }
 }

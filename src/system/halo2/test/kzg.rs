@@ -184,12 +184,13 @@ macro_rules! halo2_kzg_native_verify {
         use halo2_proofs::poly::commitment::ParamsProver;
         use $crate::verifier::PlonkVerifier;
 
+        let proof = <$plonk_verifier>::read_proof($protocol, $instances, $transcript).unwrap();
         assert!(<$plonk_verifier>::verify(
             &$params.get_g()[0],
             &($params.g2(), $params.s_g2()),
             $protocol,
             $instances,
-            $transcript,
+            &proof,
         )
         .unwrap())
     }};

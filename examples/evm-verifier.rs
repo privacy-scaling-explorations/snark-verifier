@@ -228,12 +228,13 @@ fn gen_evm_verifier(
         .into_iter()
         .map(|len| transcript.read_n_scalars(len).unwrap())
         .collect_vec();
+    let proof = Plonk::read_proof(&protocol, &instances, &mut transcript).unwrap();
     Plonk::verify(
         &params.get_g()[0],
         &(params.g2(), params.s_g2()),
         &protocol,
         &instances,
-        &mut transcript,
+        &proof,
     )
     .unwrap();
 

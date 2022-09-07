@@ -289,8 +289,7 @@ mod aggregation {
             .collect_vec();
         let proof = Plonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
         let mut accumulator =
-            Plonk::succint_verify(g1, &snark.protocol, &instances, &mut transcript, &proof)
-                .unwrap();
+            Plonk::succint_verify(g1, &snark.protocol, &instances, &proof).unwrap();
         if let Some(curr_accumulator) = curr_accumulator {
             accumulator += curr_accumulator * transcript.squeeze_challenge();
         }
@@ -353,14 +352,9 @@ mod aggregation {
                     let proof =
                         Plonk::read_proof(&snark.protocol, &snark.instances, &mut transcript)
                             .unwrap();
-                    let mut accumulator = Plonk::succint_verify(
-                        &g1,
-                        &snark.protocol,
-                        &snark.instances,
-                        &mut transcript,
-                        &proof,
-                    )
-                    .unwrap();
+                    let mut accumulator =
+                        Plonk::succint_verify(&g1, &snark.protocol, &snark.instances, &proof)
+                            .unwrap();
                     if let Some(curr_accumulator) = curr_accumulator {
                         accumulator += curr_accumulator * transcript.squeeze_challenge();
                     }
@@ -570,12 +564,13 @@ fn gen_aggregation_evm_verifier(
         .into_iter()
         .map(|len| transcript.read_n_scalars(len).unwrap())
         .collect_vec();
+    let proof = Plonk::read_proof(&protocol, &instances, &mut transcript).unwrap();
     Plonk::verify(
         &params.get_g()[0],
         &(params.g2(), params.s_g2()),
         &protocol,
         &instances,
-        &mut transcript,
+        &proof,
     )
     .unwrap();
 

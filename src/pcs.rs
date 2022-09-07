@@ -61,8 +61,8 @@ where
     type Proof: Debug;
     type PreAccumulator: Debug
         + PreAccumulator<Accumulator = Self::Accumulator>
-        + AddAssign<Self::PreAccumulator>
-        + AddAssign<(L::LoadedScalar, Self::Accumulator)>;
+        + for<'a> AddAssign<&'a Self::PreAccumulator>
+        + for<'a> AddAssign<&'a (L::LoadedScalar, Self::Accumulator)>;
     type Accumulator: Debug;
 
     fn read_proof<T>(

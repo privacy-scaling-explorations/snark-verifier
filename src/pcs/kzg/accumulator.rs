@@ -75,6 +75,18 @@ where
     }
 }
 
+impl<'a, C, L> Add<&'a Self> for PreAccumulator<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
+    type Output = Self;
+
+    fn add(self, rhs: &'a Self) -> Self::Output {
+        self + rhs.clone()
+    }
+}
+
 impl<C, L> AddAssign<Self> for PreAccumulator<C, L>
 where
     C: CurveAffine,
@@ -82,6 +94,16 @@ where
 {
     fn add_assign(&mut self, rhs: Self) {
         self.extend(rhs);
+    }
+}
+
+impl<'a, C, L> AddAssign<&'a Self> for PreAccumulator<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
+    fn add_assign(&mut self, rhs: &'a Self) {
+        *self += rhs.clone();
     }
 }
 
@@ -94,6 +116,16 @@ where
         let Accumulator { lhs, rhs } = accumulator;
         self.lhs.push(scalar.clone(), lhs);
         self.rhs.push(scalar, rhs);
+    }
+}
+
+impl<'a, C, L> AddAssign<&'a (L::LoadedScalar, Accumulator<C, L>)> for PreAccumulator<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
+    fn add_assign(&mut self, rhs: &'a (L::LoadedScalar, Accumulator<C, L>)) {
+        *self += rhs.clone();
     }
 }
 

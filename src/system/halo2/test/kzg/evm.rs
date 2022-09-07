@@ -41,13 +41,14 @@ macro_rules! halo2_kzg_evm_verify {
                 .iter()
                 .map(|instance| transcript.read_n_scalars(instance.len()).unwrap())
                 .collect_vec();
-
+            let proof =
+                <$plonk_verifier>::read_proof($protocol, &instances, &mut transcript).unwrap();
             <$plonk_verifier>::verify(
                 &$params.get_g()[0],
                 &($params.g2(), $params.s_g2()),
                 $protocol,
                 &instances,
-                &mut transcript,
+                &proof,
             )
             .unwrap();
 
