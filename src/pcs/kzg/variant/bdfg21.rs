@@ -227,6 +227,7 @@ impl<F: FieldExt, T: LoadedScalar<F>> QuerySet<F, T> {
             .zip(self.evaluations.iter())
             .zip(powers_of_mu.iter())
             .map(|((poly, evaluations), power_of_mu)| {
+                let loader = power_of_mu.loader();
                 let commitment = coeff
                     .commitment_coeff
                     .as_ref()
@@ -234,7 +235,7 @@ impl<F: FieldExt, T: LoadedScalar<F>> QuerySet<F, T> {
                         commitments[*poly].clone() * commitment_coeff.evaluated()
                     })
                     .unwrap_or_else(|| commitments[*poly].clone());
-                let remainder = T::sum_products(
+                let remainder = loader.sum_products(
                     &coeff
                         .evaluation_coeffs
                         .iter()
@@ -303,7 +304,7 @@ where
             .iter()
             .zip(normalized_ell_primes.iter())
             .map(|(shift, normalized_ell_prime)| {
-                T::sum_products_with_coeff(&[
+                loader.sum_products_with_coeff(&[
                     (*normalized_ell_prime, &z_pow_k_minus_one, z_prime),
                     (-(*normalized_ell_prime * shift), &z_pow_k_minus_one, z),
                 ])
@@ -335,11 +336,12 @@ where
                 .filter_map(Fraction::denom_mut)
                 .collect_vec()
         } else if self.remainder_coeff.is_none() {
+            let loader = self.z_s.loader();
             self.evaluation_coeffs
                 .iter_mut()
                 .chain(self.commitment_coeff.as_mut())
                 .for_each(Fraction::evaluate);
-            let barycentric_weights_sum = T::sum(
+            let barycentric_weights_sum = loader.sum(
                 &self
                     .evaluation_coeffs
                     .iter()

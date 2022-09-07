@@ -210,7 +210,7 @@ where
     ) -> Result<Vec<pcs::Query<C::Scalar, L::LoadedScalar>>, Error> {
         let loader = common_poly_eval.zn().loader();
         let instance_evaluations = instances.iter().map(|instances| {
-            L::LoadedScalar::sum_products(
+            loader.sum_products(
                 &instances
                     .iter()
                     .enumerate()
@@ -279,7 +279,7 @@ where
                 .collect::<Result<Vec<_>, Error>>()?;
 
             Some(
-                L::LoadedScalar::sum_products(
+                loader.sum_products(
                     &powers_of_alpha
                         .iter()
                         .rev()

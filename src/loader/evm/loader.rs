@@ -845,128 +845,6 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> LoadedScalar<F> for Scalar {
             }
         }
     }
-
-    fn sum_with_coeff_and_constant(values: &[(F, &Self)], constant: F) -> Self {
-        assert!(!values.is_empty());
-
-        let loader = &values.first().unwrap().1.loader;
-
-        let push_addend = |(coeff, value): &(F, &Scalar)| {
-            assert_ne!(*coeff, F::zero());
-            match (*coeff == F::one(), &value.value) {
-                (true, _) => {
-                    loader.push(value);
-                }
-                (false, Value::Constant(value)) => {
-                    loader.push(&loader.scalar(Value::Constant(fe_to_u256(
-                        *coeff * u256_to_fe::<F>(*value),
-                    ))));
-                }
-                (false, _) => {
-                    loader.code.borrow_mut().push(loader.scalar_modulus);
-                    loader.push(&loader.scalar(Value::Constant(fe_to_u256(*coeff))));
-                    loader.push(value);
-                    loader.code.borrow_mut().mulmod();
-                }
-            }
-        };
-
-        let mut values = values.iter();
-        if constant == F::zero() {
-            push_addend(values.next().unwrap());
-        } else {
-            loader.push(&loader.scalar(Value::Constant(fe_to_u256(constant))));
-        }
-
-        let chunk_size = 16 - loader.code.borrow().stack_len();
-        for values in &values.chunks(chunk_size) {
-            let values = values.into_iter().collect_vec();
-
-            loader.code.borrow_mut().push(loader.scalar_modulus);
-            for _ in 1..chunk_size.min(values.len()) {
-                loader.code.borrow_mut().dup(0);
-            }
-            loader.code.borrow_mut().swap(chunk_size.min(values.len()));
-
-            for value in values {
-                push_addend(value);
-                loader.code.borrow_mut().addmod();
-            }
-        }
-
-        let ptr = loader.allocate(0x20);
-        loader.code.borrow_mut().push(ptr).mstore();
-
-        loader.scalar(Value::Memory(ptr))
-    }
-
-    fn sum_products_with_coeff_and_constant(values: &[(F, &Self, &Self)], constant: F) -> Self {
-        assert!(!values.is_empty());
-
-        let loader = &values.first().unwrap().1.loader;
-
-        let push_addend = |(coeff, lhs, rhs): &(F, &Scalar, &Scalar)| {
-            assert_ne!(*coeff, F::zero());
-            match (*coeff == F::one(), &lhs.value, &rhs.value) {
-                (_, Value::Constant(lhs), Value::Constant(rhs)) => {
-                    loader.push(&loader.scalar(Value::Constant(fe_to_u256(
-                        *coeff * u256_to_fe::<F>(*lhs) * u256_to_fe::<F>(*rhs),
-                    ))));
-                }
-                (_, value @ Value::Memory(_), Value::Constant(constant))
-                | (_, Value::Constant(constant), value @ Value::Memory(_)) => {
-                    loader.code.borrow_mut().push(loader.scalar_modulus);
-                    loader.push(&loader.scalar(Value::Constant(fe_to_u256(
-                        *coeff * u256_to_fe::<F>(*constant),
-                    ))));
-                    loader.push(&loader.scalar(value.clone()));
-                    loader.code.borrow_mut().mulmod();
-                }
-                (true, _, _) => {
-                    loader.code.borrow_mut().push(loader.scalar_modulus);
-                    loader.push(lhs);
-                    loader.push(rhs);
-                    loader.code.borrow_mut().mulmod();
-                }
-                (false, _, _) => {
-                    loader.code.borrow_mut().push(loader.scalar_modulus).dup(0);
-                    loader.push(&loader.scalar(Value::Constant(fe_to_u256(*coeff))));
-                    loader.push(lhs);
-                    loader.code.borrow_mut().mulmod();
-                    loader.push(rhs);
-                    loader.code.borrow_mut().mulmod();
-                }
-            }
-        };
-
-        let mut values = values.iter();
-        if constant == F::zero() {
-            push_addend(values.next().unwrap());
-        } else {
-            loader.push(&loader.scalar(Value::Constant(fe_to_u256(constant))));
-        }
-
-        let chunk_size = 16 - loader.code.borrow().stack_len();
-        for values in &values.chunks(chunk_size) {
-            let values = values.into_iter().collect_vec();
-
-            loader.code.borrow_mut().push(loader.scalar_modulus);
-            for _ in 1..chunk_size.min(values.len()) {
-                loader.code.borrow_mut().dup(0);
-            }
-            loader.code.borrow_mut().swap(chunk_size.min(values.len()));
-
-            for value in values {
-                push_addend(value);
-                loader.code.borrow_mut().addmod();
-            }
-        }
-
-        let ptr = loader.allocate(0x20);
-        loader.code.borrow_mut().push(ptr).mstore();
-
-        loader.scalar(Value::Memory(ptr))
-    }
 }
 
 impl<C> EcPointLoader<C> for Rc<EvmLoader>
@@ -989,6 +867,132 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
 
     fn load_const(&self, value: &F) -> Scalar {
         self.scalar(Value::Constant(fe_to_u256(*value)))
+    }
+
+    fn sum_with_coeff_and_constant(&self, values: &[(F, &Scalar)], constant: F) -> Scalar {
+        if values.is_empty() {
+            return self.load_const(&constant);
+        }
+
+        let push_addend = |(coeff, value): &(F, &Scalar)| {
+            assert_ne!(*coeff, F::zero());
+            match (*coeff == F::one(), &value.value) {
+                (true, _) => {
+                    self.push(value);
+                }
+                (false, Value::Constant(value)) => {
+                    self.push(&self.scalar(Value::Constant(fe_to_u256(
+                        *coeff * u256_to_fe::<F>(*value),
+                    ))));
+                }
+                (false, _) => {
+                    self.code.borrow_mut().push(self.scalar_modulus);
+                    self.push(&self.scalar(Value::Constant(fe_to_u256(*coeff))));
+                    self.push(value);
+                    self.code.borrow_mut().mulmod();
+                }
+            }
+        };
+
+        let mut values = values.iter();
+        if constant == F::zero() {
+            push_addend(values.next().unwrap());
+        } else {
+            self.push(&self.scalar(Value::Constant(fe_to_u256(constant))));
+        }
+
+        let chunk_size = 16 - self.code.borrow().stack_len();
+        for values in &values.chunks(chunk_size) {
+            let values = values.into_iter().collect_vec();
+
+            self.code.borrow_mut().push(self.scalar_modulus);
+            for _ in 1..chunk_size.min(values.len()) {
+                self.code.borrow_mut().dup(0);
+            }
+            self.code.borrow_mut().swap(chunk_size.min(values.len()));
+
+            for value in values {
+                push_addend(value);
+                self.code.borrow_mut().addmod();
+            }
+        }
+
+        let ptr = self.allocate(0x20);
+        self.code.borrow_mut().push(ptr).mstore();
+
+        self.scalar(Value::Memory(ptr))
+    }
+
+    fn sum_products_with_coeff_and_constant(
+        &self,
+        values: &[(F, &Scalar, &Scalar)],
+        constant: F,
+    ) -> Scalar {
+        if values.is_empty() {
+            return self.load_const(&constant);
+        }
+
+        let push_addend = |(coeff, lhs, rhs): &(F, &Scalar, &Scalar)| {
+            assert_ne!(*coeff, F::zero());
+            match (*coeff == F::one(), &lhs.value, &rhs.value) {
+                (_, Value::Constant(lhs), Value::Constant(rhs)) => {
+                    self.push(&self.scalar(Value::Constant(fe_to_u256(
+                        *coeff * u256_to_fe::<F>(*lhs) * u256_to_fe::<F>(*rhs),
+                    ))));
+                }
+                (_, value @ Value::Memory(_), Value::Constant(constant))
+                | (_, Value::Constant(constant), value @ Value::Memory(_)) => {
+                    self.code.borrow_mut().push(self.scalar_modulus);
+                    self.push(&self.scalar(Value::Constant(fe_to_u256(
+                        *coeff * u256_to_fe::<F>(*constant),
+                    ))));
+                    self.push(&self.scalar(value.clone()));
+                    self.code.borrow_mut().mulmod();
+                }
+                (true, _, _) => {
+                    self.code.borrow_mut().push(self.scalar_modulus);
+                    self.push(lhs);
+                    self.push(rhs);
+                    self.code.borrow_mut().mulmod();
+                }
+                (false, _, _) => {
+                    self.code.borrow_mut().push(self.scalar_modulus).dup(0);
+                    self.push(&self.scalar(Value::Constant(fe_to_u256(*coeff))));
+                    self.push(lhs);
+                    self.code.borrow_mut().mulmod();
+                    self.push(rhs);
+                    self.code.borrow_mut().mulmod();
+                }
+            }
+        };
+
+        let mut values = values.iter();
+        if constant == F::zero() {
+            push_addend(values.next().unwrap());
+        } else {
+            self.push(&self.scalar(Value::Constant(fe_to_u256(constant))));
+        }
+
+        let chunk_size = 16 - self.code.borrow().stack_len();
+        for values in &values.chunks(chunk_size) {
+            let values = values.into_iter().collect_vec();
+
+            self.code.borrow_mut().push(self.scalar_modulus);
+            for _ in 1..chunk_size.min(values.len()) {
+                self.code.borrow_mut().dup(0);
+            }
+            self.code.borrow_mut().swap(chunk_size.min(values.len()));
+
+            for value in values {
+                push_addend(value);
+                self.code.borrow_mut().addmod();
+            }
+        }
+
+        let ptr = self.allocate(0x20);
+        self.code.borrow_mut().push(ptr).mstore();
+
+        self.scalar(Value::Memory(ptr))
     }
 }
 
