@@ -1,9 +1,8 @@
 use crate::{
-    halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_accumulate, halo2_kzg_native_verify,
-    halo2_kzg_prepare,
+    halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare,
     loader::halo2,
     pcs::{
-        kzg::{Accumulator, Bdfg21, Gwc19, KzgOnSameCurve, PreAccumulator},
+        kzg::{Accumulator, Bdfg21, KzgOnSameCurve, PreAccumulator},
         PreAccumulator as _,
     },
     system::halo2::{
@@ -25,7 +24,8 @@ use halo2_proofs::{
     poly::{
         commitment::ParamsProver,
         kzg::{
-            multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK},
+            commitment::ParamsKZG,
+            multiopen::{ProverSHPLONK, VerifierSHPLONK},
             strategy::AccumulatorStrategy,
         },
     },
@@ -62,7 +62,6 @@ type PoseidonTranscript<G1Affine, L, S, B> = halo2::PoseidonTranscript<
     R_F,
     R_P,
 >;
-type Plonk = verifier::Plonk<KzgOnSameCurve<Bn256, Gwc19<Bn256>, LIMBS, BITS>>;
 type Shplonk = verifier::Plonk<KzgOnSameCurve<Bn256, Bdfg21<Bn256>, LIMBS, BITS>>;
 
 pub struct SnarkWitness {
@@ -119,9 +118,9 @@ pub fn accumulate<'a>(
                 .collect_vec()
         })
         .collect_vec();
-    let proof = Plonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
+    let proof = Shplonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
     let mut accumulator =
-        Plonk::succint_verify(g1, &snark.protocol, &instances, &mut transcript, &proof).unwrap();
+        Shplonk::succint_verify(g1, &snark.protocol, &instances, &mut transcript, &proof).unwrap();
     if let Some(curr_accumulator) = curr_accumulator {
         accumulator += curr_accumulator * transcript.squeeze_challenge();
     }
@@ -139,6 +138,46 @@ impl Accumulation {
         (0..4 * LIMBS).map(|idx| (0, idx)).collect()
     }
 
+    pub fn new(
+        params: &ParamsKZG<Bn256>,
+        snarks: impl IntoIterator<Item = Snark<G1Affine>>,
+    ) -> Self {
+        let g1 = params.get_g()[0];
+        let snarks = snarks.into_iter().collect_vec();
+
+        let accumulator = snarks
+            .iter()
+            .fold(None, |curr_accumulator, snark| {
+                let mut transcript = PoseidonTranscript::init(snark.proof.as_slice());
+                let proof = Shplonk::read_proof(&snark.protocol, &snark.instances, &mut transcript)
+                    .unwrap();
+                let mut accumulator = Shplonk::succint_verify(
+                    &g1,
+                    &snark.protocol,
+                    &snark.instances,
+                    &mut transcript,
+                    &proof,
+                )
+                .unwrap();
+                if let Some(curr_accumulator) = curr_accumulator {
+                    accumulator += curr_accumulator * transcript.squeeze_challenge();
+                }
+                Some(accumulator)
+            })
+            .unwrap();
+
+        let Accumulator { lhs, rhs } = accumulator.evaluate();
+        let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
+            .map(fe_to_limbs::<_, _, LIMBS, BITS>)
+            .concat();
+
+        Self {
+            g1,
+            snarks: snarks.into_iter().map_into().collect(),
+            instances,
+        }
+    }
+
     pub fn two_snark() -> Self {
         let (params, snark1) = {
             const K: u32 = 9;
@@ -148,8 +187,8 @@ impl Accumulation {
                 StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
             );
             let snark = halo2_kzg_create_snark!(
-                ProverGWC<_>,
-                VerifierGWC<_>,
+                ProverSHPLONK<_>,
+                VerifierSHPLONK<_>,
                 AccumulatorStrategy<_>,
                 PoseidonTranscript<_, _, _, _>,
                 PoseidonTranscript<_, _, _, _>,
@@ -169,8 +208,8 @@ impl Accumulation {
                 MainGateWithRange::rand(ChaCha20Rng::from_seed(Default::default()))
             );
             halo2_kzg_create_snark!(
-                ProverGWC<_>,
-                VerifierGWC<_>,
+                ProverSHPLONK<_>,
+                VerifierSHPLONK<_>,
                 AccumulatorStrategy<_>,
                 PoseidonTranscript<_, _, _, _>,
                 PoseidonTranscript<_, _, _, _>,
@@ -181,33 +220,7 @@ impl Accumulation {
                 &circuits
             )
         };
-
-        let accumulator = halo2_kzg_native_accumulate!(
-            Plonk,
-            &params,
-            &snark1.protocol,
-            &snark1.instances,
-            &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark1.proof.as_slice())
-        );
-        let accumulator = halo2_kzg_native_accumulate!(
-            Plonk,
-            &params,
-            &snark2.protocol,
-            &snark2.instances,
-            &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark2.proof.as_slice()),
-            accumulator
-        );
-
-        let Accumulator { lhs, rhs } = accumulator.evaluate();
-        let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
-            .map(fe_to_limbs::<_, _, LIMBS, BITS>)
-            .concat();
-
-        Self {
-            g1: params.get_g()[0],
-            snarks: vec![snark1.into(), snark2.into()],
-            instances,
-        }
+        Self::new(&params, [snark1, snark2])
     }
 
     pub fn two_snark_with_accumulator() -> Self {
@@ -220,8 +233,8 @@ impl Accumulation {
             )
         };
         let snark = halo2_kzg_create_snark!(
-            ProverGWC<_>,
-            VerifierGWC<_>,
+            ProverSHPLONK<_>,
+            VerifierSHPLONK<_>,
             AccumulatorStrategy<_>,
             PoseidonTranscript<_, _, _, _>,
             PoseidonTranscript<_, _, _, _>,
@@ -231,25 +244,7 @@ impl Accumulation {
             &protocol,
             &circuits
         );
-
-        let accumulator = halo2_kzg_native_accumulate!(
-            Plonk,
-            &params,
-            &snark.protocol,
-            &snark.instances,
-            &mut PoseidonTranscript::<G1Affine, _, _, _>::init(snark.proof.as_slice())
-        );
-
-        let Accumulator { lhs, rhs } = accumulator.evaluate();
-        let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
-            .map(fe_to_limbs::<_, _, LIMBS, BITS>)
-            .concat();
-
-        Self {
-            g1: params.get_g()[0],
-            snarks: vec![snark.into()],
-            instances,
-        }
+        Self::new(&params, [snark])
     }
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {

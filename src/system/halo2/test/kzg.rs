@@ -176,20 +176,6 @@ macro_rules! halo2_kzg_native_accumulate {
         )
         .unwrap()
     }};
-    ($plonk_verifier:ty, $params:expr, $protocol:expr, $instances:expr, $transcript:expr, $curr_accumulator:expr) => {{
-        use $crate::{util::transcript::Transcript, verifier::PlonkVerifier};
-
-        let proof = <$plonk_verifier>::read_proof($protocol, $instances, $transcript).unwrap();
-        let accumulator = <$plonk_verifier>::succint_verify(
-            &$params.get_g()[0],
-            $protocol,
-            $instances,
-            $transcript,
-            &proof,
-        )
-        .unwrap();
-        accumulator + $curr_accumulator * $transcript.squeeze_challenge()
-    }};
 }
 
 #[macro_export]

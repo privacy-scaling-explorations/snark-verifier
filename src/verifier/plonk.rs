@@ -73,7 +73,7 @@ where
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
 {
-    auxiliaries: Vec<L::LoadedEcPoint>,
+    witnesses: Vec<L::LoadedEcPoint>,
     challenges: Vec<L::LoadedScalar>,
     alpha: L::LoadedScalar,
     quotients: Vec<L::LoadedEcPoint>,
@@ -113,8 +113,8 @@ where
             }
         }
 
-        let (auxiliaries, challenges) = {
-            let (auxiliaries, challenges) = protocol
+        let (witnesses, challenges) = {
+            let (witnesses, challenges) = protocol
                 .num_witness
                 .iter()
                 .zip(protocol.num_challenge.iter())
@@ -129,7 +129,7 @@ where
                 .unzip::<_, _, Vec<_>, Vec<_>>();
 
             (
-                auxiliaries.into_iter().flatten().collect_vec(),
+                witnesses.into_iter().flatten().collect_vec(),
                 challenges.into_iter().flatten().collect_vec(),
             )
         };
@@ -151,7 +151,7 @@ where
         let pcs = PCS::read_proof(&Self::empty_queries(protocol), transcript)?;
 
         Ok(Self {
-            auxiliaries,
+            witnesses,
             challenges,
             alpha,
             quotients,
@@ -189,7 +189,7 @@ where
                     .map(|value| Msm::base(loader.ec_point_load_const(value))),
             )
             .chain(iter::repeat_with(Default::default).take(protocol.num_instance.len()))
-            .chain(self.auxiliaries.iter().cloned().map(Msm::base))
+            .chain(self.witnesses.iter().cloned().map(Msm::base))
             .chain(Some(
                 common_poly_eval
                     .zn()
