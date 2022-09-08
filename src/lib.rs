@@ -31,6 +31,7 @@ pub struct Protocol<C: util::arithmetic::CurveAffine> {
     pub evaluations: Vec<util::expression::Query>,
     pub queries: Vec<util::expression::Query>,
     pub constraints: Vec<util::expression::Expression<C::Scalar>>,
+    pub quotient_poly: util::expression::SplitPolynomial,
     pub transcript_initial_state: C::Scalar,
     pub accumulator_indices: Vec<Vec<(usize, usize)>>,
 }

@@ -101,6 +101,23 @@ where
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct SplitPolynomial {
+    pub index: usize,
+    pub num_chunk: usize,
+    pub chunk_degree: usize,
+}
+
+impl SplitPolynomial {
+    pub fn new(index: usize, num_chunk: usize, chunk_degree: usize) -> Self {
+        Self {
+            index,
+            num_chunk,
+            chunk_degree,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Query {
     pub poly: usize,

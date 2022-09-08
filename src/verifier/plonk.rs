@@ -77,14 +77,14 @@ where
     PCS: PolynomialCommitmentScheme<C, L>,
     AS: AccumulationStrategy<C, L, PCS>,
 {
-    witnesses: Vec<L::LoadedEcPoint>,
-    challenges: Vec<L::LoadedScalar>,
-    alpha: L::LoadedScalar,
-    quotients: Vec<L::LoadedEcPoint>,
-    z: L::LoadedScalar,
-    evaluations: Vec<L::LoadedScalar>,
-    pcs: PCS::Proof,
-    old_accumulators: Vec<(L::LoadedScalar, PCS::Accumulator)>,
+    pub witnesses: Vec<L::LoadedEcPoint>,
+    pub challenges: Vec<L::LoadedScalar>,
+    pub alpha: L::LoadedScalar,
+    pub quotients: Vec<L::LoadedEcPoint>,
+    pub z: L::LoadedScalar,
+    pub evaluations: Vec<L::LoadedScalar>,
+    pub pcs: PCS::Proof,
+    pub old_accumulators: Vec<(L::LoadedScalar, PCS::Accumulator)>,
     _marker: PhantomData<AS>,
 }
 
@@ -142,15 +142,7 @@ where
         };
 
         let alpha = transcript.squeeze_challenge();
-        let quotients = {
-            let max_degree = protocol
-                .constraints
-                .iter()
-                .map(Expression::degree)
-                .max()
-                .unwrap();
-            transcript.read_n_ec_points(max_degree - 1)?
-        };
+        let quotients = transcript.read_n_ec_points(protocol.quotient_poly.num_chunk)?;
 
         let z = transcript.squeeze_challenge();
         let evaluations = transcript.read_n_scalars(protocol.evaluations.len())?;
@@ -208,15 +200,23 @@ where
             )
             .chain(iter::repeat_with(Default::default).take(protocol.num_instance.len()))
             .chain(self.witnesses.iter().cloned().map(Msm::base))
-            .chain(Some(
-                common_poly_eval
-                    .zn()
-                    .powers(self.quotients.len())
-                    .into_iter()
-                    .zip(self.quotients.iter().cloned().map(Msm::base))
-                    .map(|(coeff, piece)| piece * &coeff)
-                    .sum(),
+            .chain(iter::repeat_with(Default::default).take(
+                protocol.quotient_poly.index - (protocol.preprocessed.len()
+                    + protocol.num_instance.len()
+                    + protocol.num_witness.iter().sum::<usize>()),
             ))
+            .chain({
+                Some(
+                    common_poly_eval
+                        .zn()
+                        .pow_const(protocol.quotient_poly.chunk_degree as u64)
+                        .powers(self.quotients.len())
+                        .into_iter()
+                        .zip(self.quotients.iter().cloned().map(Msm::base))
+                        .map(|(coeff, chunk)| chunk * &coeff)
+                        .sum(),
+                )
+            })
             .collect()
     }
 
@@ -276,11 +276,11 @@ where
                     constraint.evaluate(
                         &|scalar| Ok(loader.load_const(&scalar)),
                         &|poly| Ok(common_poly_eval.get(poly).clone()),
-                        &|index| {
+                        &|query| {
                             evaluations
-                                .get(&index)
+                                .get(&query)
                                 .cloned()
-                                .ok_or(Error::MissingQuery(index))
+                                .ok_or(Error::MissingQuery(query))
                         },
                         &|index| {
                             self.challenges
@@ -288,10 +288,10 @@ where
                                 .cloned()
                                 .ok_or(Error::MissingChallenge(index))
                         },
-                        &|a| a.map(|a| -a),
-                        &|a, b| a.and_then(|a| Ok(a + b?)),
-                        &|a, b| a.and_then(|a| Ok(a * b?)),
-                        &|a, scalar| a.map(|a| a * loader.load_const(&scalar)),
+                        &|a| Ok(-a?),
+                        &|a, b| Ok(a? + b?),
+                        &|a, b| Ok(a? * b?),
+                        &|a, scalar| Ok(a? * loader.load_const(&scalar)),
                     )
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
@@ -308,10 +308,11 @@ where
         };
 
         let evaluations = protocol.queries.iter().map(|query| {
-            evaluations
-                .remove(query)
-                .or_else(|| quotient_evaluation.take())
-                .unwrap()
+            if query.poly == protocol.quotient_poly.index {
+                quotient_evaluation.take().unwrap()
+            } else {
+                evaluations.remove(query).unwrap()
+            }
         });
 
         Ok(Self::empty_queries(protocol)

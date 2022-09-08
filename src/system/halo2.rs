@@ -1,7 +1,7 @@
 use crate::{
     util::{
         arithmetic::{root_of_unity, CurveAffine, Domain, FieldExt, Rotation},
-        expression::{CommonPolynomial, Expression, Query},
+        expression::{CommonPolynomial, Expression, Query, SplitPolynomial},
         Itertools,
     },
     Protocol,
@@ -69,7 +69,7 @@ pub fn compile<C: CurveAffine>(vk: &VerifyingKey<C>, config: Config) -> Protocol
         })
         .chain(polynomials.fixed_queries())
         .chain(polynomials.permutation_fixed_queries())
-        .chain(iter::once(polynomials.vanishing_query()))
+        .chain(iter::once(polynomials.quotient_query()))
         .chain(polynomials.random_query())
         .collect();
 
@@ -98,6 +98,7 @@ pub fn compile<C: CurveAffine>(vk: &VerifyingKey<C>, config: Config) -> Protocol
         evaluations,
         queries,
         constraints,
+        quotient_poly: polynomials.quotient_poly(),
         transcript_initial_state,
         accumulator_indices,
     }
@@ -113,6 +114,7 @@ struct Polynomials<'a, F: FieldExt> {
     cs: &'a ConstraintSystem<F>,
     zk: bool,
     query_instance: bool,
+    degree: usize,
     num_proof: usize,
     num_fixed: usize,
     num_permutation_fixed: usize,
@@ -145,6 +147,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             cs,
             zk,
             query_instance,
+            degree,
             num_proof,
             num_fixed: cs.num_fixed_columns(),
             num_permutation_fixed: cs.permutation().get_columns().len(),
@@ -346,11 +349,16 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         })
     }
 
-    fn vanishing_query(&self) -> Query {
-        Query::new(
+    fn quotient_poly(&self) -> SplitPolynomial {
+        SplitPolynomial::new(
             self.witness_offset() + self.num_witness().iter().sum::<usize>(),
-            0,
+            self.degree - 1,
+            1,
         )
+    }
+
+    fn quotient_query(&self) -> Query {
+        Query::new(self.quotient_poly().index, 0)
     }
 
     fn random_query(&self) -> Option<Query> {
