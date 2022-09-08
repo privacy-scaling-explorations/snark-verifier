@@ -1,6 +1,6 @@
 use crate::{
     loader::{
-        halo2::loader::{EcPoint, Halo2Loader, Scalar, Value},
+        halo2::{self, EcPoint, Halo2Loader, Scalar},
         native::{self, NativeLoader},
     },
     util::{
@@ -9,7 +9,7 @@ use crate::{
     },
     Error,
 };
-use halo2_proofs::circuit;
+use halo2_proofs::{circuit::Value, transcript::EncodedChallenge};
 use halo2_wrong_ecc::BaseFieldEccChip;
 use halo2_wrong_transcript::{PointRepresentation, TranscriptChip};
 use poseidon::{Poseidon, Spec};
@@ -56,7 +56,7 @@ impl<
         C::Scalar,
         E,
         Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>>,
-        circuit::Value<R>,
+        Value<R>,
         TranscriptChip<C, C::Scalar, E, LIMBS, BITS, T, RATE>,
         LIMBS,
         BITS,
@@ -68,7 +68,7 @@ impl<
 {
     pub fn new(
         loader: &Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>>,
-        stream: circuit::Value<R>,
+        stream: Value<R>,
     ) -> Self {
         let transcript_chip = TranscriptChip::new(
             &mut loader.ctx_mut(),
@@ -103,7 +103,7 @@ impl<
         C::Scalar,
         E,
         Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>>,
-        circuit::Value<R>,
+        Value<R>,
         TranscriptChip<C, C::Scalar, E, LIMBS, BITS, T, RATE>,
         LIMBS,
         BITS,
@@ -119,7 +119,7 @@ impl<
 
     fn squeeze_challenge(&mut self) -> Scalar<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>> {
         let assigned = self.buf.squeeze(&mut self.loader.ctx_mut()).unwrap();
-        self.loader.scalar(Value::Assigned(assigned))
+        self.loader.scalar(halo2::loader::Value::Assigned(assigned))
     }
 
     fn common_scalar(
@@ -158,7 +158,7 @@ impl<
         C::Scalar,
         E,
         Rc<Halo2Loader<'a, C, C::Scalar, BaseFieldEccChip<C, LIMBS, BITS>>>,
-        circuit::Value<R>,
+        Value<R>,
         TranscriptChip<C, C::Scalar, E, LIMBS, BITS, T, RATE>,
         LIMBS,
         BITS,
@@ -174,11 +174,11 @@ impl<
         let scalar = self.stream.as_mut().and_then(|stream| {
             let mut data = <C::Scalar as PrimeField>::Repr::default();
             if stream.read_exact(data.as_mut()).is_err() {
-                return circuit::Value::unknown();
+                return Value::unknown();
             }
             Option::<C::Scalar>::from(C::Scalar::from_repr(data))
-                .map(circuit::Value::known)
-                .unwrap_or_else(circuit::Value::unknown)
+                .map(Value::known)
+                .unwrap_or_else(Value::unknown)
         });
         let scalar = self.loader.assign_scalar(scalar);
         self.common_scalar(&scalar)?;
@@ -191,11 +191,11 @@ impl<
         let ec_point = self.stream.as_mut().and_then(|stream| {
             let mut compressed = C::Repr::default();
             if stream.read_exact(compressed.as_mut()).is_err() {
-                return circuit::Value::unknown();
+                return Value::unknown();
             }
             Option::<C>::from(C::from_bytes(&compressed))
-                .map(circuit::Value::known)
-                .unwrap_or_else(circuit::Value::unknown)
+                .map(Value::known)
+                .unwrap_or_else(Value::unknown)
         });
         let ec_point = self.loader.assign_ec_point(ec_point);
         self.common_ec_point(&ec_point)?;
@@ -381,5 +381,216 @@ impl<
 
     pub fn finalize(self) -> W {
         self.stream
+    }
+}
+
+pub struct ChallengeScalar<C: CurveAffine>(C::Scalar);
+
+impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {
+    type Input = C::Scalar;
+
+    fn new(challenge_input: &C::Scalar) -> Self {
+        ChallengeScalar(*challenge_input)
+    }
+
+    fn get_scalar(&self) -> C::Scalar {
+        self.0
+    }
+}
+
+impl<
+        C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar, LIMBS, BITS>,
+        S,
+        const LIMBS: usize,
+        const BITS: usize,
+        const T: usize,
+        const RATE: usize,
+        const R_F: usize,
+        const R_P: usize,
+    > halo2_proofs::transcript::Transcript<C, ChallengeScalar<C>>
+    for PoseidonTranscript<
+        C,
+        C::Scalar,
+        E,
+        NativeLoader,
+        S,
+        Poseidon<C::Scalar, T, RATE>,
+        LIMBS,
+        BITS,
+        T,
+        RATE,
+        R_F,
+        R_P,
+    >
+{
+    fn squeeze_challenge(&mut self) -> ChallengeScalar<C> {
+        ChallengeScalar::new(&Transcript::squeeze_challenge(self))
+    }
+
+    fn common_point(&mut self, ec_point: C) -> io::Result<()> {
+        match Transcript::common_ec_point(self, &ec_point) {
+            Err(Error::Transcript(kind, msg)) => Err(io::Error::new(kind, msg)),
+            Err(_) => unreachable!(),
+            _ => Ok(()),
+        }
+    }
+
+    fn common_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
+        match Transcript::common_scalar(self, &scalar) {
+            Err(Error::Transcript(kind, msg)) => Err(io::Error::new(kind, msg)),
+            Err(_) => unreachable!(),
+            _ => Ok(()),
+        }
+    }
+}
+
+impl<
+        C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar, LIMBS, BITS>,
+        R: Read,
+        const LIMBS: usize,
+        const BITS: usize,
+        const T: usize,
+        const RATE: usize,
+        const R_F: usize,
+        const R_P: usize,
+    > halo2_proofs::transcript::TranscriptRead<C, ChallengeScalar<C>>
+    for PoseidonTranscript<
+        C,
+        C::Scalar,
+        E,
+        NativeLoader,
+        R,
+        Poseidon<C::Scalar, T, RATE>,
+        LIMBS,
+        BITS,
+        T,
+        RATE,
+        R_F,
+        R_P,
+    >
+{
+    fn read_point(&mut self) -> io::Result<C> {
+        match TranscriptRead::read_ec_point(self) {
+            Err(Error::Transcript(kind, msg)) => Err(io::Error::new(kind, msg)),
+            Err(_) => unreachable!(),
+            Ok(value) => Ok(value),
+        }
+    }
+
+    fn read_scalar(&mut self) -> io::Result<C::Scalar> {
+        match TranscriptRead::read_scalar(self) {
+            Err(Error::Transcript(kind, msg)) => Err(io::Error::new(kind, msg)),
+            Err(_) => unreachable!(),
+            Ok(value) => Ok(value),
+        }
+    }
+}
+
+impl<
+        C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar, LIMBS, BITS>,
+        R: Read,
+        const LIMBS: usize,
+        const BITS: usize,
+        const T: usize,
+        const RATE: usize,
+        const R_F: usize,
+        const R_P: usize,
+    > halo2_proofs::transcript::TranscriptReadBuffer<R, C, ChallengeScalar<C>>
+    for PoseidonTranscript<
+        C,
+        C::Scalar,
+        E,
+        NativeLoader,
+        R,
+        Poseidon<C::Scalar, T, RATE>,
+        LIMBS,
+        BITS,
+        T,
+        RATE,
+        R_F,
+        R_P,
+    >
+{
+    fn init(reader: R) -> Self {
+        Self::new(reader)
+    }
+}
+
+impl<
+        C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar, LIMBS, BITS>,
+        W: Write,
+        const LIMBS: usize,
+        const BITS: usize,
+        const T: usize,
+        const RATE: usize,
+        const R_F: usize,
+        const R_P: usize,
+    > halo2_proofs::transcript::TranscriptWrite<C, ChallengeScalar<C>>
+    for PoseidonTranscript<
+        C,
+        C::Scalar,
+        E,
+        NativeLoader,
+        W,
+        Poseidon<C::Scalar, T, RATE>,
+        LIMBS,
+        BITS,
+        T,
+        RATE,
+        R_F,
+        R_P,
+    >
+{
+    fn write_point(&mut self, ec_point: C) -> io::Result<()> {
+        halo2_proofs::transcript::Transcript::<C, ChallengeScalar<C>>::common_point(
+            self, ec_point,
+        )?;
+        let data = ec_point.to_bytes();
+        self.stream_mut().write_all(data.as_ref())
+    }
+
+    fn write_scalar(&mut self, scalar: C::Scalar) -> io::Result<()> {
+        halo2_proofs::transcript::Transcript::<C, ChallengeScalar<C>>::common_scalar(self, scalar)?;
+        let data = scalar.to_repr();
+        self.stream_mut().write_all(data.as_ref())
+    }
+}
+
+impl<
+        C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar, LIMBS, BITS>,
+        W: Write,
+        const LIMBS: usize,
+        const BITS: usize,
+        const T: usize,
+        const RATE: usize,
+        const R_F: usize,
+        const R_P: usize,
+    > halo2_proofs::transcript::TranscriptWriterBuffer<W, C, ChallengeScalar<C>>
+    for PoseidonTranscript<
+        C,
+        C::Scalar,
+        E,
+        NativeLoader,
+        W,
+        Poseidon<C::Scalar, T, RATE>,
+        LIMBS,
+        BITS,
+        T,
+        RATE,
+        R_F,
+        R_P,
+    >
+{
+    fn init(writer: W) -> Self {
+        Self::new(writer)
+    }
+
+    fn finalize(self) -> W {
+        self.finalize()
     }
 }

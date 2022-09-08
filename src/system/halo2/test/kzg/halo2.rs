@@ -1,16 +1,18 @@
 use crate::{
-    halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare,
-    loader::halo2,
+    halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare, loader,
     pcs::{
         kzg::{Accumulator, Bdfg21, KzgOnSameCurve, PreAccumulator},
         PreAccumulator as _,
     },
-    system::halo2::{
-        test::{
-            kzg::{BITS, LIMBS},
-            MainGateWithRange, MainGateWithRangeConfig, Snark, StandardPlonk,
+    system::{
+        self,
+        halo2::{
+            test::{
+                kzg::{BITS, LIMBS},
+                MainGateWithRange, MainGateWithRangeConfig, Snark, StandardPlonk,
+            },
+            transcript::halo2::ChallengeScalar,
         },
-        util::halo2::ChallengeScalar,
     },
     util::{arithmetic::fe_to_limbs, transcript::Transcript, Itertools},
     verifier::{self, PlonkVerifier},
@@ -47,8 +49,8 @@ const R_F: usize = 8;
 const R_P: usize = 57;
 
 type BaseFieldEccChip = halo2_wrong_ecc::BaseFieldEccChip<G1Affine, LIMBS, BITS>;
-type Halo2Loader<'a> = halo2::Halo2Loader<'a, G1Affine, Fr, BaseFieldEccChip>;
-type PoseidonTranscript<G1Affine, L, S, B> = halo2::PoseidonTranscript<
+type Halo2Loader<'a> = loader::halo2::Halo2Loader<'a, G1Affine, Fr, BaseFieldEccChip>;
+type PoseidonTranscript<G1Affine, L, S, B> = system::halo2::transcript::halo2::PoseidonTranscript<
     G1Affine,
     Fr,
     NativeRepresentation,

@@ -13,7 +13,7 @@ use halo2_proofs::{
 };
 use std::{io, iter};
 
-pub mod util;
+pub mod transcript;
 
 #[cfg(test)]
 mod test;

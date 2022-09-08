@@ -18,11 +18,11 @@ use halo2_proofs::{
 use itertools::Itertools;
 use plonk_verifier::{
     loader::{
-        evm::{encode_calldata, EvmLoader, EvmTranscript},
+        evm::{encode_calldata, EvmLoader},
         native::NativeLoader,
     },
     pcs::kzg::{Gwc19, KzgOnSameCurve},
-    system::halo2::{compile, Config},
+    system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     util::transcript::TranscriptRead,
     verifier::{self, PlonkVerifier},
 };
@@ -180,11 +180,12 @@ mod aggregation {
     use halo2_wrong_transcript::NativeRepresentation;
     use itertools::Itertools;
     use plonk_verifier::{
-        loader::halo2,
+        loader,
         pcs::{
             kzg::{Accumulator, PreAccumulator},
             PreAccumulator as _,
         },
+        system,
         util::{
             arithmetic::{fe_to_limbs, FieldExt},
             transcript::Transcript,
@@ -200,8 +201,8 @@ mod aggregation {
     const R_P: usize = 57;
 
     type BaseFieldEccChip = halo2_wrong_ecc::BaseFieldEccChip<G1Affine, LIMBS, BITS>;
-    type Halo2Loader<'a> = halo2::Halo2Loader<'a, G1Affine, Fr, BaseFieldEccChip>;
-    pub type PoseidonTranscript<L, S, B> = halo2::PoseidonTranscript<
+    type Halo2Loader<'a> = loader::halo2::Halo2Loader<'a, G1Affine, Fr, BaseFieldEccChip>;
+    pub type PoseidonTranscript<L, S, B> = system::halo2::transcript::halo2::PoseidonTranscript<
         G1Affine,
         Fr,
         NativeRepresentation,

@@ -22,12 +22,6 @@ use std::{
 
 const WINDOW_SIZE: usize = 3;
 
-#[derive(Clone, Debug)]
-pub enum Value<T, L> {
-    Constant(T),
-    Assigned(L),
-}
-
 #[derive(Debug)]
 pub struct Halo2Loader<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> {
     ecc_chip: RefCell<EccChip>,
@@ -279,6 +273,12 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
             println!("{}: {}", identifier, cost);
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum Value<T, L> {
+    Constant(T),
+    Assigned(L),
 }
 
 #[derive(Clone)]

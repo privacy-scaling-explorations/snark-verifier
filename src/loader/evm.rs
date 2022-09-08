@@ -6,14 +6,12 @@ use ethereum_types::U256;
 use std::iter;
 
 mod code;
-mod loader;
-mod transcript;
+pub(crate) mod loader;
 
 #[cfg(test)]
 mod test;
 
 pub use loader::{EcPoint, EvmLoader, Scalar};
-pub use transcript::EvmTranscript;
 
 #[cfg(test)]
 pub use test::execute;

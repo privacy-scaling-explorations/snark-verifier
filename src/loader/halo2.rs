@@ -1,23 +1,24 @@
-use halo2_proofs::circuit::Value;
-
-mod loader;
+pub(crate) mod loader;
 mod shim;
-mod transcript;
 
 pub use loader::{EcPoint, Halo2Loader, Scalar};
 pub use shim::{EccInstructions, IntegerInstructions};
-pub use transcript::PoseidonTranscript;
+pub use util::Valuetools;
 
-pub trait Valuetools<V>: Iterator<Item = Value<V>> {
-    fn fold_zipped<B, F>(self, init: B, mut f: F) -> Value<B>
-    where
-        Self: Sized,
-        F: FnMut(B, V) -> B,
-    {
-        self.into_iter().fold(Value::known(init), |acc, value| {
-            acc.zip(value).map(|(acc, value)| f(acc, value))
-        })
+mod util {
+    use halo2_proofs::circuit::Value;
+
+    pub trait Valuetools<V>: Iterator<Item = Value<V>> {
+        fn fold_zipped<B, F>(self, init: B, mut f: F) -> Value<B>
+        where
+            Self: Sized,
+            F: FnMut(B, V) -> B,
+        {
+            self.into_iter().fold(Value::known(init), |acc, value| {
+                acc.zip(value).map(|(acc, value)| f(acc, value))
+            })
+        }
     }
-}
 
-impl<V, I: Iterator<Item = Value<V>>> Valuetools<V> for I {}
+    impl<V, I: Iterator<Item = Value<V>>> Valuetools<V> for I {}
+}

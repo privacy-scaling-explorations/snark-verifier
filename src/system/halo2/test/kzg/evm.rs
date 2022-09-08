@@ -1,14 +1,14 @@
 use crate::{
     halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_evm_verify, halo2_kzg_native_verify,
     halo2_kzg_prepare,
-    loader::{evm::EvmTranscript, native::NativeLoader},
+    loader::native::NativeLoader,
     pcs::kzg::{Bdfg21, Gwc19, KzgOnSameCurve},
     system::halo2::{
         test::{
             kzg::{self, main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS},
             StandardPlonk,
         },
-        util::evm::ChallengeEvm,
+        transcript::evm::{ChallengeEvm, EvmTranscript},
     },
     verifier::Plonk,
 };
@@ -27,8 +27,11 @@ macro_rules! halo2_kzg_evm_verify {
         use halo2_proofs::poly::commitment::ParamsProver;
         use std::rc::Rc;
         use $crate::{
-            loader::evm::{encode_calldata, execute, EvmLoader, EvmTranscript},
-            system::halo2::test::kzg::{BITS, LIMBS},
+            loader::evm::{encode_calldata, execute, EvmLoader},
+            system::halo2::{
+                test::kzg::{BITS, LIMBS},
+                transcript::evm::EvmTranscript,
+            },
             util::{transcript::TranscriptRead, Itertools},
             verifier::PlonkVerifier,
         };

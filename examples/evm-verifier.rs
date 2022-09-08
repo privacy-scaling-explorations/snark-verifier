@@ -21,9 +21,9 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use plonk_verifier::{
-    loader::evm::{encode_calldata, EvmLoader, EvmTranscript},
+    loader::evm::{encode_calldata, EvmLoader},
     pcs::kzg::{Gwc19, KzgOnSameCurve},
-    system::halo2::{compile, Config},
+    system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     util::transcript::TranscriptRead,
     verifier::{self, PlonkVerifier},
 };
