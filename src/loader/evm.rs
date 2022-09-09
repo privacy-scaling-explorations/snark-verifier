@@ -2,7 +2,6 @@ use crate::{
     cost::Cost,
     util::{arithmetic::PrimeField, Itertools},
 };
-use ethereum_types::U256;
 use std::iter;
 
 mod code;
@@ -12,6 +11,8 @@ pub(crate) mod loader;
 mod test;
 
 pub use loader::{EcPoint, EvmLoader, Scalar};
+
+pub use ethereum_types::U256;
 
 #[cfg(test)]
 pub use test::execute;
