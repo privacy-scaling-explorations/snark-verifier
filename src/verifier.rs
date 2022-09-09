@@ -17,7 +17,7 @@ where
     PCS: PolynomialCommitmentScheme<C, L>,
     AS: AccumulationStrategy<C, L, PCS>,
 {
-    type Proof: Debug;
+    type Proof: Clone + Debug;
 
     fn read_proof<T>(
         protocol: &Protocol<C>,

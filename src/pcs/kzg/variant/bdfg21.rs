@@ -18,7 +18,7 @@ use std::{
     marker::PhantomData,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Bdfg21<M: MultiMillerLoop>(PhantomData<M>);
 
 impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for Bdfg21<M>
@@ -70,7 +70,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Bdfg21Proof<C, L>
 where
     C: CurveAffine,

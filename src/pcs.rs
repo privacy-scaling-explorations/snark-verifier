@@ -11,13 +11,13 @@ use std::{fmt::Debug, ops::AddAssign};
 
 pub mod kzg;
 
-pub trait PreAccumulator: Sized {
+pub trait PreAccumulator: Sized + Clone + Debug {
     type Accumulator;
 
     fn evaluate(self) -> Self::Accumulator;
 }
 
-pub trait AccumulationStrategy<C, L, PCS>: Debug
+pub trait AccumulationStrategy<C, L, PCS>: Clone + Debug
 where
     C: CurveAffine,
     L: Loader<C>,
@@ -35,6 +35,7 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Query<F: FieldExt, T = ()> {
     pub poly: usize,
     pub shift: F,
@@ -51,19 +52,18 @@ impl<F: FieldExt> Query<F> {
     }
 }
 
-pub trait PolynomialCommitmentScheme<C, L>: Debug
+pub trait PolynomialCommitmentScheme<C, L>: Clone + Debug
 where
     C: CurveAffine,
     L: Loader<C>,
 {
-    type SuccinctVerifyingKey: Debug;
-    type DecidingKey: Debug;
-    type Proof: Debug;
-    type PreAccumulator: Debug
-        + PreAccumulator<Accumulator = Self::Accumulator>
+    type SuccinctVerifyingKey: Clone + Debug;
+    type DecidingKey: Clone + Debug;
+    type Proof: Clone + Debug;
+    type PreAccumulator: PreAccumulator<Accumulator = Self::Accumulator>
         + for<'a> AddAssign<&'a Self::PreAccumulator>
         + for<'a> AddAssign<&'a (L::LoadedScalar, Self::Accumulator)>;
-    type Accumulator: Debug;
+    type Accumulator: Clone + Debug;
 
     fn read_proof<T>(
         queries: &[Query<C::Scalar>],

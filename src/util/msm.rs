@@ -11,8 +11,8 @@ use std::{
 #[derive(Clone, Debug)]
 pub struct Msm<C: CurveAffine, L: Loader<C>> {
     constant: Option<L::LoadedScalar>,
-    bases: Vec<L::LoadedEcPoint>,
     scalars: Vec<L::LoadedScalar>,
+    bases: Vec<L::LoadedEcPoint>,
 }
 
 impl<C: CurveAffine, L: Loader<C>> Default for Msm<C, L> {
@@ -40,6 +40,19 @@ impl<C: CurveAffine, L: Loader<C>> Msm<C, L> {
             bases: vec![base],
             ..Default::default()
         }
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        self.bases.len()
+    }
+
+    pub(crate) fn split(mut self) -> (Self, Option<L::LoadedScalar>) {
+        let constant = self.constant.take();
+        (self, constant)
+    }
+
+    pub(crate) fn try_into_constant(self) -> Option<L::LoadedScalar> {
+        self.bases.is_empty().then_some(self.constant.unwrap())
     }
 
     pub fn evaluate(self, gen: C) -> L::LoadedEcPoint {

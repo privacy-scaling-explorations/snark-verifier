@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 /// base field in scalar field.
 /// The const generic `LIMBS` and `BITS` respectively represents how many limbs
 /// a base field element are split into and how many bits each limbs could have.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct KzgOnSameCurve<M, PCS, const LIMBS: usize, const BITS: usize>(PhantomData<(M, PCS)>);
 
 mod native {

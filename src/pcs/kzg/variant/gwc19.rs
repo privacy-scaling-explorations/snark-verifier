@@ -15,7 +15,7 @@ use crate::{
 };
 use std::marker::PhantomData;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Gwc19<M: MultiMillerLoop>(PhantomData<M>);
 
 impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for Gwc19<M>
@@ -75,7 +75,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Gwc19Proof<C, L>
 where
     C: CurveAffine,

@@ -5,6 +5,7 @@ use crate::{
         Itertools,
     },
 };
+use num_traits::One;
 use std::{
     cmp::max,
     collections::{BTreeMap, BTreeSet},
@@ -26,6 +27,7 @@ where
     L: Loader<C>,
 {
     zn: L::LoadedScalar,
+    zn_minus_one: L::LoadedScalar,
     zn_minus_one_inv: Fraction<L::LoadedScalar>,
     identity: L::LoadedScalar,
     lagrange: BTreeMap<i32, Fraction<L::LoadedScalar>>,
@@ -48,14 +50,14 @@ where
 
         let one = loader.load_one();
         let zn_minus_one = zn.clone() - one;
+        let zn_minus_one_inv = Fraction::one_over(zn_minus_one.clone());
+
         let n_inv = loader.load_const(&domain.n_inv);
         let numer = zn_minus_one.clone() * n_inv;
-
         let omegas = langranges
             .iter()
             .map(|&i| loader.load_const(&domain.rotate_scalar(C::Scalar::one(), Rotation(i))))
             .collect_vec();
-
         let lagrange_evals = omegas
             .iter()
             .map(|omega| Fraction::new(numer.clone() * omega, z.clone() - omega))
@@ -63,7 +65,8 @@ where
 
         Self {
             zn,
-            zn_minus_one_inv: Fraction::one_over(zn_minus_one),
+            zn_minus_one,
+            zn_minus_one_inv,
             identity: z.clone(),
             lagrange: langranges.into_iter().zip(lagrange_evals).collect(),
         }
@@ -71,6 +74,10 @@ where
 
     pub fn zn(&self) -> &L::LoadedScalar {
         &self.zn
+    }
+
+    pub fn zn_minus_one(&self) -> &L::LoadedScalar {
+        &self.zn_minus_one
     }
 
     pub fn zn_minus_one_inv(&self) -> &L::LoadedScalar {
@@ -101,20 +108,15 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct SplitPolynomial {
-    pub index: usize,
-    pub num_chunk: usize,
+#[derive(Clone, Debug)]
+pub struct QuotientPolynomial<F: Clone> {
     pub chunk_degree: usize,
+    pub numerator: Expression<F>,
 }
 
-impl SplitPolynomial {
-    pub fn new(index: usize, num_chunk: usize, chunk_degree: usize) -> Self {
-        Self {
-            index,
-            num_chunk,
-            chunk_degree,
-        }
+impl<F: Clone> QuotientPolynomial<F> {
+    pub fn num_chunk(&self) -> usize {
+        (self.numerator.degree() - 1).div_ceil(self.chunk_degree)
     }
 }
 
@@ -131,6 +133,18 @@ impl Query {
             rotation: rotation.into(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum LinearizationStrategy {
+    /// Older linearization strategy of GWC19, which has linearization
+    /// polynomial that doesn't evaluate to 0, and requires prover to send extra
+    /// evaluation of it to verifier.
+    WithoutConstant,
+    /// Current linearization strategy of GWC19, which has linearization
+    /// polynomial that evaluate to 0 by subtracting product of vanishing and
+    /// quotient polynomials.
+    MinusVanishingTimesQuotient,
 }
 
 #[derive(Clone, Debug)]
@@ -332,6 +346,12 @@ impl<F: Clone + Default> Sum for Expression<F> {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.reduce(|acc, item| acc + item)
             .unwrap_or_else(|| Expression::Constant(F::default()))
+    }
+}
+
+impl<F: Field> One for Expression<F> {
+    fn one() -> Self {
+        Expression::Constant(F::one())
     }
 }
 

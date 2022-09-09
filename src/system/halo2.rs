@@ -1,7 +1,7 @@
 use crate::{
     util::{
-        arithmetic::{root_of_unity, CurveAffine, Domain, FieldExt, Rotation},
-        expression::{CommonPolynomial, Expression, Query, SplitPolynomial},
+        arithmetic::{powers, root_of_unity, CurveAffine, Domain, FieldExt, Rotation},
+        expression::{CommonPolynomial, Expression, Query, QuotientPolynomial},
         Itertools,
     },
     Protocol,
@@ -73,15 +73,6 @@ pub fn compile<C: CurveAffine>(vk: &VerifyingKey<C>, config: Config) -> Protocol
         .chain(polynomials.random_query())
         .collect();
 
-    let constraints = (0..num_proof)
-        .flat_map(|t| {
-            iter::empty()
-                .chain(polynomials.gate_constraints(t))
-                .chain(polynomials.permutation_constraints(t))
-                .chain(polynomials.lookup_constraints(t))
-        })
-        .collect();
-
     let transcript_initial_state = transcript_initial_state::<C>(vk);
 
     let accumulator_indices = accumulator_indices
@@ -97,9 +88,9 @@ pub fn compile<C: CurveAffine>(vk: &VerifyingKey<C>, config: Config) -> Protocol
         num_challenge: polynomials.num_challenge(),
         evaluations,
         queries,
-        constraints,
-        quotient_poly: polynomials.quotient_poly(),
-        transcript_initial_state,
+        quotient: polynomials.quotient(),
+        linearization: None,
+        transcript_initial_state: Some(transcript_initial_state),
         accumulator_indices,
     }
 }
@@ -114,7 +105,6 @@ struct Polynomials<'a, F: FieldExt> {
     cs: &'a ConstraintSystem<F>,
     zk: bool,
     query_instance: bool,
-    degree: usize,
     num_proof: usize,
     num_fixed: usize,
     num_permutation_fixed: usize,
@@ -147,7 +137,6 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             cs,
             zk,
             query_instance,
-            degree,
             num_proof,
             num_fixed: cs.num_fixed_columns(),
             num_permutation_fixed: cs.permutation().get_columns().len(),
@@ -198,7 +187,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             .chain(num_challenge)
             .chain([
                 2, // beta, gamma
-                0,
+                1, // alpha
             ])
             .collect()
     }
@@ -349,16 +338,11 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         })
     }
 
-    fn quotient_poly(&self) -> SplitPolynomial {
-        SplitPolynomial::new(
-            self.witness_offset() + self.num_witness().iter().sum::<usize>(),
-            self.degree - 1,
-            1,
-        )
-    }
-
     fn quotient_query(&self) -> Query {
-        Query::new(self.quotient_poly().index, 0)
+        Query::new(
+            self.witness_offset() + self.num_witness().iter().sum::<usize>(),
+            0,
+        )
     }
 
     fn random_query(&self) -> Option<Query> {
@@ -437,6 +421,10 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
 
     fn gamma(&self) -> Expression<F> {
         Expression::Challenge(self.system_challenge_offset() + 2)
+    }
+
+    fn alpha(&self) -> Expression<F> {
+        Expression::Challenge(self.system_challenge_offset() + 3)
     }
 
     fn permutation_constraints(&'a self, t: usize) -> impl IntoIterator<Item = Expression<F>> + 'a {
@@ -596,6 +584,29 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                 },
             )
             .collect_vec()
+    }
+
+    fn quotient(&self) -> QuotientPolynomial<F> {
+        let constraints = (0..self.num_proof)
+            .flat_map(|t| {
+                iter::empty()
+                    .chain(self.gate_constraints(t))
+                    .chain(self.permutation_constraints(t))
+                    .chain(self.lookup_constraints(t))
+            })
+            .collect_vec();
+        let numerator = powers(self.alpha())
+            .take(constraints.len())
+            .collect_vec()
+            .into_iter()
+            .rev()
+            .zip(constraints)
+            .map(|(power_of_alpha, constraint)| power_of_alpha * constraint)
+            .sum();
+        QuotientPolynomial {
+            chunk_degree: 1,
+            numerator,
+        }
     }
 
     fn accumulator_indices(

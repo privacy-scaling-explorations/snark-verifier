@@ -4,7 +4,7 @@ use crate::{
     pcs::{self, AccumulationStrategy, PolynomialCommitmentScheme},
     util::{
         arithmetic::{CurveAffine, Field, Rotation},
-        expression::{CommonPolynomial, CommonPolynomialEvaluation, Expression, Query},
+        expression::{CommonPolynomial, CommonPolynomialEvaluation, LinearizationStrategy, Query},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -55,8 +55,9 @@ where
             common_poly_eval
         };
 
-        let commitments = proof.commitments(protocol, &common_poly_eval);
-        let queries = proof.queries(protocol, instances, &common_poly_eval)?;
+        let mut evaluations = proof.evaluations(protocol, instances, &common_poly_eval);
+        let commitments = proof.commitments(protocol, &common_poly_eval, &mut evaluations)?;
+        let queries = proof.queries(protocol, evaluations);
 
         let mut accumulator =
             PCS::succinct_verify(svk, &commitments, &proof.z, &queries, &proof.pcs)?;
@@ -69,7 +70,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PlonkProof<C, L, PCS, AS>
 where
     C: CurveAffine,
@@ -79,7 +80,6 @@ where
 {
     pub witnesses: Vec<L::LoadedEcPoint>,
     pub challenges: Vec<L::LoadedScalar>,
-    pub alpha: L::LoadedScalar,
     pub quotients: Vec<L::LoadedEcPoint>,
     pub z: L::LoadedScalar,
     pub evaluations: Vec<L::LoadedScalar>,
@@ -104,7 +104,9 @@ where
         T: TranscriptRead<C, L>,
     {
         let loader = transcript.loader();
-        transcript.common_scalar(&loader.load_const(&protocol.transcript_initial_state))?;
+        if let Some(transcript_initial_state) = &protocol.transcript_initial_state {
+            transcript.common_scalar(&loader.load_const(transcript_initial_state))?;
+        }
 
         if protocol.num_instance
             != instances
@@ -141,8 +143,7 @@ where
             )
         };
 
-        let alpha = transcript.squeeze_challenge();
-        let quotients = transcript.read_n_ec_points(protocol.quotient_poly.num_chunk)?;
+        let quotients = transcript.read_n_ec_points(protocol.quotient.num_chunk())?;
 
         let z = transcript.squeeze_challenge();
         let evaluations = transcript.read_n_scalars(protocol.evaluations.len())?;
@@ -161,7 +162,6 @@ where
         Ok(Self {
             witnesses,
             challenges,
-            alpha,
             quotients,
             z,
             evaluations,
@@ -185,13 +185,31 @@ where
             .collect()
     }
 
+    fn queries(
+        &self,
+        protocol: &Protocol<C>,
+        mut evaluations: HashMap<Query, L::LoadedScalar>,
+    ) -> Vec<pcs::Query<C::Scalar, L::LoadedScalar>> {
+        Self::empty_queries(protocol)
+            .into_iter()
+            .zip(
+                protocol
+                    .queries
+                    .iter()
+                    .map(|query| evaluations.remove(query).unwrap()),
+            )
+            .map(|(query, evaluation)| query.with_evaluation(evaluation))
+            .collect()
+    }
+
     fn commitments(
         &self,
         protocol: &Protocol<C>,
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
-    ) -> Vec<Msm<C, L>> {
+        evaluations: &mut HashMap<Query, L::LoadedScalar>,
+    ) -> Result<Vec<Msm<C, L>>, Error> {
         let loader = common_poly_eval.zn().loader();
-        iter::empty()
+        let mut commitments = iter::empty()
             .chain(
                 protocol
                     .preprocessed
@@ -200,32 +218,91 @@ where
             )
             .chain(iter::repeat_with(Default::default).take(protocol.num_instance.len()))
             .chain(self.witnesses.iter().cloned().map(Msm::base))
-            .chain(iter::repeat_with(Default::default).take(
-                protocol.quotient_poly.index - (protocol.preprocessed.len()
-                    + protocol.num_instance.len()
-                    + protocol.num_witness.iter().sum::<usize>()),
-            ))
-            .chain({
-                Some(
-                    common_poly_eval
-                        .zn()
-                        .pow_const(protocol.quotient_poly.chunk_degree as u64)
-                        .powers(self.quotients.len())
-                        .into_iter()
-                        .zip(self.quotients.iter().cloned().map(Msm::base))
-                        .map(|(coeff, chunk)| chunk * &coeff)
-                        .sum(),
-                )
-            })
-            .collect()
+            .collect_vec();
+
+        let numerator = protocol.quotient.numerator.evaluate(
+            &|scalar| Ok(Msm::constant(loader.load_const(&scalar))),
+            &|poly| Ok(Msm::constant(common_poly_eval.get(poly).clone())),
+            &|query| {
+                evaluations
+                    .get(&query)
+                    .cloned()
+                    .map(Msm::constant)
+                    .or_else(|| commitments.get(query.poly).cloned())
+                    .ok_or(Error::MissingQuery(query))
+            },
+            &|index| {
+                self.challenges
+                    .get(index)
+                    .cloned()
+                    .map(Msm::constant)
+                    .ok_or(Error::MissingChallenge(index))
+            },
+            &|a| Ok(-a?),
+            &|a, b| Ok(a? + b?),
+            &|a, b| {
+                let (a, b) = (a?, b?);
+                match (a.size(), b.size()) {
+                    (0, _) => Ok(b * &a.try_into_constant().unwrap()),
+                    (_, 0) => Ok(a * &b.try_into_constant().unwrap()),
+                    (_, _) => Err(Error::InvalidLinearization),
+                }
+            },
+            &|a, scalar| Ok(a? * &loader.load_const(&scalar)),
+        )?;
+
+        let quotient_query = Query::new(
+            protocol.preprocessed.len() + protocol.num_instance.len() + self.witnesses.len(),
+            Rotation::cur(),
+        );
+        let quotient = common_poly_eval
+            .zn()
+            .pow_const(protocol.quotient.chunk_degree as u64)
+            .powers(self.quotients.len())
+            .into_iter()
+            .zip(self.quotients.iter().cloned().map(Msm::base))
+            .map(|(coeff, chunk)| chunk * &coeff)
+            .sum::<Msm<_, _>>();
+        match protocol.linearization {
+            Some(LinearizationStrategy::WithoutConstant) => {
+                let linearization_query = Query::new(quotient_query.poly + 1, Rotation::cur());
+                let (msm, constant) = numerator.split();
+                commitments.push(quotient);
+                commitments.push(msm);
+                evaluations.insert(
+                    quotient_query,
+                    (constant.unwrap_or_else(|| loader.load_zero())
+                        + evaluations.get(&linearization_query).unwrap())
+                        * common_poly_eval.zn_minus_one_inv(),
+                );
+            }
+            Some(LinearizationStrategy::MinusVanishingTimesQuotient) => {
+                let (msm, constant) =
+                    ((numerator - quotient) * common_poly_eval.zn_minus_one()).split();
+                commitments.push(msm);
+                evaluations.insert(
+                    quotient_query,
+                    constant.unwrap_or_else(|| loader.load_zero()),
+                );
+            }
+            None => {
+                commitments.push(quotient);
+                evaluations.insert(
+                    quotient_query,
+                    numerator.try_into_constant().unwrap() * common_poly_eval.zn_minus_one_inv(),
+                );
+            }
+        }
+
+        Ok(commitments)
     }
 
-    fn queries(
+    fn evaluations(
         &self,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
-    ) -> Result<Vec<pcs::Query<C::Scalar, L::LoadedScalar>>, Error> {
+    ) -> HashMap<Query, L::LoadedScalar> {
         let loader = common_poly_eval.zn().loader();
         let instance_evaluations = instances.iter().map(|instances| {
             loader.sum_products(
@@ -242,84 +319,29 @@ where
             )
         });
 
-        let mut evaluations = HashMap::<Query, L::LoadedScalar>::from_iter(
-            iter::empty()
-                .chain(
-                    instance_evaluations
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, evaluation)| {
-                            (
-                                Query {
-                                    poly: protocol.preprocessed.len() + i,
-                                    rotation: Rotation::cur(),
-                                },
-                                evaluation,
-                            )
-                        }),
-                )
-                .chain(
-                    protocol
-                        .evaluations
-                        .iter()
-                        .cloned()
-                        .zip(self.evaluations.iter().cloned()),
-                ),
-        );
-
-        let mut quotient_evaluation = {
-            let powers_of_alpha = self.alpha.powers(protocol.constraints.len());
-            let constraint_evaluations = protocol
-                .constraints
-                .iter()
-                .map(|constraint| {
-                    constraint.evaluate(
-                        &|scalar| Ok(loader.load_const(&scalar)),
-                        &|poly| Ok(common_poly_eval.get(poly).clone()),
-                        &|query| {
-                            evaluations
-                                .get(&query)
-                                .cloned()
-                                .ok_or(Error::MissingQuery(query))
-                        },
-                        &|index| {
-                            self.challenges
-                                .get(index)
-                                .cloned()
-                                .ok_or(Error::MissingChallenge(index))
-                        },
-                        &|a| Ok(-a?),
-                        &|a, b| Ok(a? + b?),
-                        &|a, b| Ok(a? * b?),
-                        &|a, scalar| Ok(a? * loader.load_const(&scalar)),
-                    )
-                })
-                .collect::<Result<Vec<_>, Error>>()?;
-
-            Some(
-                loader.sum_products(
-                    &powers_of_alpha
-                        .iter()
-                        .rev()
-                        .zip(constraint_evaluations.iter())
-                        .collect_vec(),
-                ) * common_poly_eval.zn_minus_one_inv(),
+        iter::empty()
+            .chain(
+                instance_evaluations
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, evaluation)| {
+                        (
+                            Query {
+                                poly: protocol.preprocessed.len() + i,
+                                rotation: Rotation::cur(),
+                            },
+                            evaluation,
+                        )
+                    }),
             )
-        };
-
-        let evaluations = protocol.queries.iter().map(|query| {
-            if query.poly == protocol.quotient_poly.index {
-                quotient_evaluation.take().unwrap()
-            } else {
-                evaluations.remove(query).unwrap()
-            }
-        });
-
-        Ok(Self::empty_queries(protocol)
-            .into_iter()
-            .zip(evaluations)
-            .map(|(query, evaluation)| query.with_evaluation(evaluation))
-            .collect())
+            .chain(
+                protocol
+                    .evaluations
+                    .iter()
+                    .cloned()
+                    .zip(self.evaluations.iter().cloned()),
+            )
+            .collect()
     }
 }
 
@@ -334,16 +356,10 @@ where
 
     fn estimate_cost(protocol: &Protocol<C>) -> Cost {
         let plonk_cost = {
-            let num_quotient = protocol
-                .constraints
-                .iter()
-                .map(Expression::degree)
-                .max()
-                .unwrap()
-                - 1;
             let num_accumulator = protocol.accumulator_indices.len();
             let num_instance = protocol.num_instance.iter().sum();
-            let num_commitment = protocol.num_witness.iter().sum::<usize>() + num_quotient;
+            let num_commitment =
+                protocol.num_witness.iter().sum::<usize>() + protocol.quotient.num_chunk();
             let num_evaluation = protocol.evaluations.len();
             let num_msm = protocol.preprocessed.len() + num_commitment + 1 + 2 * num_accumulator;
             Cost::new(num_instance, num_commitment, num_evaluation, num_msm)
@@ -361,10 +377,8 @@ where
     C: CurveAffine,
 {
     protocol
-        .constraints
-        .iter()
-        .cloned()
-        .sum::<Expression<_>>()
+        .quotient
+        .numerator
         .used_langrange()
         .into_iter()
         .chain(
