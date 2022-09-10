@@ -31,7 +31,7 @@ paste = "1.0.7"
 halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", package = "ecc" }
 
 # loader_evm
-foundry_evm = { git = "https://github.com/foundry-rs/foundry", package = "foundry-evm", rev = "93ee742d" }
+foundry_evm = { git = "https://github.com/han0110/foundry", package = "foundry-evm", branch = "fix/pin-revm-to-rev" }
 crossterm = { version = "0.22.1" }
 tui = { version = "0.16.0", default-features = false, features = ["crossterm"] }
 
