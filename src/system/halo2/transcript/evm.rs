@@ -1,6 +1,6 @@
 use crate::{
     loader::{
-        evm::{loader, u256_to_fe, EcPoint, EvmLoader, Scalar},
+        evm::{loader::Value, u256_to_fe, EcPoint, EvmLoader, MemoryChunk, Scalar},
         native::{self, NativeLoader},
         Loader,
     },
@@ -16,38 +16,10 @@ use halo2_proofs::transcript::EncodedChallenge;
 use sha3::{Digest, Keccak256};
 use std::{
     io::{self, Read, Write},
+    iter,
     marker::PhantomData,
     rc::Rc,
 };
-
-pub struct MemoryChunk {
-    ptr: usize,
-    len: usize,
-}
-
-impl MemoryChunk {
-    fn new(ptr: usize) -> Self {
-        Self { ptr, len: 0x20 }
-    }
-
-    fn reset(&mut self, ptr: usize) {
-        self.ptr = ptr;
-        self.len = 0x20;
-    }
-
-    fn include(&self, ptr: usize, size: usize) -> bool {
-        let range = self.ptr..=self.ptr + self.len;
-        range.contains(&ptr) && range.contains(&(ptr + size))
-    }
-
-    fn extend(&mut self, ptr: usize, size: usize) {
-        if !self.include(ptr, size) {
-            assert_eq!(self.ptr + self.len, ptr);
-            self.len += size;
-        }
-    }
-}
-
 pub struct EvmTranscript<C: CurveAffine, L: Loader<C>, S, B> {
     loader: L,
     stream: S,
@@ -63,12 +35,29 @@ where
     pub fn new(loader: Rc<EvmLoader>) -> Self {
         let ptr = loader.allocate(0x20);
         assert_eq!(ptr, 0);
+        let mut buf = MemoryChunk::new(ptr);
+        buf.extend(0x20);
         Self {
             loader,
             stream: 0,
-            buf: MemoryChunk::new(ptr),
+            buf,
             _marker: PhantomData,
         }
+    }
+
+    pub fn load_instances(&mut self, num_instance: Vec<usize>) -> Vec<Vec<Scalar>> {
+        num_instance
+            .into_iter()
+            .map(|len| {
+                iter::repeat_with(|| {
+                    let scalar = self.loader.calldataload_scalar(self.stream);
+                    self.stream += 0x20;
+                    scalar
+                })
+                .take(len)
+                .collect_vec()
+            })
+            .collect()
     }
 }
 
@@ -82,14 +71,43 @@ where
     }
 
     fn squeeze_challenge(&mut self) -> Scalar {
-        let (ptr, scalar) = self.loader.squeeze_challenge(self.buf.ptr, self.buf.len);
-        self.buf.reset(ptr);
-        scalar
+        let len = if self.buf.len() == 0x20 {
+            assert_eq!(self.loader.ptr(), self.buf.end());
+            self.loader
+                .code_mut()
+                .push(1)
+                .push(self.buf.end())
+                .mstore8();
+            0x21
+        } else {
+            self.buf.len()
+        };
+        let hash_ptr = self.loader.keccak256(self.buf.ptr(), len);
+
+        let challenge_ptr = self.loader.allocate(0x20);
+        let dup_hash_ptr = self.loader.allocate(0x20);
+        self.loader
+            .code_mut()
+            .push(hash_ptr)
+            .mload()
+            .push(self.loader.scalar_modulus())
+            .dup(1)
+            .r#mod()
+            .push(challenge_ptr)
+            .mstore()
+            .push(dup_hash_ptr)
+            .mstore();
+
+        self.buf.reset(dup_hash_ptr);
+        self.buf.extend(0x20);
+
+        self.loader.scalar(Value::Memory(challenge_ptr))
     }
 
     fn common_ec_point(&mut self, ec_point: &EcPoint) -> Result<(), Error> {
-        if let loader::Value::Memory(ptr) = ec_point.value() {
-            self.buf.extend(ptr, 0x40);
+        if let Value::Memory(ptr) = ec_point.value() {
+            assert_eq!(self.buf.end(), ptr);
+            self.buf.extend(0x40);
         } else {
             unreachable!()
         }
@@ -98,11 +116,12 @@ where
 
     fn common_scalar(&mut self, scalar: &Scalar) -> Result<(), Error> {
         match scalar.value() {
-            loader::Value::Constant(_) if self.buf.ptr == 0 => {
-                self.loader.copy_scalar(scalar, self.buf.ptr);
+            Value::Constant(_) if self.buf.ptr() == 0 => {
+                self.loader.copy_scalar(scalar, self.buf.ptr());
             }
-            loader::Value::Memory(ptr) => {
-                self.buf.extend(ptr, 0x20);
+            Value::Memory(ptr) => {
+                assert_eq!(self.buf.end(), ptr);
+                self.buf.extend(0x20);
             }
             _ => unreachable!(),
         }

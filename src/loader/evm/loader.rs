@@ -15,7 +15,7 @@ use std::{
     collections::HashMap,
     fmt::{self, Debug},
     iter,
-    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, DerefMut, Mul, MulAssign, Neg, Sub, SubAssign},
     rc::Rc,
 };
 
@@ -79,10 +79,10 @@ impl EvmLoader {
     }
 
     pub fn deployment_code(self: &Rc<Self>) -> Vec<u8> {
-        Code::deployment(self.code())
+        Code::deployment(self.runtime_code())
     }
 
-    pub fn code(self: &Rc<Self>) -> Vec<u8> {
+    pub fn runtime_code(self: &Rc<Self>) -> Vec<u8> {
         let mut code = self.code.borrow().clone();
         let dst = code.len() + 9;
         code.push(dst)
@@ -102,7 +102,19 @@ impl EvmLoader {
         ptr
     }
 
-    fn scalar(self: &Rc<Self>, value: Value<U256>) -> Scalar {
+    pub(crate) fn scalar_modulus(&self) -> U256 {
+        self.scalar_modulus
+    }
+
+    pub(crate) fn ptr(&self) -> usize {
+        *self.ptr.borrow()
+    }
+
+    pub(crate) fn code_mut(&self) -> impl DerefMut<Target = Code> + '_ {
+        self.code.borrow_mut()
+    }
+
+    pub(crate) fn scalar(self: &Rc<Self>, value: Value<U256>) -> Scalar {
         let value = if matches!(
             value,
             Value::Constant(_) | Value::Memory(_) | Value::Negated(_)
@@ -326,44 +338,16 @@ impl EvmLoader {
             .and();
     }
 
-    pub fn squeeze_challenge(self: &Rc<Self>, ptr: usize, len: usize) -> (usize, Scalar) {
-        assert!(len > 0 && len % 0x20 == 0);
-
-        let (ptr, len) = if len == 0x20 {
-            let ptr = if ptr + len != *self.ptr.borrow() {
-                (ptr..ptr + len)
-                    .step_by(0x20)
-                    .map(|ptr| self.dup_scalar(&self.scalar(Value::Memory(ptr))))
-                    .collect_vec()
-                    .first()
-                    .unwrap()
-                    .ptr()
-            } else {
-                ptr
-            };
-            self.code.borrow_mut().push(1).push(ptr + 0x20).mstore8();
-            (ptr, len + 1)
-        } else {
-            (ptr, len)
-        };
-
-        let challenge_ptr = self.allocate(0x20);
+    pub fn keccak256(self: &Rc<Self>, ptr: usize, len: usize) -> usize {
         let hash_ptr = self.allocate(0x20);
-
         self.code
             .borrow_mut()
-            .push(self.scalar_modulus)
             .push(len)
             .push(ptr)
             .keccak256()
-            .dup(0)
             .push(hash_ptr)
-            .mstore()
-            .r#mod()
-            .push(challenge_ptr)
             .mstore();
-
-        (hash_ptr, self.scalar(Value::Memory(challenge_ptr)))
+        hash_ptr
     }
 
     pub fn copy_scalar(self: &Rc<Self>, scalar: &Scalar, ptr: usize) {

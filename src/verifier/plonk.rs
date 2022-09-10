@@ -150,14 +150,16 @@ where
 
         let pcs = PCS::read_proof(&Self::empty_queries(protocol), transcript)?;
 
-        let old_accumulators = AS::extract_accumulators(&protocol.accumulator_indices, instances)
-            .map(|old_accumulators| {
-            transcript
-                .squeeze_n_challenges(old_accumulators.len())
+        let old_accumulators = {
+            let separators = transcript.squeeze_n_challenges(protocol.accumulator_indices.len());
+            separators
                 .into_iter()
-                .zip(old_accumulators)
+                .zip(AS::extract_accumulators(
+                    &protocol.accumulator_indices,
+                    instances,
+                )?)
                 .collect_vec()
-        })?;
+        };
 
         Ok(Self {
             witnesses,

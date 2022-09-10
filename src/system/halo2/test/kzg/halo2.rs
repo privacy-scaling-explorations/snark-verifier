@@ -1,5 +1,8 @@
 use crate::{
     halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare, loader,
+    loader::halo2::test::{
+        MainGateWithRange, MainGateWithRangeConfig, Snark, SnarkWitness, StandardPlonk,
+    },
     pcs::{
         kzg::{Accumulator, Bdfg21, KzgOnSameCurve, PreAccumulator},
         PreAccumulator as _,
@@ -7,20 +10,16 @@ use crate::{
     system::{
         self,
         halo2::{
-            test::{
-                kzg::{BITS, LIMBS},
-                MainGateWithRange, MainGateWithRangeConfig, Snark, StandardPlonk,
-            },
+            test::kzg::{BITS, LIMBS},
             transcript::halo2::ChallengeScalar,
         },
     },
     util::{arithmetic::fe_to_limbs, transcript::Transcript, Itertools},
     verifier::{self, PlonkVerifier},
-    Protocol,
 };
 use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
-    circuit::{floor_planner::V1, Layouter, Value},
+    circuit::{floor_planner::V1, Layouter},
     plonk,
     plonk::Circuit,
     poly::{
@@ -66,44 +65,10 @@ type PoseidonTranscript<G1Affine, L, S, B> = system::halo2::transcript::halo2::P
 >;
 type Shplonk = verifier::Plonk<KzgOnSameCurve<Bn256, Bdfg21<Bn256>, LIMBS, BITS>>;
 
-pub struct SnarkWitness {
-    protocol: Protocol<G1Affine>,
-    instances: Vec<Vec<Value<Fr>>>,
-    proof: Value<Vec<u8>>,
-}
-
-impl From<Snark<G1Affine>> for SnarkWitness {
-    fn from(snark: Snark<G1Affine>) -> Self {
-        Self {
-            protocol: snark.protocol,
-            instances: snark
-                .instances
-                .into_iter()
-                .map(|instances| instances.into_iter().map(Value::known).collect_vec())
-                .collect(),
-            proof: Value::known(snark.proof),
-        }
-    }
-}
-
-impl SnarkWitness {
-    pub fn without_witnesses(&self) -> Self {
-        SnarkWitness {
-            protocol: self.protocol.clone(),
-            instances: self
-                .instances
-                .iter()
-                .map(|instances| vec![Value::unknown(); instances.len()])
-                .collect(),
-            proof: Value::unknown(),
-        }
-    }
-}
-
 pub fn accumulate<'a>(
     g1: &G1Affine,
     loader: &Rc<Halo2Loader<'a>>,
-    snark: &SnarkWitness,
+    snark: &SnarkWitness<G1Affine>,
     curr_accumulator: Option<PreAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>,
 ) -> PreAccumulator<G1Affine, Rc<Halo2Loader<'a>>> {
     let mut transcript = PoseidonTranscript::<_, Rc<Halo2Loader>, _, _>::new(
@@ -130,7 +95,7 @@ pub fn accumulate<'a>(
 
 pub struct Accumulation {
     g1: G1Affine,
-    snarks: Vec<SnarkWitness>,
+    snarks: Vec<SnarkWitness<G1Affine>>,
     instances: Vec<Fr>,
 }
 

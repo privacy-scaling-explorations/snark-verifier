@@ -1,5 +1,5 @@
 use crate::{
-    system::halo2::test::MainGateWithRange,
+    loader::halo2::test::MainGateWithRange,
     util::arithmetic::{fe_to_limbs, CurveAffine, MultiMillerLoop},
 };
 use halo2_proofs::poly::{
@@ -118,8 +118,7 @@ macro_rules! halo2_kzg_create_snark {
         use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
         use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
         use $crate::{
-            collect_slice,
-            system::halo2::test::{create_proof_checked, Snark},
+            collect_slice, loader::halo2::test::Snark, system::halo2::test::create_proof_checked,
             util::Itertools,
         };
 

@@ -1,10 +1,8 @@
 use crate::{
     halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare,
+    loader::halo2::test::StandardPlonk,
     pcs::kzg::{Bdfg21, Gwc19, KzgOnSameCurve},
-    system::halo2::test::{
-        kzg::{main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS},
-        StandardPlonk,
-    },
+    system::halo2::test::kzg::{main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS},
     verifier::Plonk,
 };
 use halo2_curves::bn256::{Bn256, G1Affine};

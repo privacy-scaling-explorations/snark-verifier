@@ -1,4 +1,3 @@
-use crate::{util::arithmetic::CurveAffine, Protocol};
 use halo2_proofs::{
     dev::MockProver,
     plonk::{create_proof, verify_proof, Circuit, ProvingKey},
@@ -8,16 +7,9 @@ use halo2_proofs::{
     },
     transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
 };
-use itertools::Itertools;
 use rand_chacha::rand_core::RngCore;
 
-mod circuit;
 mod kzg;
-
-pub use circuit::{
-    maingate::{MainGateWithRange, MainGateWithRangeConfig},
-    standard::StandardPlonk,
-};
 
 pub fn create_proof_checked<'a, S, C, P, V, VS, TW, TR, EC, R>(
     params: &'a S::ParamsProver,
@@ -73,27 +65,4 @@ where
     assert!(accept);
 
     proof
-}
-
-pub struct Snark<C: CurveAffine> {
-    pub protocol: Protocol<C>,
-    pub instances: Vec<Vec<C::Scalar>>,
-    pub proof: Vec<u8>,
-}
-
-impl<C: CurveAffine> Snark<C> {
-    pub fn new(protocol: Protocol<C>, instances: Vec<Vec<C::Scalar>>, proof: Vec<u8>) -> Self {
-        assert_eq!(
-            protocol.num_instance,
-            instances
-                .iter()
-                .map(|instances| instances.len())
-                .collect_vec()
-        );
-        Snark {
-            protocol,
-            instances,
-            proof,
-        }
-    }
 }

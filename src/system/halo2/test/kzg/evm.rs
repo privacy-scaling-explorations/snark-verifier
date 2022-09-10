@@ -1,13 +1,10 @@
 use crate::{
     halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_evm_verify, halo2_kzg_native_verify,
     halo2_kzg_prepare,
-    loader::native::NativeLoader,
+    loader::{halo2::test::StandardPlonk, native::NativeLoader},
     pcs::kzg::{Bdfg21, Gwc19, KzgOnSameCurve},
     system::halo2::{
-        test::{
-            kzg::{self, main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS},
-            StandardPlonk,
-        },
+        test::kzg::{self, main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS},
         transcript::evm::{ChallengeEvm, EvmTranscript},
     },
     verifier::Plonk,
@@ -32,18 +29,19 @@ macro_rules! halo2_kzg_evm_verify {
                 test::kzg::{BITS, LIMBS},
                 transcript::evm::EvmTranscript,
             },
-            util::{transcript::TranscriptRead, Itertools},
+            util::Itertools,
             verifier::PlonkVerifier,
         };
 
         let loader = EvmLoader::new::<Fq, Fr>();
-        let code = {
+        let runtime_code = {
             let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
-
-            let instances = $instances
-                .iter()
-                .map(|instance| transcript.read_n_scalars(instance.len()).unwrap())
-                .collect_vec();
+            let instances = transcript.load_instances(
+                $instances
+                    .iter()
+                    .map(|instances| instances.len())
+                    .collect_vec(),
+            );
             let proof =
                 <$plonk_verifier>::read_proof($protocol, &instances, &mut transcript).unwrap();
             <$plonk_verifier>::verify(
@@ -55,10 +53,11 @@ macro_rules! halo2_kzg_evm_verify {
             )
             .unwrap();
 
-            loader.code()
+            loader.runtime_code()
         };
 
-        let (accept, total_cost, costs) = execute(code, encode_calldata($instances, &$proof));
+        let (accept, total_cost, costs) =
+            execute(runtime_code, encode_calldata($instances, &$proof));
 
         loader.print_gas_metering(costs);
         println!("Total gas cost: {}", total_cost);

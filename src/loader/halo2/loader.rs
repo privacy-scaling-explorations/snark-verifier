@@ -13,6 +13,7 @@ use halo2_wrong_ecc::maingate::RegionCtx;
 use rand::rngs::OsRng;
 use std::{
     cell::{Ref, RefCell},
+    collections::btree_map::{BTreeMap, Entry},
     fmt::{self, Debug},
     iter,
     marker::PhantomData,
@@ -28,6 +29,7 @@ pub struct Halo2Loader<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions
     ctx: RefCell<RegionCtx<'a, N>>,
     num_scalar: RefCell<usize>,
     num_ec_point: RefCell<usize>,
+    const_ec_point: RefCell<BTreeMap<(C::Base, C::Base), EcPoint<'a, C, N, EccChip>>>,
     _marker: PhantomData<C>,
     #[cfg(test)]
     row_meterings: RefCell<Vec<(String, usize)>>,
@@ -40,11 +42,12 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         Rc::new(Self {
             ecc_chip: RefCell::new(ecc_chip),
             ctx: RefCell::new(ctx),
-            num_scalar: RefCell::new(0),
-            num_ec_point: RefCell::new(0),
-            _marker: PhantomData,
+            num_scalar: RefCell::default(),
+            num_ec_point: RefCell::default(),
+            const_ec_point: RefCell::default(),
             #[cfg(test)]
-            row_meterings: RefCell::new(Vec::new()),
+            row_meterings: RefCell::default(),
+            _marker: PhantomData,
         })
     }
 
@@ -68,10 +71,10 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         self.ctx.borrow_mut()
     }
 
-    pub fn assign_const_scalar(self: &Rc<Self>, scalar: C::Scalar) -> Scalar<'a, C, N, EccChip> {
+    pub fn assign_const_scalar(self: &Rc<Self>, constant: C::Scalar) -> Scalar<'a, C, N, EccChip> {
         let assigned = self
             .scalar_chip()
-            .assign_constant(&mut self.ctx_mut(), scalar)
+            .assign_constant(&mut self.ctx_mut(), constant)
             .unwrap();
         self.scalar(Value::Assigned(assigned))
     }
@@ -100,13 +103,24 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>>
         }
     }
 
-    pub fn assign_const_ec_point(self: &Rc<Self>, ec_point: C) -> EcPoint<'a, C, N, EccChip> {
-        let assigned = self
-            .ecc_chip
-            .borrow()
-            .assign_constant(&mut self.ctx_mut(), ec_point)
-            .unwrap();
-        self.ec_point(assigned)
+    pub fn assign_const_ec_point(self: &Rc<Self>, constant: C) -> EcPoint<'a, C, N, EccChip> {
+        let coordinates = constant.coordinates().unwrap();
+        match self
+            .const_ec_point
+            .borrow_mut()
+            .entry((*coordinates.x(), *coordinates.y()))
+        {
+            Entry::Occupied(entry) => entry.get().clone(),
+            Entry::Vacant(entry) => {
+                let assigned = self
+                    .ecc_chip
+                    .borrow()
+                    .assign_point(&mut self.ctx_mut(), circuit::Value::known(constant))
+                    .unwrap();
+                let ec_point = self.ec_point(assigned);
+                entry.insert(ec_point).clone()
+            }
+        }
     }
 
     pub fn assign_ec_point(

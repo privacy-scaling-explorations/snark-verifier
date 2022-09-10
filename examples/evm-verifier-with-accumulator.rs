@@ -23,7 +23,6 @@ use plonk_verifier::{
     },
     pcs::kzg::{Gwc19, KzgOnSameCurve},
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
-    util::transcript::TranscriptRead,
     verifier::{self, PlonkVerifier},
 };
 use rand::rngs::OsRng;
@@ -561,10 +560,7 @@ fn gen_aggregation_evm_verifier(
     let loader = EvmLoader::new::<Fq, Fr>();
     let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
 
-    let instances = num_instance
-        .into_iter()
-        .map(|len| transcript.read_n_scalars(len).unwrap())
-        .collect_vec();
+    let instances = transcript.load_instances(num_instance);
     let proof = Plonk::read_proof(&protocol, &instances, &mut transcript).unwrap();
     Plonk::verify(
         &params.get_g()[0],
