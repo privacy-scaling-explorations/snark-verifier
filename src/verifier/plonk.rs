@@ -280,7 +280,7 @@ where
             }
             Some(LinearizationStrategy::MinusVanishingTimesQuotient) => {
                 let (msm, constant) =
-                    ((numerator - quotient) * common_poly_eval.zn_minus_one()).split();
+                    (numerator - quotient * common_poly_eval.zn_minus_one()).split();
                 commitments.push(msm);
                 evaluations.insert(
                     quotient_query,
