@@ -13,22 +13,22 @@ rand_chacha = "0.3.1"
 halo2_curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "0.2.1", package = "halo2curves" }
 
 # system_halo2
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2022_08_19", optional = true }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2022_09_10", optional = true }
 
 # loader_evm
 ethereum_types = { package = "ethereum-types", version = "0.13.1", default-features = false, features = ["std"], optional = true }
 sha3 = { version = "0.10.1", optional = true }
 
 # loader_halo2
-halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", package = "ecc", optional = true }
-halo2_wrong_transcript = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", package = "transcript", optional = true }
+halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09", package = "ecc", optional = true }
+halo2_wrong_transcript = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09", package = "transcript", optional = true }
 poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon", branch = "padding", optional = true }
 
 [dev-dependencies]
 paste = "1.0.7"
 
 # system_halo2
-halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", package = "ecc" }
+halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_09_09", package = "ecc" }
 
 # loader_evm
 foundry_evm = { git = "https://github.com/han0110/foundry", package = "foundry-evm", branch = "fix/pin-revm-to-rev" }
@@ -47,12 +47,6 @@ sanity-check = []
 
 [patch."https://github.com/privacy-scaling-explorations/halo2"]
 halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "feature/configurable-instance-query", package = "halo2_proofs" }
-
-[patch."https://github.com/privacy-scaling-explorations/halo2wrong"]
-halo2_wrong = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "halo2wrong" }
-halo2_wrong_ecc = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "ecc" }
-halo2_wrong_maingate = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "maingate" }
-halo2_wrong_transcript = { git = "https://github.com/han0110/halo2wrong", branch = "feature/range-chip-with-tagged-table", package = "transcript" }
 
 [[example]]
 name = "evm-verifier"
