@@ -16,8 +16,8 @@ pub mod verifier;
 pub enum Error {
     InvalidInstances,
     InvalidLinearization,
-    MissingQuery(util::expression::Query),
-    MissingChallenge(usize),
+    InvalidQuery(util::expression::Query),
+    InvalidChallenge(usize),
     Transcript(std::io::ErrorKind, String),
 }
 

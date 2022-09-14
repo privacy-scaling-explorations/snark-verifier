@@ -230,15 +230,19 @@ where
                     .get(&query)
                     .cloned()
                     .map(Msm::constant)
-                    .or_else(|| commitments.get(query.poly).cloned())
-                    .ok_or(Error::MissingQuery(query))
+                    .or_else(|| {
+                        (query.rotation == Rotation::cur())
+                            .then_some(commitments.get(query.poly).cloned())
+                            .flatten()
+                    })
+                    .ok_or(Error::InvalidQuery(query))
             },
             &|index| {
                 self.challenges
                     .get(index)
                     .cloned()
                     .map(Msm::constant)
-                    .ok_or(Error::MissingChallenge(index))
+                    .ok_or(Error::InvalidChallenge(index))
             },
             &|a| Ok(-a?),
             &|a, b| Ok(a? + b?),
@@ -291,7 +295,10 @@ where
                 commitments.push(quotient);
                 evaluations.insert(
                     quotient_query,
-                    numerator.try_into_constant().unwrap() * common_poly_eval.zn_minus_one_inv(),
+                    numerator
+                        .try_into_constant()
+                        .ok_or(Error::InvalidLinearization)?
+                        * common_poly_eval.zn_minus_one_inv(),
                 );
             }
         }
