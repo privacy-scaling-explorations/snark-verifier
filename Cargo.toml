@@ -1,5 +1,5 @@
 [package]
-name = "plonk-verifier"
+name = "plonk_verifier"
 version = "0.1.0"
 edition = "2021"
 
@@ -43,7 +43,7 @@ loader_halo2 = ["dep:halo2_proofs", "dep:halo2_wrong_ecc", "dep:halo2_wrong_tran
 
 system_halo2 = ["dep:halo2_proofs"]
 
-sanity-check = []
+sanity_check = []
 
 [patch."https://github.com/privacy-scaling-explorations/halo2"]
 halo2_proofs = { git = "https://github.com/han0110/halo2", branch = "feature/configurable-instance-query", package = "halo2_proofs" }
