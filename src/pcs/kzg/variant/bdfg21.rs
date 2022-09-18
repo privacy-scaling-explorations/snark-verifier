@@ -6,7 +6,7 @@ use crate::{
         PolynomialCommitmentScheme, Query,
     },
     util::{
-        arithmetic::{CurveAffine, FieldExt, Fraction, MultiMillerLoop},
+        arithmetic::{CurveAffine, Domain, FieldExt, Fraction, MultiMillerLoop},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -32,7 +32,11 @@ where
     type PreAccumulator = PreAccumulator<M::G1Affine, L>;
     type Accumulator = Accumulator<M::G1Affine, L>;
 
-    fn read_proof<T>(_: &[Query<M::Scalar>], transcript: &mut T) -> Result<Self::Proof, Error>
+    fn read_proof<T>(
+        _: &Domain<M::Scalar>,
+        _: &[Query<M::Scalar>],
+        transcript: &mut T,
+    ) -> Result<Self::Proof, Error>
     where
         T: TranscriptRead<M::G1Affine, L>,
     {
@@ -209,7 +213,7 @@ fn query_set_coeffs<F: FieldExt, T: LoadedScalar<F>>(
 }
 
 #[derive(Clone, Debug)]
-struct QuerySet<F: FieldExt, T> {
+struct QuerySet<F, T> {
     shifts: Vec<F>,
     polys: Vec<usize>,
     evaluations: Vec<Vec<T>>,
@@ -330,12 +334,15 @@ where
 
     fn denoms(&mut self) -> impl IntoIterator<Item = &'_ mut T> {
         if self.evaluation_coeffs.first().unwrap().denom().is_some() {
-            self.evaluation_coeffs
+            return self
+                .evaluation_coeffs
                 .iter_mut()
                 .chain(self.commitment_coeff.as_mut())
                 .filter_map(Fraction::denom_mut)
-                .collect_vec()
-        } else if self.remainder_coeff.is_none() {
+                .collect_vec();
+        }
+
+        if self.remainder_coeff.is_none() {
             let loader = self.z_s.loader();
             self.evaluation_coeffs
                 .iter_mut()
@@ -352,10 +359,10 @@ where
                 Some(coeff) => Fraction::new(coeff.evaluated().clone(), barycentric_weights_sum),
                 None => Fraction::one_over(barycentric_weights_sum),
             });
-            vec![self.remainder_coeff.as_mut().unwrap().denom_mut().unwrap()]
-        } else {
-            unreachable!()
+            return vec![self.remainder_coeff.as_mut().unwrap().denom_mut().unwrap()];
         }
+
+        unreachable!()
     }
 
     fn evaluate(&mut self) {

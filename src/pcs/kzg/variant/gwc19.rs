@@ -6,7 +6,7 @@ use crate::{
         PolynomialCommitmentScheme, Query,
     },
     util::{
-        arithmetic::{CurveAffine, FieldExt, MultiMillerLoop},
+        arithmetic::{CurveAffine, Domain, FieldExt, MultiMillerLoop},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -29,7 +29,11 @@ where
     type PreAccumulator = PreAccumulator<M::G1Affine, L>;
     type Accumulator = Accumulator<M::G1Affine, L>;
 
-    fn read_proof<T>(queries: &[Query<M::Scalar>], transcript: &mut T) -> Result<Self::Proof, Error>
+    fn read_proof<T>(
+        _: &Domain<M::Scalar>,
+        queries: &[Query<M::Scalar>],
+        transcript: &mut T,
+    ) -> Result<Self::Proof, Error>
     where
         T: TranscriptRead<M::G1Affine, L>,
     {
@@ -102,7 +106,7 @@ where
     }
 }
 
-struct QuerySet<F: FieldExt, T> {
+struct QuerySet<F, T> {
     shift: F,
     polys: Vec<usize>,
     evaluations: Vec<T>,

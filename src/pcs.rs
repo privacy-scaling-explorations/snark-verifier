@@ -1,7 +1,7 @@
 use crate::{
     loader::Loader,
     util::{
-        arithmetic::{CurveAffine, FieldExt},
+        arithmetic::{CurveAffine, Domain, FieldExt},
         msm::Msm,
         transcript::TranscriptRead,
     },
@@ -66,6 +66,7 @@ where
     type Accumulator: Clone + Debug;
 
     fn read_proof<T>(
+        domain: &Domain<C::Scalar>,
         queries: &[Query<C::Scalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>

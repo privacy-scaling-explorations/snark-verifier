@@ -148,7 +148,7 @@ where
         let z = transcript.squeeze_challenge();
         let evaluations = transcript.read_n_scalars(protocol.evaluations.len())?;
 
-        let pcs = PCS::read_proof(&Self::empty_queries(protocol), transcript)?;
+        let pcs = PCS::read_proof(&protocol.domain, &Self::empty_queries(protocol), transcript)?;
 
         let old_accumulators = {
             let separators = transcript.squeeze_n_challenges(protocol.accumulator_indices.len());
