@@ -15,7 +15,11 @@ pub struct Msm<C: CurveAffine, L: Loader<C>> {
     bases: Vec<L::LoadedEcPoint>,
 }
 
-impl<C: CurveAffine, L: Loader<C>> Default for Msm<C, L> {
+impl<C, L> Default for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     fn default() -> Self {
         Self {
             constant: None,
@@ -25,7 +29,11 @@ impl<C: CurveAffine, L: Loader<C>> Default for Msm<C, L> {
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> Msm<C, L> {
+impl<C, L> Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     pub fn constant(constant: L::LoadedScalar) -> Self {
         Msm {
             constant: Some(constant),
@@ -99,7 +107,11 @@ impl<C: CurveAffine, L: Loader<C>> Msm<C, L> {
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> Add<Msm<C, L>> for Msm<C, L> {
+impl<C, L> Add<Msm<C, L>> for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     type Output = Msm<C, L>;
 
     fn add(mut self, rhs: Msm<C, L>) -> Self::Output {
@@ -108,13 +120,21 @@ impl<C: CurveAffine, L: Loader<C>> Add<Msm<C, L>> for Msm<C, L> {
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> AddAssign<Msm<C, L>> for Msm<C, L> {
+impl<C, L> AddAssign<Msm<C, L>> for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     fn add_assign(&mut self, rhs: Msm<C, L>) {
         self.extend(rhs);
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> Sub<Msm<C, L>> for Msm<C, L> {
+impl<C, L> Sub<Msm<C, L>> for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     type Output = Msm<C, L>;
 
     fn sub(mut self, rhs: Msm<C, L>) -> Self::Output {
@@ -123,13 +143,21 @@ impl<C: CurveAffine, L: Loader<C>> Sub<Msm<C, L>> for Msm<C, L> {
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> SubAssign<Msm<C, L>> for Msm<C, L> {
+impl<C, L> SubAssign<Msm<C, L>> for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     fn sub_assign(&mut self, rhs: Msm<C, L>) {
         self.extend(-rhs);
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> Mul<&L::LoadedScalar> for Msm<C, L> {
+impl<C, L> Mul<&L::LoadedScalar> for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     type Output = Msm<C, L>;
 
     fn mul(mut self, rhs: &L::LoadedScalar) -> Self::Output {
@@ -138,13 +166,21 @@ impl<C: CurveAffine, L: Loader<C>> Mul<&L::LoadedScalar> for Msm<C, L> {
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> MulAssign<&L::LoadedScalar> for Msm<C, L> {
+impl<C, L> MulAssign<&L::LoadedScalar> for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     fn mul_assign(&mut self, rhs: &L::LoadedScalar) {
         self.scale(rhs);
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> Neg for Msm<C, L> {
+impl<C, L> Neg for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     type Output = Msm<C, L>;
     fn neg(mut self) -> Msm<C, L> {
         self.constant = self.constant.map(|constant| -constant);
@@ -155,7 +191,11 @@ impl<C: CurveAffine, L: Loader<C>> Neg for Msm<C, L> {
     }
 }
 
-impl<C: CurveAffine, L: Loader<C>> Sum for Msm<C, L> {
+impl<C, L> Sum for Msm<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.reduce(|acc, item| acc + item).unwrap_or_default()
     }

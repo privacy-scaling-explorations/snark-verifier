@@ -182,7 +182,7 @@ where
                 shift: protocol
                     .domain
                     .rotate_scalar(C::Scalar::one(), query.rotation),
-                evaluation: (),
+                eval: (),
             })
             .collect()
     }
@@ -200,7 +200,7 @@ where
                     .iter()
                     .map(|query| evaluations.remove(query).unwrap()),
             )
-            .map(|(query, evaluation)| query.with_evaluation(evaluation))
+            .map(|(query, eval)| query.with_evaluation(eval))
             .collect()
     }
 
@@ -330,18 +330,9 @@ where
 
         iter::empty()
             .chain(
-                instance_evaluations
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, evaluation)| {
-                        (
-                            Query {
-                                poly: protocol.preprocessed.len() + i,
-                                rotation: Rotation::cur(),
-                            },
-                            evaluation,
-                        )
-                    }),
+                (protocol.preprocessed.len()..)
+                    .zip(instance_evaluations)
+                    .map(|(poly, eval)| (Query::new(poly, Rotation::cur()), eval)),
             )
             .chain(
                 protocol

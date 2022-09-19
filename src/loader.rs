@@ -195,6 +195,12 @@ pub trait ScalarLoader<F: PrimeField> {
     fn sum(&self, values: &[&Self::LoadedScalar]) -> Self::LoadedScalar {
         self.sum_with_const(values, F::zero())
     }
+
+    fn product(&self, values: &[&Self::LoadedScalar]) -> Self::LoadedScalar {
+        values
+            .iter()
+            .fold(self.load_one(), |acc, value| acc * *value)
+    }
 }
 
 pub trait Loader<C: CurveAffine>:

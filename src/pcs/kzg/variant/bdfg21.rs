@@ -50,9 +50,10 @@ where
         queries: &[Query<M::Scalar, L::LoadedScalar>],
         proof: &Self::Proof,
     ) -> Result<Self::PreAccumulator, Error> {
-        let sets = query_sets(queries);
-        let coeffs = query_set_coeffs(&sets, z, &proof.z_prime);
         let f = {
+            let sets = query_sets(queries);
+            let coeffs = query_set_coeffs(&sets, z, &proof.z_prime);
+
             let powers_of_mu = proof
                 .mu
                 .powers(sets.iter().map(|set| set.polys.len()).max().unwrap());
@@ -116,13 +117,13 @@ fn query_sets<F: FieldExt, T: Clone>(queries: &[Query<F, T>]) -> Vec<QuerySet<F,
                 .iter()
                 .position(|(poly, _, _)| *poly == query.poly)
             {
-                let (_, shifts, evaluations) = &mut poly_shifts[pos];
+                let (_, shifts, evals) = &mut poly_shifts[pos];
                 if !shifts.contains(&query.shift) {
                     shifts.push(query.shift);
-                    evaluations.push(&query.evaluation);
+                    evals.push(&query.eval);
                 }
             } else {
-                poly_shifts.push((query.poly, vec![query.shift], vec![&query.evaluation]));
+                poly_shifts.push((query.poly, vec![query.shift], vec![&query.eval]));
             }
             poly_shifts
         },
@@ -130,19 +131,19 @@ fn query_sets<F: FieldExt, T: Clone>(queries: &[Query<F, T>]) -> Vec<QuerySet<F,
 
     poly_shifts.into_iter().fold(
         Vec::<QuerySet<F, T>>::new(),
-        |mut sets, (poly, shifts, evaluations)| {
+        |mut sets, (poly, shifts, evals)| {
             if let Some(pos) = sets.iter().position(|set| {
                 BTreeSet::from_iter(set.shifts.iter()) == BTreeSet::from_iter(shifts.iter())
             }) {
                 let set = &mut sets[pos];
                 if !set.polys.contains(&poly) {
                     set.polys.push(poly);
-                    set.evaluations.push(
+                    set.evals.push(
                         set.shifts
                             .iter()
                             .map(|lhs| {
                                 let idx = shifts.iter().position(|rhs| lhs == rhs).unwrap();
-                                evaluations[idx].clone()
+                                evals[idx].clone()
                             })
                             .collect(),
                     );
@@ -151,7 +152,7 @@ fn query_sets<F: FieldExt, T: Clone>(queries: &[Query<F, T>]) -> Vec<QuerySet<F,
                 let set = QuerySet {
                     shifts,
                     polys: vec![poly],
-                    evaluations: vec![evaluations.into_iter().cloned().collect()],
+                    evals: vec![evals.into_iter().cloned().collect()],
                 };
                 sets.push(set);
             }
@@ -216,7 +217,7 @@ fn query_set_coeffs<F: FieldExt, T: LoadedScalar<F>>(
 struct QuerySet<F, T> {
     shifts: Vec<F>,
     polys: Vec<usize>,
-    evaluations: Vec<Vec<T>>,
+    evals: Vec<Vec<T>>,
 }
 
 impl<F: FieldExt, T: LoadedScalar<F>> QuerySet<F, T> {
@@ -228,9 +229,9 @@ impl<F: FieldExt, T: LoadedScalar<F>> QuerySet<F, T> {
     ) -> Msm<C, L> {
         self.polys
             .iter()
-            .zip(self.evaluations.iter())
+            .zip(self.evals.iter())
             .zip(powers_of_mu.iter())
-            .map(|((poly, evaluations), power_of_mu)| {
+            .map(|((poly, evals), power_of_mu)| {
                 let loader = power_of_mu.loader();
                 let commitment = coeff
                     .commitment_coeff
@@ -239,15 +240,15 @@ impl<F: FieldExt, T: LoadedScalar<F>> QuerySet<F, T> {
                         commitments[*poly].clone() * commitment_coeff.evaluated()
                     })
                     .unwrap_or_else(|| commitments[*poly].clone());
-                let remainder = loader.sum_products(
+                let r_eval = loader.sum_products(
                     &coeff
-                        .evaluation_coeffs
+                        .eval_coeffs
                         .iter()
-                        .zip(evaluations.iter())
-                        .map(|(coeff, evaluation)| (coeff.evaluated(), evaluation))
+                        .zip(evals.iter())
+                        .map(|(coeff, eval)| (coeff.evaluated(), eval))
                         .collect_vec(),
-                ) * coeff.remainder_coeff.as_ref().unwrap().evaluated();
-                (commitment - Msm::constant(remainder)) * power_of_mu
+                ) * coeff.r_eval_coeff.as_ref().unwrap().evaluated();
+                (commitment - Msm::constant(r_eval)) * power_of_mu
             })
             .sum()
     }
@@ -256,9 +257,9 @@ impl<F: FieldExt, T: LoadedScalar<F>> QuerySet<F, T> {
 #[derive(Clone, Debug)]
 struct QuerySetCoeff<F, T> {
     z_s: T,
-    evaluation_coeffs: Vec<Fraction<T>>,
+    eval_coeffs: Vec<Fraction<T>>,
     commitment_coeff: Option<Fraction<T>>,
-    remainder_coeff: Option<Fraction<T>>,
+    r_eval_coeff: Option<Fraction<T>>,
     _marker: PhantomData<F>,
 }
 
@@ -316,57 +317,58 @@ where
             .map(Fraction::one_over)
             .collect_vec();
 
-        let z_s = shifts
-            .iter()
-            .map(|shift| z_prime_minus_z_shift_i.get(shift).unwrap().clone())
-            .reduce(|acc, z_prime_minus_z_shift_i| acc * z_prime_minus_z_shift_i)
-            .unwrap();
+        let z_s = loader.product(
+            &shifts
+                .iter()
+                .map(|shift| z_prime_minus_z_shift_i.get(shift).unwrap())
+                .collect_vec(),
+        );
         let z_s_1_over_z_s = z_s_1.clone().map(|z_s_1| Fraction::new(z_s_1, z_s.clone()));
 
         Self {
             z_s,
-            evaluation_coeffs: barycentric_weights,
+            eval_coeffs: barycentric_weights,
             commitment_coeff: z_s_1_over_z_s,
-            remainder_coeff: None,
+            r_eval_coeff: None,
             _marker: PhantomData,
         }
     }
 
     fn denoms(&mut self) -> impl IntoIterator<Item = &'_ mut T> {
-        if self.evaluation_coeffs.first().unwrap().denom().is_some() {
+        if self.eval_coeffs.first().unwrap().denom().is_some() {
             return self
-                .evaluation_coeffs
+                .eval_coeffs
                 .iter_mut()
                 .chain(self.commitment_coeff.as_mut())
                 .filter_map(Fraction::denom_mut)
                 .collect_vec();
         }
 
-        if self.remainder_coeff.is_none() {
+        if self.r_eval_coeff.is_none() {
             let loader = self.z_s.loader();
-            self.evaluation_coeffs
+            self.eval_coeffs
                 .iter_mut()
                 .chain(self.commitment_coeff.as_mut())
                 .for_each(Fraction::evaluate);
             let barycentric_weights_sum = loader.sum(
                 &self
-                    .evaluation_coeffs
+                    .eval_coeffs
                     .iter()
                     .map(Fraction::evaluated)
                     .collect_vec(),
             );
-            self.remainder_coeff = Some(match self.commitment_coeff.clone() {
+            self.r_eval_coeff = Some(match self.commitment_coeff.clone() {
                 Some(coeff) => Fraction::new(coeff.evaluated().clone(), barycentric_weights_sum),
                 None => Fraction::one_over(barycentric_weights_sum),
             });
-            return vec![self.remainder_coeff.as_mut().unwrap().denom_mut().unwrap()];
+            return vec![self.r_eval_coeff.as_mut().unwrap().denom_mut().unwrap()];
         }
 
         unreachable!()
     }
 
     fn evaluate(&mut self) {
-        self.remainder_coeff.as_mut().unwrap().evaluate();
+        self.r_eval_coeff.as_mut().unwrap().evaluate();
     }
 }
 

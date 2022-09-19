@@ -1,10 +1,11 @@
 use crate::{
-    halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_evm_verify, halo2_kzg_native_verify,
-    halo2_kzg_prepare,
     loader::{halo2::test::StandardPlonk, native::NativeLoader},
     pcs::kzg::{Bdfg21, Gwc19, KzgOnSameCurve},
     system::halo2::{
-        test::kzg::{self, main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS},
+        test::kzg::{
+            self, halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify,
+            halo2_kzg_prepare, main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS,
+        },
         transcript::evm::{ChallengeEvm, EvmTranscript},
     },
     verifier::Plonk,
@@ -17,7 +18,6 @@ use halo2_proofs::poly::kzg::{
 use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
-#[macro_export]
 macro_rules! halo2_kzg_evm_verify {
     ($plonk_verifier:ty, $params:expr, $protocol:expr, $instances:expr, $proof:expr) => {{
         use halo2_curves::bn256::{Bn256, Fq, Fr};

@@ -1,5 +1,5 @@
 use crate::{
-    halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare, loader,
+    loader,
     loader::halo2::test::{
         MainGateWithRange, MainGateWithRangeConfig, Snark, SnarkWitness, StandardPlonk,
     },
@@ -10,7 +10,10 @@ use crate::{
     system::{
         self,
         halo2::{
-            test::kzg::{BITS, LIMBS},
+            test::kzg::{
+                halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify,
+                halo2_kzg_prepare, BITS, LIMBS,
+            },
             transcript::halo2::ChallengeScalar,
         },
     },

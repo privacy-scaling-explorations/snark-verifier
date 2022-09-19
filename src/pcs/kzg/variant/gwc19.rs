@@ -6,7 +6,7 @@ use crate::{
         PolynomialCommitmentScheme, Query,
     },
     util::{
-        arithmetic::{CurveAffine, Domain, FieldExt, MultiMillerLoop},
+        arithmetic::{CurveAffine, Domain, MultiMillerLoop, PrimeField},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -109,10 +109,14 @@ where
 struct QuerySet<F, T> {
     shift: F,
     polys: Vec<usize>,
-    evaluations: Vec<T>,
+    evals: Vec<T>,
 }
 
-impl<F: FieldExt, T: Clone> QuerySet<F, T> {
+impl<F, T> QuerySet<F, T>
+where
+    F: PrimeField,
+    T: Clone,
+{
     fn msm<C: CurveAffine, L: Loader<C, LoadedScalar = T>>(
         &self,
         commitments: &[Msm<C, L>],
@@ -120,10 +124,10 @@ impl<F: FieldExt, T: Clone> QuerySet<F, T> {
     ) -> Msm<C, L> {
         self.polys
             .iter()
-            .zip(self.evaluations.iter())
-            .map(|(poly, evaluation)| {
+            .zip(self.evals.iter())
+            .map(|(poly, eval)| {
                 let commitment = commitments[*poly].clone();
-                commitment - Msm::constant(evaluation.clone())
+                commitment - Msm::constant(eval.clone())
             })
             .zip(powers_of_v.iter())
             .map(|(msm, power_of_v)| msm * power_of_v)
@@ -131,16 +135,20 @@ impl<F: FieldExt, T: Clone> QuerySet<F, T> {
     }
 }
 
-fn query_sets<F: FieldExt, T: Clone + PartialEq>(queries: &[Query<F, T>]) -> Vec<QuerySet<F, T>> {
+fn query_sets<F, T>(queries: &[Query<F, T>]) -> Vec<QuerySet<F, T>>
+where
+    F: PrimeField,
+    T: Clone + PartialEq,
+{
     queries.iter().fold(Vec::new(), |mut sets, query| {
         if let Some(pos) = sets.iter().position(|set| set.shift == query.shift) {
             sets[pos].polys.push(query.poly);
-            sets[pos].evaluations.push(query.evaluation.clone());
+            sets[pos].evals.push(query.eval.clone());
         } else {
             sets.push(QuerySet {
                 shift: query.shift,
                 polys: vec![query.poly],
-                evaluations: vec![query.evaluation.clone()],
+                evals: vec![query.eval.clone()],
             });
         }
         sets

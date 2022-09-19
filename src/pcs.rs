@@ -1,7 +1,7 @@
 use crate::{
     loader::Loader,
     util::{
-        arithmetic::{CurveAffine, Domain, FieldExt},
+        arithmetic::{CurveAffine, Domain, PrimeField},
         msm::Msm,
         transcript::TranscriptRead,
     },
@@ -36,18 +36,18 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct Query<F: FieldExt, T = ()> {
+pub struct Query<F: PrimeField, T = ()> {
     pub poly: usize,
     pub shift: F,
-    pub evaluation: T,
+    pub eval: T,
 }
 
-impl<F: FieldExt> Query<F> {
-    pub fn with_evaluation<T>(self, evaluation: T) -> Query<F, T> {
+impl<F: PrimeField> Query<F> {
+    pub fn with_evaluation<T>(self, eval: T) -> Query<F, T> {
         Query {
             poly: self.poly,
             shift: self.shift,
-            evaluation,
+            eval,
         }
     }
 }

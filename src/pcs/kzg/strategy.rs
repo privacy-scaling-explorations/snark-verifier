@@ -18,9 +18,7 @@ mod native {
             AccumulationStrategy, PolynomialCommitmentScheme,
         },
         util::{
-            arithmetic::{
-                CurveAffine, Group, {fe_from_limbs, MillerLoopResult, MultiMillerLoop},
-            },
+            arithmetic::{fe_from_limbs, CurveAffine, Group, MillerLoopResult, MultiMillerLoop},
             Itertools,
         },
         Error,
