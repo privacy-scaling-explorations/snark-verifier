@@ -27,8 +27,11 @@ where
 
     fn extract_accumulators(
         accumulator_indices: &[Vec<(usize, usize)>],
-        instances: &[Vec<L::LoadedScalar>],
-    ) -> Result<Vec<PCS::Accumulator>, Error>;
+        _instances: &[Vec<L::LoadedScalar>],
+    ) -> Result<Vec<PCS::Accumulator>, Error> {
+        assert_eq!(accumulator_indices.len(), 0);
+        Ok(Vec::new())
+    }
 
     fn finalize(_: &PCS::DecidingKey, _: PCS::Accumulator) -> Result<Self::Output, Error> {
         unimplemented!()

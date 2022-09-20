@@ -1,6 +1,10 @@
 use std::marker::PhantomData;
 
-/// Accumulation strategy that does accumulation with KZG on the same curve.
+/// `AccumulationStrategy` that only implements `finalize`.
+#[derive(Clone, Debug)]
+pub struct KzgDecider<M, PCS>(PhantomData<(M, PCS)>);
+
+/// `AccumulationStrategy` that does accumulation with KZG on the same curve.
 ///
 /// Since in circuit everything are in scalar field, but while doing elliptic
 /// curve operation we need to operate in base field, so we need to emulate
@@ -14,7 +18,7 @@ mod native {
     use crate::{
         loader::native::NativeLoader,
         pcs::{
-            kzg::{Accumulator, KzgOnSameCurve, PreAccumulator},
+            kzg::{Accumulator, KzgDecider, KzgOnSameCurve, PreAccumulator},
             AccumulationStrategy, PolynomialCommitmentScheme,
         },
         util::{
@@ -24,6 +28,31 @@ mod native {
         Error,
     };
     use std::fmt::Debug;
+
+    impl<M, PCS> AccumulationStrategy<M::G1Affine, NativeLoader, PCS> for KzgDecider<M, PCS>
+    where
+        M: MultiMillerLoop + Debug,
+        PCS: PolynomialCommitmentScheme<
+            M::G1Affine,
+            NativeLoader,
+            DecidingKey = (M::G2Affine, M::G2Affine),
+            PreAccumulator = PreAccumulator<M::G1Affine, NativeLoader>,
+            Accumulator = Accumulator<M::G1Affine, NativeLoader>,
+        >,
+    {
+        type Output = bool;
+
+        fn finalize(
+            &(g2, s_g2): &(M::G2Affine, M::G2Affine),
+            Accumulator { lhs, rhs }: Accumulator<M::G1Affine, NativeLoader>,
+        ) -> Result<bool, Error> {
+            let terms = [(&lhs, &g2.into()), (&rhs, &(-s_g2).into())];
+            Ok(M::multi_miller_loop(&terms)
+                .final_exponentiation()
+                .is_identity()
+                .into())
+        }
+    }
 
     impl<M, PCS, const LIMBS: usize, const BITS: usize>
         AccumulationStrategy<M::G1Affine, NativeLoader, PCS> for KzgOnSameCurve<M, PCS, LIMBS, BITS>
@@ -73,14 +102,10 @@ mod native {
         }
 
         fn finalize(
-            &(g2, s_g2): &(M::G2Affine, M::G2Affine),
-            Accumulator { lhs, rhs }: Accumulator<M::G1Affine, NativeLoader>,
+            dk: &(M::G2Affine, M::G2Affine),
+            accumulator: Accumulator<M::G1Affine, NativeLoader>,
         ) -> Result<bool, Error> {
-            let terms = [(&lhs, &g2.into()), (&rhs, &(-s_g2).into())];
-            Ok(M::multi_miller_loop(&terms)
-                .final_exponentiation()
-                .is_identity()
-                .into())
+            KzgDecider::<M, PCS>::finalize(dk, accumulator)
         }
     }
 }
@@ -90,7 +115,7 @@ mod evm {
     use crate::{
         loader::evm::{EvmLoader, Scalar},
         pcs::{
-            kzg::{Accumulator, KzgOnSameCurve, PreAccumulator},
+            kzg::{Accumulator, KzgDecider, KzgOnSameCurve, PreAccumulator},
             AccumulationStrategy, PolynomialCommitmentScheme,
         },
         util::{
@@ -101,6 +126,41 @@ mod evm {
     };
     use ethereum_types::U256;
     use std::{fmt::Debug, rc::Rc};
+
+    impl<M, PCS> AccumulationStrategy<M::G1Affine, Rc<EvmLoader>, PCS> for KzgDecider<M, PCS>
+    where
+        M: MultiMillerLoop + Debug,
+        M::Scalar: PrimeField<Repr = [u8; 0x20]>,
+        PCS: PolynomialCommitmentScheme<
+            M::G1Affine,
+            Rc<EvmLoader>,
+            DecidingKey = (M::G2Affine, M::G2Affine),
+            PreAccumulator = PreAccumulator<M::G1Affine, Rc<EvmLoader>>,
+            Accumulator = Accumulator<M::G1Affine, Rc<EvmLoader>>,
+        >,
+    {
+        type Output = ();
+
+        fn finalize(
+            &(g2, s_g2): &(M::G2Affine, M::G2Affine),
+            Accumulator { lhs, rhs }: Accumulator<M::G1Affine, Rc<EvmLoader>>,
+        ) -> Result<(), Error> {
+            let loader = lhs.loader();
+            let [g2, minus_s_g2] = [g2, -s_g2].map(|ec_point| {
+                let coordinates = ec_point.coordinates().unwrap();
+                let x = coordinates.x().to_repr();
+                let y = coordinates.y().to_repr();
+                (
+                    U256::from_little_endian(&x.as_ref()[32..]),
+                    U256::from_little_endian(&x.as_ref()[..32]),
+                    U256::from_little_endian(&y.as_ref()[32..]),
+                    U256::from_little_endian(&y.as_ref()[..32]),
+                )
+            });
+            loader.pairing(&lhs, g2, &rhs, minus_s_g2);
+            Ok(())
+        }
+    }
 
     impl<M, PCS, const LIMBS: usize, const BITS: usize>
         AccumulationStrategy<M::G1Affine, Rc<EvmLoader>, PCS>
@@ -149,23 +209,10 @@ mod evm {
         }
 
         fn finalize(
-            &(g2, s_g2): &(M::G2Affine, M::G2Affine),
-            Accumulator { lhs, rhs }: Accumulator<M::G1Affine, Rc<EvmLoader>>,
+            dk: &(M::G2Affine, M::G2Affine),
+            accumulator: Accumulator<M::G1Affine, Rc<EvmLoader>>,
         ) -> Result<(), Error> {
-            let loader = lhs.loader();
-            let [g2, minus_s_g2] = [g2, -s_g2].map(|ec_point| {
-                let coordinates = ec_point.coordinates().unwrap();
-                let x = coordinates.x().to_repr();
-                let y = coordinates.y().to_repr();
-                (
-                    U256::from_little_endian(&x.as_ref()[32..]),
-                    U256::from_little_endian(&x.as_ref()[..32]),
-                    U256::from_little_endian(&y.as_ref()[32..]),
-                    U256::from_little_endian(&y.as_ref()[..32]),
-                )
-            });
-            loader.pairing(&lhs, g2, &rhs, minus_s_g2);
-            Ok(())
+            KzgDecider::<M, PCS>::finalize(dk, accumulator)
         }
     }
 }

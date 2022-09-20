@@ -22,7 +22,7 @@ macro_rules! test {
     (@ $prefix:ident, $name:ident, $k:expr, $config:expr, $create_cirucit:expr, $prover:ty, $verifier:ty, $plonk_verifier:ty) => {
         paste! {
             #[test]
-            fn [<test_kzg_ $prefix _ $name>]() {
+            fn [<test_ $prefix _ $name>]() {
                 let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
                     $k,
                     $config,
