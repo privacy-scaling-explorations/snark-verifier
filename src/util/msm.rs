@@ -60,7 +60,7 @@ where
     }
 
     pub(crate) fn try_into_constant(self) -> Option<L::LoadedScalar> {
-        self.bases.is_empty().then_some(self.constant.unwrap())
+        self.bases.is_empty().then(|| self.constant.unwrap())
     }
 
     pub fn evaluate(self, gen: C) -> L::LoadedEcPoint {
@@ -81,8 +81,8 @@ where
         if let Some(constant) = self.constant.as_mut() {
             *constant *= factor;
         }
-        for constant in self.scalars.iter_mut() {
-            *constant *= factor
+        for scalar in self.scalars.iter_mut() {
+            *scalar *= factor
         }
     }
 
@@ -101,8 +101,8 @@ where
             (None, Some(_)) => self.constant = other.constant.take(),
             _ => {}
         };
-        for (constant, base) in other.scalars.into_iter().zip(other.bases) {
-            self.push(constant, base);
+        for (scalar, base) in other.scalars.into_iter().zip(other.bases) {
+            self.push(scalar, base);
         }
     }
 }
@@ -184,8 +184,8 @@ where
     type Output = Msm<C, L>;
     fn neg(mut self) -> Msm<C, L> {
         self.constant = self.constant.map(|constant| -constant);
-        for constant in self.scalars.iter_mut() {
-            *constant = -constant.clone();
+        for scalar in self.scalars.iter_mut() {
+            *scalar = -scalar.clone();
         }
         self
     }

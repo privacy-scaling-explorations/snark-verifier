@@ -1,38 +1,86 @@
 use crate::{
     util::{
         arithmetic::{powers, root_of_unity, CurveAffine, Domain, FieldExt, Rotation},
-        expression::{CommonPolynomial, Expression, Query, QuotientPolynomial},
+        protocol::{
+            CommonPolynomial, Expression, InstanceCommittingKey, Query, QuotientPolynomial,
+        },
         Itertools,
     },
     Protocol,
 };
 use halo2_proofs::{
     plonk::{self, Any, ConstraintSystem, FirstPhase, SecondPhase, ThirdPhase, VerifyingKey},
-    poly,
+    poly::{self, commitment::Params},
     transcript::{EncodedChallenge, Transcript},
 };
-use std::{io, iter};
+use std::{io, iter, mem::size_of};
 
 pub mod transcript;
 
 #[cfg(test)]
 mod test;
 
+#[derive(Clone, Debug, Default)]
 pub struct Config {
     pub zk: bool,
     pub query_instance: bool,
-    pub num_instance: Vec<usize>,
     pub num_proof: usize,
+    pub num_instance: Vec<usize>,
     pub accumulator_indices: Option<Vec<(usize, usize)>>,
 }
 
-pub fn compile<C: CurveAffine>(vk: &VerifyingKey<C>, config: Config) -> Protocol<C> {
+impl Config {
+    pub fn kzg() -> Self {
+        Self {
+            zk: true,
+            query_instance: false,
+            num_proof: 1,
+            ..Default::default()
+        }
+    }
+
+    pub fn ipa() -> Self {
+        Self {
+            zk: true,
+            query_instance: true,
+            num_proof: 1,
+            ..Default::default()
+        }
+    }
+
+    pub fn set_zk(mut self, zk: bool) -> Self {
+        self.zk = zk;
+        self
+    }
+
+    pub fn with_num_proof(mut self, num_proof: usize) -> Self {
+        assert!(num_proof > 0);
+        self.num_proof = num_proof;
+        self
+    }
+
+    pub fn with_num_instance(mut self, num_instance: Vec<usize>) -> Self {
+        self.num_instance = num_instance;
+        self
+    }
+
+    pub fn with_accumulator_indices(mut self, accumulator_indices: Vec<(usize, usize)>) -> Self {
+        self.accumulator_indices = Some(accumulator_indices);
+        self
+    }
+}
+
+pub fn compile<'a, C: CurveAffine, P: Params<'a, C>>(
+    params: &P,
+    vk: &VerifyingKey<C>,
+    config: Config,
+) -> Protocol<C> {
     let cs = vk.cs();
     let Config {
         zk,
-        num_instance,
         query_instance,
         num_proof,
+        num_instance,
         accumulator_indices,
     } = config;
 
@@ -75,6 +123,17 @@ pub fn compile<C: CurveAffine>(vk: &VerifyingKey<C>, config: Config) -> Protocol
 
     let transcript_initial_state = transcript_initial_state::<C>(vk);
 
+    let instance_committing_key = query_instance.then(|| {
+        instance_committing_key(
+            params,
+            polynomials
+                .num_instance()
+                .into_iter()
+                .max()
+                .unwrap_or_default(),
+        )
+    });
+
     let accumulator_indices = accumulator_indices
         .map(|accumulator_indices| polynomials.accumulator_indices(accumulator_indices))
         .unwrap_or_default();
@@ -89,8 +148,9 @@ pub fn compile<C: CurveAffine>(vk: &VerifyingKey<C>, config: Config) -> Protocol
         evaluations,
         queries,
         quotient: polynomials.quotient(),
-        linearization: None,
         transcript_initial_state: Some(transcript_initial_state),
+        instance_committing_key,
+        linearization: None,
         accumulator_indices,
     }
 }
@@ -259,14 +319,14 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
 
     fn instance_queries(&'a self, t: usize) -> impl IntoIterator<Item = Query> + 'a {
         self.query_instance
-            .then_some(
+            .then(|| {
                 self.cs
                     .instance_queries()
                     .iter()
                     .map(move |(column, rotation)| {
                         self.query(*column.column_type(), column.index(), *rotation, t)
-                    }),
-            )
+                    })
+            })
             .into_iter()
             .flatten()
     }
@@ -379,10 +439,12 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
     }
 
     fn random_query(&self) -> Option<Query> {
-        self.zk.then_some(Query::new(
-            self.witness_offset() + self.num_witness().iter().sum::<usize>() - 1,
-            0,
-        ))
+        self.zk.then(|| {
+            Query::new(
+                self.witness_offset() + self.num_witness().iter().sum::<usize>() - 1,
+                0,
+            )
+        })
     }
 
     fn convert(&self, expression: &plonk::Expression<F>, t: usize) -> Expression<F> {
@@ -512,7 +574,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             .chain(zs.first().map(|(z_0, _, _)| l_0 * (one - z_0)))
             .chain(
                 zs.last()
-                    .and_then(|(z_l, _, _)| self.zk.then_some(l_last * (z_l * z_l - z_l))),
+                    .and_then(|(z_l, _, _)| self.zk.then(|| l_last * (z_l * z_l - z_l))),
             )
             .chain(if self.zk {
                 zs.iter()
@@ -612,7 +674,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     let table = compress(lookup.table_expressions());
                     iter::empty()
                         .chain(Some(l_0 * (one - z)))
-                        .chain(self.zk.then_some(l_last * (z * z - z)))
+                        .chain(self.zk.then(|| l_last * (z * z - z)))
                         .chain(Some(if self.zk {
                             l_active
                                 * (z_w * (permuted_input + beta) * (permuted_table + gamma)
@@ -621,7 +683,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                             z_w * (permuted_input + beta) * (permuted_table + gamma)
                                 - z * (input + beta) * (table + gamma)
                         }))
-                        .chain(self.zk.then_some(l_0 * (permuted_input - permuted_table)))
+                        .chain(self.zk.then(|| l_0 * (permuted_input - permuted_table)))
                         .chain(Some(if self.zk {
                             l_active
                                 * (permuted_input - permuted_table)
@@ -710,4 +772,43 @@ fn transcript_initial_state<C: CurveAffine>(vk: &VerifyingKey<C>) -> C::Scalar {
     let mut transcript = MockTranscript::default();
     vk.hash_into(&mut transcript).unwrap();
     transcript.0
+}
+
+fn instance_committing_key<'a, C: CurveAffine, P: Params<'a, C>>(
+    params: &P,
+    len: usize,
+) -> InstanceCommittingKey<C> {
+    let buf = {
+        let mut buf = Vec::new();
+        params.write(&mut buf).unwrap();
+        buf
+    };
+
+    let repr = C::Repr::default();
+    let repr_len = repr.as_ref().len();
+    let offset = size_of::<u32>() + (1 << params.k()) * repr_len;
+
+    let bases = (offset..)
+        .step_by(repr_len)
+        .map(|offset| {
+            let mut repr = C::Repr::default();
+            repr.as_mut()
+                .copy_from_slice(&buf[offset..offset + repr_len]);
+            C::from_bytes(&repr).unwrap()
+        })
+        .take(len)
+        .collect();
+
+    let w = {
+        let offset = size_of::<u32>() + (2 << params.k()) * repr_len;
+        let mut repr = C::Repr::default();
+        repr.as_mut()
+            .copy_from_slice(&buf[offset..offset + repr_len]);
+        C::from_bytes(&repr).unwrap()
+    };
+
+    InstanceCommittingKey {
+        bases,
+        constant: Some(w),
+    }
 }

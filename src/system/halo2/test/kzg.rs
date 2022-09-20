@@ -38,22 +38,15 @@ pub fn main_gate_with_range_with_mock_kzg_accumulator<M: MultiMillerLoop>(
 
 macro_rules! halo2_kzg_config {
     ($zk:expr, $num_proof:expr) => {
-        $crate::system::halo2::Config {
-            zk: $zk,
-            query_instance: false,
-            num_instance: Vec::new(),
-            num_proof: $num_proof,
-            accumulator_indices: None,
-        }
+        $crate::system::halo2::Config::kzg()
+            .set_zk($zk)
+            .with_num_proof($num_proof)
     };
     ($zk:expr, $num_proof:expr, $accumulator_indices:expr) => {
-        $crate::system::halo2::Config {
-            zk: $zk,
-            query_instance: false,
-            num_instance: Vec::new(),
-            num_proof: $num_proof,
-            accumulator_indices: Some($accumulator_indices),
-        }
+        $crate::system::halo2::Config::kzg()
+            .set_zk($zk)
+            .with_num_proof($num_proof)
+            .with_accumulator_indices($accumulator_indices)
     };
 }
 

@@ -437,7 +437,7 @@ mod aggregation {
                         .unwrap();
                     let Accumulator { lhs, rhs } = accumulator.evaluate();
 
-                    Ok((lhs.into_normalized(), rhs.into_normalized()))
+                    Ok((lhs.assigned(), rhs.assigned()))
                 },
             )?;
 
@@ -521,14 +521,9 @@ fn gen_application_snark(params: &ParamsKZG<Bn256>) -> aggregation::Snark {
 
     let pk = gen_pk(params, &circuit);
     let protocol = compile(
+        params,
         pk.get_vk(),
-        Config {
-            zk: true,
-            query_instance: false,
-            num_instance: application::StandardPlonk::num_instance(),
-            num_proof: 1,
-            accumulator_indices: None,
-        },
+        Config::kzg().with_num_instance(application::StandardPlonk::num_instance()),
     );
 
     let proof = gen_proof::<
@@ -547,14 +542,11 @@ fn gen_aggregation_evm_verifier(
     accumulator_indices: Vec<(usize, usize)>,
 ) -> Vec<u8> {
     let protocol = compile(
+        params,
         vk,
-        Config {
-            zk: true,
-            query_instance: false,
-            num_instance: num_instance.clone(),
-            num_proof: 1,
-            accumulator_indices: Some(accumulator_indices),
-        },
+        Config::kzg()
+            .with_num_instance(num_instance.clone())
+            .with_accumulator_indices(accumulator_indices),
     );
 
     let loader = EvmLoader::new::<Fq, Fr>();

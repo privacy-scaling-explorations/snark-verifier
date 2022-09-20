@@ -136,18 +136,6 @@ impl Query {
 }
 
 #[derive(Clone, Debug)]
-pub enum LinearizationStrategy {
-    /// Older linearization strategy of GWC19, which has linearization
-    /// polynomial that doesn't evaluate to 0, and requires prover to send extra
-    /// evaluation of it to verifier.
-    WithoutConstant,
-    /// Current linearization strategy of GWC19, which has linearization
-    /// polynomial that evaluate to 0 by subtracting product of vanishing and
-    /// quotient polynomials.
-    MinusVanishingTimesQuotient,
-}
-
-#[derive(Clone, Debug)]
 pub enum Expression<F> {
     Constant(F),
     CommonPolynomial(CommonPolynomial),
@@ -280,6 +268,20 @@ impl<F: Clone> Expression<F> {
         )
         .unwrap_or_default()
     }
+
+    pub fn used_query(&self) -> BTreeSet<Query> {
+        self.evaluate(
+            &|_| None,
+            &|_| None,
+            &|query| Some(BTreeSet::from_iter([query])),
+            &|_| None,
+            &|a| a,
+            &merge_left_right,
+            &merge_left_right,
+            &|a, _| a,
+        )
+        .unwrap_or_default()
+    }
 }
 
 impl<F: Clone> From<Query> for Expression<F> {
@@ -364,4 +366,22 @@ fn merge_left_right<T: Ord>(a: Option<BTreeSet<T>>, b: Option<BTreeSet<T>>) -> O
         }
         _ => None,
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum LinearizationStrategy {
+    /// Older linearization strategy of GWC19, which has linearization
+    /// polynomial that doesn't evaluate to 0, and requires prover to send extra
+    /// evaluation of it to verifier.
+    WithoutConstant,
+    /// Current linearization strategy of GWC19, which has linearization
+    /// polynomial that evaluate to 0 by subtracting product of vanishing and
+    /// quotient polynomials.
+    MinusVanishingTimesQuotient,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct InstanceCommittingKey<C> {
+    pub bases: Vec<C>,
+    pub constant: Option<C>,
 }

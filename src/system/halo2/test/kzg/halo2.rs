@@ -265,12 +265,11 @@ impl Circuit<Fr> for Accumulation {
                     })
                     .unwrap();
                 let Accumulator { lhs, rhs } = accumulator.evaluate();
-                let (lhs, rhs) = (lhs.into_normalized(), rhs.into_normalized());
 
                 loader.print_row_metering();
                 println!("Total row cost: {}", loader.ctx().offset());
 
-                Ok((lhs, rhs))
+                Ok((lhs.assigned(), rhs.assigned()))
             },
         )?;
 

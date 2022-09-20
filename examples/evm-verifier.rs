@@ -210,14 +210,9 @@ fn gen_evm_verifier(
     num_instance: Vec<usize>,
 ) -> Vec<u8> {
     let protocol = compile(
+        params,
         vk,
-        Config {
-            zk: true,
-            query_instance: false,
-            num_instance: num_instance.clone(),
-            num_proof: 1,
-            accumulator_indices: None,
-        },
+        Config::kzg().with_num_instance(num_instance.clone()),
     );
 
     let loader = EvmLoader::new::<Fq, Fr>();

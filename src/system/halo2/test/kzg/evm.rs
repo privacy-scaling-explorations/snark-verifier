@@ -118,7 +118,7 @@ test!(
     zk_standard_plonk_rand,
     9,
     halo2_kzg_config!(true, 1),
-    StandardPlonk::<_>::rand(ChaCha20Rng::from_seed(Default::default()))
+    StandardPlonk::rand(ChaCha20Rng::from_seed(Default::default()))
 );
 test!(
     zk_main_gate_with_range_with_mock_kzg_accumulator,

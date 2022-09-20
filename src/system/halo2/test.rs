@@ -88,7 +88,6 @@ where
 
 macro_rules! halo2_prepare {
     ($dir:expr, $k:expr, $setup:expr, $config:expr, $create_circuit:expr) => {{
-        use halo2_curves::bn256::G1Affine;
         use halo2_proofs::plonk::{keygen_pk, keygen_vk};
         use std::iter;
         use $crate::{
@@ -111,13 +110,16 @@ macro_rules! halo2_prepare {
             unimplemented!()
         };
 
-        let mut config = $config;
-        config.num_instance = circuits[0]
+        let num_instance = circuits[0]
             .instances()
             .iter()
             .map(|instances| instances.len())
             .collect();
-        let protocol = compile::<G1Affine>(pk.get_vk(), config);
+        let protocol = compile(
+            &params,
+            pk.get_vk(),
+            $config.with_num_instance(num_instance),
+        );
         assert_eq!(
             protocol.preprocessed.len(),
             protocol
@@ -206,7 +208,7 @@ macro_rules! halo2_native_verify {
         use $crate::verifier::PlonkVerifier;
 
         let proof = <$plonk_verifier>::read_proof($protocol, $instances, $transcript).unwrap();
-        assert!(<$plonk_verifier>::verify($svk, $dk, $protocol, $instances, &proof,).unwrap())
+        assert!(<$plonk_verifier>::verify($svk, $dk, $protocol, $instances, &proof).unwrap())
     }};
 }
 

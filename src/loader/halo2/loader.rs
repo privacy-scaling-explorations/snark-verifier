@@ -477,15 +477,8 @@ pub struct EcPoint<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, 
 }
 
 impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> EcPoint<'a, C, N, EccChip> {
-    pub(crate) fn assigned(&self) -> EccChip::AssignedPoint {
+    pub fn assigned(&self) -> EccChip::AssignedPoint {
         self.assigned.clone()
-    }
-
-    pub fn into_normalized(self) -> EccChip::AssignedPoint {
-        self.loader
-            .ecc_chip()
-            .normalize(&mut self.loader.ctx_mut(), &self.assigned)
-            .unwrap()
     }
 }
 
@@ -561,7 +554,14 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> LoadedEcPo
                 )
                 .unwrap()
             })
+            .map(|output| {
+                loader
+                    .ecc_chip()
+                    .normalize(&mut loader.ctx_mut(), &output)
+                    .unwrap()
+            })
             .unwrap();
+
         loader.ec_point(output)
     }
 }

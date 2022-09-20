@@ -299,7 +299,7 @@ where
                 .enumerate()
                 .skip(1)
                 .filter_map(|(i, power_of_z)| {
-                    (k_minus_one & (1 << i) == 1).then_some(power_of_z.clone())
+                    (k_minus_one & (1 << i) == 1).then(|| power_of_z.clone())
                 })
                 .reduce(|acc, value| acc * value)
                 .unwrap_or_else(|| loader.load_one())

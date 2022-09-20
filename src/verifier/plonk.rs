@@ -4,8 +4,10 @@ use crate::{
     pcs::{self, AccumulationStrategy, PolynomialCommitmentScheme},
     util::{
         arithmetic::{CurveAffine, Field, Rotation},
-        expression::{CommonPolynomial, CommonPolynomialEvaluation, LinearizationStrategy, Query},
         msm::Msm,
+        protocol::{
+            CommonPolynomial::Lagrange, CommonPolynomialEvaluation, LinearizationStrategy, Query,
+        },
         transcript::TranscriptRead,
         Itertools,
     },
@@ -55,7 +57,7 @@ where
             common_poly_eval
         };
 
-        let mut evaluations = proof.evaluations(protocol, instances, &common_poly_eval);
+        let mut evaluations = proof.evaluations(protocol, instances, &common_poly_eval)?;
         let commitments = proof.commitments(protocol, &common_poly_eval, &mut evaluations)?;
         let queries = proof.queries(protocol, evaluations);
 
@@ -78,6 +80,7 @@ where
     PCS: PolynomialCommitmentScheme<C, L>,
     AS: AccumulationStrategy<C, L, PCS>,
 {
+    pub committed_instances: Option<Vec<L::LoadedEcPoint>>,
     pub witnesses: Vec<L::LoadedEcPoint>,
     pub challenges: Vec<L::LoadedScalar>,
     pub quotients: Vec<L::LoadedEcPoint>,
@@ -116,11 +119,45 @@ where
         {
             return Err(Error::InvalidInstances);
         }
-        for instances in instances.iter() {
-            for instance in instances.iter() {
-                transcript.common_scalar(instance)?;
+
+        let committed_instances = if let Some(ick) = &protocol.instance_committing_key {
+            let loader = transcript.loader();
+            let bases = ick
+                .bases
+                .iter()
+                .map(|value| loader.ec_point_load_const(value))
+                .collect_vec();
+            let constant = ick
+                .constant
+                .as_ref()
+                .map(|value| loader.ec_point_load_const(value));
+
+            let committed_instances = instances
+                .iter()
+                .map(|instances| {
+                    instances
+                        .iter()
+                        .zip(bases.iter())
+                        .map(|(scalar, base)| Msm::<C, L>::base(base.clone()) * scalar)
+                        .chain(constant.clone().map(|constant| Msm::base(constant)))
+                        .sum::<Msm<_, _>>()
+                        .evaluate(C::default())
+                })
+                .collect_vec();
+            for committed_instance in committed_instances.iter() {
+                transcript.common_ec_point(committed_instance)?;
             }
-        }
+
+            Some(committed_instances)
+        } else {
+            for instances in instances.iter() {
+                for instance in instances.iter() {
+                    transcript.common_scalar(instance)?;
+                }
+            }
+
+            None
+        };
 
         let (witnesses, challenges) = {
             let (witnesses, challenges) = protocol
@@ -162,6 +199,7 @@ where
         };
 
         Ok(Self {
+            committed_instances,
             witnesses,
             challenges,
             quotients,
@@ -218,7 +256,18 @@ where
                     .iter()
                     .map(|value| Msm::base(loader.ec_point_load_const(value))),
             )
-            .chain(iter::repeat_with(Default::default).take(protocol.num_instance.len()))
+            .chain(
+                self.committed_instances
+                    .clone()
+                    .map(|committed_instances| {
+                        committed_instances.into_iter().map(Msm::base).collect_vec()
+                    })
+                    .unwrap_or_else(|| {
+                        iter::repeat_with(Default::default)
+                            .take(protocol.num_instance.len())
+                            .collect_vec()
+                    }),
+            )
             .chain(self.witnesses.iter().cloned().map(Msm::base))
             .collect_vec();
 
@@ -232,7 +281,7 @@ where
                     .map(Msm::constant)
                     .or_else(|| {
                         (query.rotation == Rotation::cur())
-                            .then_some(commitments.get(query.poly).cloned())
+                            .then(|| commitments.get(query.poly).cloned())
                             .flatten()
                     })
                     .ok_or(Error::InvalidQuery(query))
@@ -311,29 +360,32 @@ where
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
-    ) -> HashMap<Query, L::LoadedScalar> {
+    ) -> Result<HashMap<Query, L::LoadedScalar>, Error> {
         let loader = common_poly_eval.zn().loader();
-        let instance_evaluations = instances.iter().map(|instances| {
-            loader.sum_products(
-                &instances
-                    .iter()
-                    .enumerate()
-                    .map(|(i, instance)| {
-                        (
-                            common_poly_eval.get(CommonPolynomial::Lagrange(i as i32)),
-                            instance,
-                        )
-                    })
-                    .collect_vec(),
-            )
+        let instance_evals = protocol.instance_committing_key.is_none().then(|| {
+            let offset = protocol.preprocessed.len();
+            let queries = {
+                let range = offset..offset + protocol.num_instance.len();
+                protocol
+                    .quotient
+                    .numerator
+                    .used_query()
+                    .into_iter()
+                    .filter(move |query| range.contains(&query.poly))
+            };
+            queries
+                .map(move |query| {
+                    let instances = instances[query.poly - offset].iter();
+                    let l_i_minus_r = (-query.rotation.0..)
+                        .map(|i_minus_r| common_poly_eval.get(Lagrange(i_minus_r)));
+                    let eval = loader.sum_products(&instances.zip(l_i_minus_r).collect_vec());
+                    (query, eval)
+                })
+                .collect_vec()
         });
 
-        iter::empty()
-            .chain(
-                (protocol.preprocessed.len()..)
-                    .zip(instance_evaluations)
-                    .map(|(poly, eval)| (Query::new(poly, Rotation::cur()), eval)),
-            )
+        let evals = iter::empty()
+            .chain(instance_evals.into_iter().flatten())
             .chain(
                 protocol
                     .evaluations
@@ -341,7 +393,9 @@ where
                     .cloned()
                     .zip(self.evaluations.iter().cloned()),
             )
-            .collect()
+            .collect();
+
+        Ok(evals)
     }
 }
 
@@ -376,16 +430,37 @@ fn langranges<C, T>(protocol: &Protocol<C>, instances: &[Vec<T>]) -> impl IntoIt
 where
     C: CurveAffine,
 {
+    let instance_eval_lagrange = protocol.instance_committing_key.is_none().then(|| {
+        let queries = {
+            let offset = protocol.preprocessed.len();
+            let range = offset..offset + protocol.num_instance.len();
+            protocol
+                .quotient
+                .numerator
+                .used_query()
+                .into_iter()
+                .filter(move |query| range.contains(&query.poly))
+        };
+        let (min_rotation, max_rotation) = queries.fold((0, 0), |(min, max), query| {
+            if query.rotation.0 < min {
+                (query.rotation.0, max)
+            } else if query.rotation.0 > max {
+                (min, query.rotation.0)
+            } else {
+                (min, max)
+            }
+        });
+        let max_instance_len = instances
+            .iter()
+            .map(|instance| instance.len())
+            .max()
+            .unwrap_or_default();
+        -max_rotation..max_instance_len as i32 + min_rotation.abs()
+    });
     protocol
         .quotient
         .numerator
         .used_langrange()
         .into_iter()
-        .chain(
-            0..instances
-                .iter()
-                .map(|instance| instance.len())
-                .max()
-                .unwrap_or_default() as i32,
-        )
+        .chain(instance_eval_lagrange.into_iter().flatten())
 }

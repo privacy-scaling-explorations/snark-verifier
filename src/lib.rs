@@ -16,23 +16,26 @@ pub mod verifier;
 pub enum Error {
     InvalidInstances,
     InvalidLinearization,
-    InvalidQuery(util::expression::Query),
+    InvalidQuery(util::protocol::Query),
     InvalidChallenge(usize),
     Transcript(std::io::ErrorKind, String),
 }
 
 #[derive(Clone, Debug)]
 pub struct Protocol<C: util::arithmetic::CurveAffine> {
+    // Common description
     pub zk: bool,
     pub domain: util::arithmetic::Domain<C::Scalar>,
     pub preprocessed: Vec<C>,
     pub num_instance: Vec<usize>,
     pub num_witness: Vec<usize>,
     pub num_challenge: Vec<usize>,
-    pub evaluations: Vec<util::expression::Query>,
-    pub queries: Vec<util::expression::Query>,
-    pub quotient: util::expression::QuotientPolynomial<C::Scalar>,
-    pub linearization: Option<util::expression::LinearizationStrategy>,
+    pub evaluations: Vec<util::protocol::Query>,
+    pub queries: Vec<util::protocol::Query>,
+    pub quotient: util::protocol::QuotientPolynomial<C::Scalar>,
+    // Minor customization
     pub transcript_initial_state: Option<C::Scalar>,
+    pub instance_committing_key: Option<util::protocol::InstanceCommittingKey<C>>,
+    pub linearization: Option<util::protocol::LinearizationStrategy>,
     pub accumulator_indices: Vec<Vec<(usize, usize)>>,
 }
