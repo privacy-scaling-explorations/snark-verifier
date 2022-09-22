@@ -21,7 +21,7 @@ use plonk_verifier::{
         evm::{encode_calldata, EvmLoader},
         native::NativeLoader,
     },
-    pcs::kzg::{Gwc19, KzgOnSameCurve},
+    pcs::kzg::{Gwc19, KzgAccumulation, LimbsEncoding},
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     verifier::{self, PlonkVerifier},
 };
@@ -30,7 +30,10 @@ use std::{io::Cursor, rc::Rc};
 
 const LIMBS: usize = 4;
 const BITS: usize = 68;
-type Plonk = verifier::Plonk<KzgOnSameCurve<Bn256, Gwc19<Bn256>, LIMBS, BITS>>;
+
+type Pcs = Gwc19<Bn256>;
+type As = KzgAccumulation<Pcs>;
+type Plonk = verifier::Plonk<Pcs, LimbsEncoding<LIMBS, BITS>>;
 
 mod application {
     use halo2_curves::bn256::Fr;
@@ -160,13 +163,12 @@ mod application {
 }
 
 mod aggregation {
-    use super::{Plonk, BITS, LIMBS};
+    use super::{As, Plonk, BITS, LIMBS};
     use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         plonk::{self, Circuit, ConstraintSystem},
         poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
-        transcript::TranscriptReadBuffer,
     };
     use halo2_wrong_ecc::{
         integer::rns::Rns,
@@ -179,25 +181,20 @@ mod aggregation {
     use halo2_wrong_transcript::NativeRepresentation;
     use itertools::Itertools;
     use plonk_verifier::{
-        loader,
-        pcs::{
-            kzg::{Accumulator, PreAccumulator},
-            PreAccumulator as _,
-        },
+        loader::{self, native::NativeLoader},
+        pcs::{kzg::Accumulator, AccumulationScheme, AccumulationSchemeProver},
         system,
-        util::{
-            arithmetic::{fe_to_limbs, FieldExt},
-            transcript::Transcript,
-        },
+        util::arithmetic::{fe_to_limbs, FieldExt},
         verifier::PlonkVerifier,
         Protocol,
     };
+    use rand::rngs::OsRng;
     use std::{iter, rc::Rc};
 
     const T: usize = 5;
     const RATE: usize = 4;
     const R_F: usize = 8;
-    const R_P: usize = 57;
+    const R_P: usize = 60;
 
     type BaseFieldEccChip = halo2_wrong_ecc::BaseFieldEccChip<G1Affine, LIMBS, BITS>;
     type Halo2Loader<'a> = loader::halo2::Halo2Loader<'a, G1Affine, Fr, BaseFieldEccChip>;
@@ -265,35 +262,49 @@ mod aggregation {
                 proof: Value::unknown(),
             }
         }
+
+        fn proof(&self) -> Value<&[u8]> {
+            self.proof.as_ref().map(Vec::as_slice)
+        }
     }
 
-    pub fn accumulate<'a>(
+    pub fn aggregate<'a>(
         g1: &G1Affine,
         loader: &Rc<Halo2Loader<'a>>,
-        snark: &SnarkWitness,
-        curr_accumulator: Option<PreAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>,
-    ) -> PreAccumulator<G1Affine, Rc<Halo2Loader<'a>>> {
-        let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(
-            loader,
-            snark.proof.as_ref().map(|proof| proof.as_slice()),
-        );
-        let instances = snark
-            .instances
+        snarks: &[SnarkWitness],
+        as_proof: Value<&'_ [u8]>,
+    ) -> Accumulator<G1Affine, Rc<Halo2Loader<'a>>> {
+        let assign_instances = |instances: &[Vec<Value<Fr>>]| {
+            instances
+                .iter()
+                .map(|instances| {
+                    instances
+                        .iter()
+                        .map(|instance| loader.assign_scalar(*instance))
+                        .collect_vec()
+                })
+                .collect_vec()
+        };
+
+        let accumulators = snarks
             .iter()
-            .map(|instances| {
-                instances
-                    .iter()
-                    .map(|instance| loader.assign_scalar(*instance))
-                    .collect_vec()
+            .flat_map(|snark| {
+                let instances = assign_instances(&snark.instances);
+                let mut transcript =
+                    PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, snark.proof());
+                let proof =
+                    Plonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
+                Plonk::succinct_verify(g1, &snark.protocol, &instances, &proof).unwrap()
             })
             .collect_vec();
-        let proof = Plonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
-        let mut accumulator =
-            Plonk::succint_verify(g1, &snark.protocol, &instances, &proof).unwrap();
-        if let Some(curr_accumulator) = curr_accumulator {
-            accumulator += curr_accumulator * transcript.squeeze_challenge();
-        }
-        accumulator
+
+        let acccumulator = {
+            let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, as_proof);
+            let proof = As::read_proof(true, &accumulators, &mut transcript).unwrap();
+            As::verify(&(), &accumulators, &proof).unwrap()
+        };
+
+        acccumulator
     }
 
     #[derive(Clone)]
@@ -338,6 +349,7 @@ mod aggregation {
         g1: G1Affine,
         snarks: Vec<SnarkWitness>,
         instances: Vec<Fr>,
+        as_proof: Value<Vec<u8>>,
     }
 
     impl AggregationCircuit {
@@ -345,24 +357,32 @@ mod aggregation {
             let g1 = params.get_g()[0];
             let snarks = snarks.into_iter().collect_vec();
 
-            let accumulator = snarks
+            let accumulators = snarks
                 .iter()
-                .fold(None, |curr_accumulator, snark| {
-                    let mut transcript = PoseidonTranscript::init(snark.proof.as_slice());
+                .flat_map(|snark| {
+                    let mut transcript =
+                        PoseidonTranscript::<NativeLoader, _, _>::new(snark.proof.as_slice());
                     let proof =
                         Plonk::read_proof(&snark.protocol, &snark.instances, &mut transcript)
                             .unwrap();
-                    let mut accumulator =
-                        Plonk::succint_verify(&g1, &snark.protocol, &snark.instances, &proof)
-                            .unwrap();
-                    if let Some(curr_accumulator) = curr_accumulator {
-                        accumulator += curr_accumulator * transcript.squeeze_challenge();
-                    }
-                    Some(accumulator)
+                    Plonk::succinct_verify(&g1, &snark.protocol, &snark.instances, &proof).unwrap()
                 })
-                .unwrap();
+                .collect_vec();
 
-            let Accumulator { lhs, rhs } = accumulator.evaluate();
+            let (accumulator, as_proof) = {
+                let mut transcript = PoseidonTranscript::<NativeLoader, _, _>::new(Vec::new());
+                let accumulator = As::create_proof(
+                    false,
+                    &(params.get_g()[0], params.get_g()[1]),
+                    &accumulators,
+                    &mut transcript,
+                    OsRng,
+                )
+                .unwrap();
+                (accumulator, transcript.finalize())
+            };
+
+            let Accumulator { lhs, rhs } = accumulator;
             let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
                 .map(fe_to_limbs::<_, _, LIMBS, BITS>)
                 .concat();
@@ -371,6 +391,7 @@ mod aggregation {
                 g1,
                 snarks: snarks.into_iter().map_into().collect(),
                 instances,
+                as_proof: Value::known(as_proof),
             }
         }
 
@@ -384,6 +405,10 @@ mod aggregation {
 
         pub fn instances(&self) -> Vec<Vec<Fr>> {
             vec![self.instances.clone()]
+        }
+
+        pub fn as_proof(&self) -> Value<&[u8]> {
+            self.as_proof.as_ref().map(Vec::as_slice)
         }
     }
 
@@ -400,6 +425,7 @@ mod aggregation {
                     .map(SnarkWitness::without_witnesses)
                     .collect(),
                 instances: Vec::new(),
+                as_proof: Value::unknown(),
             }
         }
 
@@ -428,14 +454,8 @@ mod aggregation {
 
                     let ecc_chip = config.ecc_chip();
                     let loader = Halo2Loader::new(ecc_chip, ctx);
-                    let accumulator = self
-                        .snarks
-                        .iter()
-                        .fold(None, |accumulator, snark| {
-                            Some(accumulate(&self.g1, &loader, snark, accumulator))
-                        })
-                        .unwrap();
-                    let Accumulator { lhs, rhs } = accumulator.evaluate();
+                    let Accumulator { lhs, rhs } =
+                        aggregate(&self.g1, &loader, &self.snarks, self.as_proof());
 
                     Ok((lhs.assigned(), rhs.assigned()))
                 },
@@ -590,7 +610,7 @@ fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>)
 }
 
 fn main() {
-    let params = gen_srs(21);
+    let params = gen_srs(22);
     let params_app = {
         let mut params = params.clone();
         params.downsize(8);

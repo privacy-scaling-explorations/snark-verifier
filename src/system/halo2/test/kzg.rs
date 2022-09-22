@@ -66,7 +66,6 @@ macro_rules! halo2_kzg_create_snark {
     (
         $prover:ty,
         $verifier:ty,
-        $verification_strategy:ty,
         $transcript_read:ty,
         $transcript_write:ty,
         $encoded_challenge:ty,
@@ -75,17 +74,18 @@ macro_rules! halo2_kzg_create_snark {
         $protocol:expr,
         $circuits:expr
     ) => {{
-        use halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
+        use halo2_proofs::poly::kzg::{commitment::KZGCommitmentScheme, strategy::SingleStrategy};
         use $crate::system::halo2::test::halo2_create_snark;
 
         halo2_create_snark!(
             KZGCommitmentScheme<_>,
             $prover,
             $verifier,
-            $verification_strategy,
+            SingleStrategy<_>,
             $transcript_read,
             $transcript_write,
             $encoded_challenge,
+            |proof, _| proof,
             $params,
             $pk,
             $protocol,

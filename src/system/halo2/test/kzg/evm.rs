@@ -1,6 +1,6 @@
 use crate::{
     loader::{halo2::test::StandardPlonk, native::NativeLoader},
-    pcs::kzg::{Bdfg21, Gwc19, KzgOnSameCurve},
+    pcs::kzg::{Bdfg21, Gwc19, LimbsEncoding},
     system::halo2::{
         test::kzg::{
             self, halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify,
@@ -11,10 +11,7 @@ use crate::{
     verifier::Plonk,
 };
 use halo2_curves::bn256::{Bn256, G1Affine};
-use halo2_proofs::poly::kzg::{
-    multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK},
-    strategy::AccumulatorStrategy,
-};
+use halo2_proofs::poly::kzg::multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK};
 use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
@@ -79,7 +76,6 @@ macro_rules! test {
                 let snark = halo2_kzg_create_snark!(
                     $prover,
                     $verifier,
-                    AccumulatorStrategy<_>,
                     EvmTranscript<G1Affine, _, _, _>,
                     EvmTranscript<G1Affine, _, _, _>,
                     ChallengeEvm<_>,
@@ -106,11 +102,11 @@ macro_rules! test {
         }
     };
     ($name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
-        test!(@ #[test], shplonk, $name, $k, $config, $create_circuit, ProverSHPLONK<_>, VerifierSHPLONK<_>, Plonk::<KzgOnSameCurve<Bn256, Bdfg21<Bn256>, LIMBS, BITS>>);
-        test!(@ #[test], plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, Plonk::<KzgOnSameCurve<Bn256, Gwc19<Bn256>, LIMBS, BITS>>);
+        test!(@ #[test], shplonk, $name, $k, $config, $create_circuit, ProverSHPLONK<_>, VerifierSHPLONK<_>, Plonk<Bdfg21<Bn256>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ #[test], plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, Plonk<Gwc19<Bn256>, LimbsEncoding<LIMBS, BITS>>);
     };
     ($(#[$attr:meta],)* $name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
-        test!(@ #[test] $(,#[$attr])*, plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, Plonk::<KzgOnSameCurve<Bn256, Gwc19<Bn256>, LIMBS, BITS>>);
+        test!(@ #[test] $(,#[$attr])*, plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, Plonk<Gwc19<Bn256>, LimbsEncoding<LIMBS, BITS>>);
     };
 }
 
@@ -128,9 +124,9 @@ test!(
 );
 test!(
     #[cfg(feature = "loader_halo2")],
-    #[ignore = "cause it requires 16GB memory to run"],
+    #[ignore = "cause it requires 32GB memory to run"],
     zk_accumulation_two_snark,
-    21,
+    22,
     halo2_kzg_config!(true, 1, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
     kzg::halo2::Accumulation::two_snark()
 );

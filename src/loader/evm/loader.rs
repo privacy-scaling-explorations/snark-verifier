@@ -219,46 +219,36 @@ impl EvmLoader {
         self.ec_point(Value::Memory(ptr))
     }
 
-    pub fn calldataload_ec_point_from_limbs<const LIMBS: usize, const BITS: usize>(
+    pub fn ec_point_from_limbs<const LIMBS: usize, const BITS: usize>(
         self: &Rc<Self>,
-        offset: usize,
+        x_limbs: [Scalar; LIMBS],
+        y_limbs: [Scalar; LIMBS],
     ) -> EcPoint {
         let ptr = self.allocate(0x40);
-        for (ptr, offset) in [(ptr, offset), (ptr + 0x20, offset + LIMBS * 0x20)] {
-            for idx in 0..LIMBS {
-                if idx == 0 {
+        for (ptr, limbs) in [(ptr, x_limbs), (ptr + 0x20, y_limbs)] {
+            for (idx, limb) in limbs.into_iter().enumerate() {
+                self.push(&limb);
+                // [..., success, acc]
+                if idx > 0 {
                     self.code
                         .borrow_mut()
-                        // [..., success]
-                        .push(offset)
-                        // [..., success, x_limb_0_ptr]
-                        .calldataload();
-                    // [..., success, x_limb_0]
-                } else {
-                    self.code
-                        .borrow_mut()
-                        // [..., success, x_acc]
-                        .push(offset + idx * 0x20)
-                        // [..., success, x_acc, x_limb_i_ptr]
-                        .calldataload()
-                        // [..., success, x_acc, x_limb_i]
                         .push(idx * BITS)
-                        // [..., success, x_acc, x_limb_i, shift]
+                        // [..., success, acc, limb_i, shift]
                         .shl()
-                        // [..., success, x_acc, x_limb_i << shift]
+                        // [..., success, acc, limb_i << shift]
                         .add();
-                    // [..., success, x_acc]
+                    // [..., success, acc]
                 }
             }
             self.code
                 .borrow_mut()
-                // [..., success, x]
+                // [..., success, coordinate]
                 .dup(0)
-                // [..., success, x, x]
+                // [..., success, coordinate, coordinate]
                 .push(ptr)
-                // [..., success, x, x, x_ptr]
+                // [..., success, coordinate, coordinate, ptr]
                 .mstore();
-            // [..., success, x]
+            // [..., success, coordinate]
         }
         // [..., success, x, y]
         self.validate_ec_point();
@@ -361,7 +351,7 @@ impl EvmLoader {
         self.scalar(Value::Memory(ptr))
     }
 
-    fn dup_ec_point(self: &Rc<Self>, value: &EcPoint) -> EcPoint {
+    pub fn dup_ec_point(self: &Rc<Self>, value: &EcPoint) -> EcPoint {
         let ptr = self.allocate(0x40);
         match value.value {
             Value::Constant((x, y)) => {

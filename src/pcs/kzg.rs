@@ -1,7 +1,8 @@
+mod accumulation;
 mod accumulator;
-mod strategy;
+mod decider;
 mod variant;
 
-pub use accumulator::{Accumulator, PreAccumulator};
-pub use strategy::{KzgDecider, KzgOnSameCurve};
+pub use accumulation::KzgAccumulation;
+pub use accumulator::{Accumulator, LimbsEncoding};
 pub use variant::{bdfg21::Bdfg21, gwc19::Gwc19};

@@ -1,10 +1,7 @@
 use crate::{
     cost::{Cost, CostEstimation},
     loader::{LoadedScalar, Loader},
-    pcs::{
-        kzg::accumulator::{Accumulator, PreAccumulator},
-        PolynomialCommitmentScheme, Query,
-    },
+    pcs::{kzg::accumulator::Accumulator, PolynomialCommitmentScheme, Query},
     util::{
         arithmetic::{CurveAffine, Domain, MultiMillerLoop, PrimeField},
         msm::Msm,
@@ -24,9 +21,7 @@ where
     L: Loader<M::G1Affine>,
 {
     type SuccinctVerifyingKey = M::G1Affine;
-    type DecidingKey = (M::G2Affine, M::G2Affine);
     type Proof = Gwc19Proof<M::G1Affine, L>;
-    type PreAccumulator = PreAccumulator<M::G1Affine, L>;
     type Accumulator = Accumulator<M::G1Affine, L>;
 
     fn read_proof<T>(
@@ -46,7 +41,7 @@ where
         z: &L::LoadedScalar,
         queries: &[Query<M::Scalar, L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<Self::PreAccumulator, Error> {
+    ) -> Result<Self::Accumulator, Error> {
         let sets = query_sets(queries);
         let powers_of_u = &proof.u.powers(sets.len());
         let f = {
@@ -75,7 +70,10 @@ where
             .map(|(uw, z_omega)| uw.clone() * &z_omega)
             .sum();
 
-        Ok(PreAccumulator::new(*g1, lhs, rhs.into_iter().sum()))
+        Ok(Accumulator::new(
+            lhs.evaluate(Some(*g1)),
+            rhs.into_iter().sum::<Msm<_, _>>().evaluate(Some(*g1)),
+        ))
     }
 }
 

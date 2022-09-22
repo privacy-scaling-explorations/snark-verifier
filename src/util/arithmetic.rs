@@ -135,15 +135,15 @@ impl<F: PrimeField> Domain<F> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Fraction<F> {
-    numer: Option<F>,
-    denom: F,
-    eval: Option<F>,
+pub struct Fraction<T> {
+    numer: Option<T>,
+    denom: T,
+    eval: Option<T>,
     inv: bool,
 }
 
-impl<F> Fraction<F> {
-    pub fn new(numer: F, denom: F) -> Self {
+impl<T> Fraction<T> {
+    pub fn new(numer: T, denom: T) -> Self {
         Self {
             numer: Some(numer),
             denom,
@@ -152,7 +152,7 @@ impl<F> Fraction<F> {
         }
     }
 
-    pub fn one_over(denom: F) -> Self {
+    pub fn one_over(denom: T) -> Self {
         Self {
             numer: None,
             denom,
@@ -161,7 +161,7 @@ impl<F> Fraction<F> {
         }
     }
 
-    pub fn denom(&self) -> Option<&F> {
+    pub fn denom(&self) -> Option<&T> {
         if !self.inv {
             Some(&self.denom)
         } else {
@@ -169,7 +169,7 @@ impl<F> Fraction<F> {
         }
     }
 
-    pub fn denom_mut(&mut self) -> Option<&mut F> {
+    pub fn denom_mut(&mut self) -> Option<&mut T> {
         if !self.inv {
             self.inv = true;
             Some(&mut self.denom)
@@ -179,7 +179,7 @@ impl<F> Fraction<F> {
     }
 }
 
-impl<F: FieldOps + Clone> Fraction<F> {
+impl<T: FieldOps + Clone> Fraction<T> {
     pub fn evaluate(&mut self) {
         assert!(self.inv);
         assert!(self.eval.is_none());
@@ -192,7 +192,7 @@ impl<F: FieldOps + Clone> Fraction<F> {
         );
     }
 
-    pub fn evaluated(&self) -> &F {
+    pub fn evaluated(&self) -> &T {
         assert!(self.inv);
 
         self.eval.as_ref().unwrap()

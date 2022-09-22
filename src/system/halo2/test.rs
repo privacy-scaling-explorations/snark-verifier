@@ -9,7 +9,7 @@ use halo2_proofs::{
     transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 use rand_chacha::rand_core::RngCore;
-use std::fs;
+use std::{fs, io::Cursor};
 
 mod kzg;
 
@@ -36,6 +36,7 @@ pub fn create_proof_checked<'a, S, C, P, V, VS, TW, TR, EC, R>(
     circuits: &[C],
     instances: &[&[&[S::Scalar]]],
     mut rng: R,
+    finalize: impl Fn(Vec<u8>, VS::Output) -> Vec<u8>,
 ) -> Vec<u8>
 where
     S: CommitmentScheme,
@@ -43,9 +44,9 @@ where
     C: Circuit<S::Scalar>,
     P: Prover<'a, S>,
     V: Verifier<'a, S>,
-    VS: VerificationStrategy<'a, S, V, Output = VS>,
+    VS: VerificationStrategy<'a, S, V>,
     TW: TranscriptWriterBuffer<Vec<u8>, S::Curve, EC>,
-    TR: TranscriptReadBuffer<&'static [u8], S::Curve, EC>,
+    TR: TranscriptReadBuffer<Cursor<Vec<u8>>, S::Curve, EC>,
     EC: EncodedChallenge<S::Curve>,
     R: RngCore,
 {
@@ -73,17 +74,14 @@ where
         transcript.finalize()
     };
 
-    let accept = {
+    let output = {
         let params = params.verifier_params();
         let strategy = VS::new(params);
-        let mut transcript = TR::init(Box::leak(Box::new(proof.clone())));
-        verify_proof(params, pk.get_vk(), strategy, instances, &mut transcript)
-            .unwrap()
-            .finalize()
+        let mut transcript = TR::init(Cursor::new(proof.clone()));
+        verify_proof(params, pk.get_vk(), strategy, instances, &mut transcript).unwrap()
     };
-    assert!(accept);
 
-    proof
+    finalize(proof, output)
 }
 
 macro_rules! halo2_prepare {
@@ -145,6 +143,7 @@ macro_rules! halo2_create_snark {
         $transcript_read:ty,
         $transcript_write:ty,
         $encoded_challenge:ty,
+        $finalize:expr,
         $params:expr,
         $pk:expr,
         $protocol:expr,
@@ -180,6 +179,7 @@ macro_rules! halo2_create_snark {
                     $circuits,
                     &instances,
                     &mut ChaCha20Rng::from_seed(Default::default()),
+                    $finalize,
                 )
             } else {
                 unimplemented!()

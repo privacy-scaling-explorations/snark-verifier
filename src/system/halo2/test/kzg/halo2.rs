@@ -1,11 +1,14 @@
 use crate::{
     loader,
-    loader::halo2::test::{
-        MainGateWithRange, MainGateWithRangeConfig, Snark, SnarkWitness, StandardPlonk,
+    loader::{
+        halo2::test::{
+            MainGateWithRange, MainGateWithRangeConfig, Snark, SnarkWitness, StandardPlonk,
+        },
+        native::NativeLoader,
     },
     pcs::{
-        kzg::{Accumulator, Bdfg21, KzgOnSameCurve, PreAccumulator},
-        PreAccumulator as _,
+        kzg::{Accumulator, Bdfg21, KzgAccumulation, LimbsEncoding},
+        AccumulationScheme, AccumulationSchemeProver,
     },
     system::{
         self,
@@ -17,12 +20,12 @@ use crate::{
             transcript::halo2::ChallengeScalar,
         },
     },
-    util::{arithmetic::fe_to_limbs, transcript::Transcript, Itertools},
+    util::{arithmetic::fe_to_limbs, Itertools},
     verifier::{self, PlonkVerifier},
 };
 use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
-    circuit::{floor_planner::V1, Layouter},
+    circuit::{floor_planner::V1, Layouter, Value},
     plonk,
     plonk::Circuit,
     poly::{
@@ -30,7 +33,6 @@ use halo2_proofs::{
         kzg::{
             commitment::ParamsKZG,
             multiopen::{ProverSHPLONK, VerifierSHPLONK},
-            strategy::AccumulatorStrategy,
         },
     },
     transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer},
@@ -48,11 +50,11 @@ use std::{iter, rc::Rc};
 const T: usize = 5;
 const RATE: usize = 4;
 const R_F: usize = 8;
-const R_P: usize = 57;
+const R_P: usize = 60;
 
 type BaseFieldEccChip = halo2_wrong_ecc::BaseFieldEccChip<G1Affine, LIMBS, BITS>;
 type Halo2Loader<'a> = loader::halo2::Halo2Loader<'a, G1Affine, Fr, BaseFieldEccChip>;
-type PoseidonTranscript<G1Affine, L, S, B> = system::halo2::transcript::halo2::PoseidonTranscript<
+type PoseidonTranscript<L, S, B> = system::halo2::transcript::halo2::PoseidonTranscript<
     G1Affine,
     Fr,
     NativeRepresentation,
@@ -66,40 +68,54 @@ type PoseidonTranscript<G1Affine, L, S, B> = system::halo2::transcript::halo2::P
     R_F,
     R_P,
 >;
-type Shplonk = verifier::Plonk<KzgOnSameCurve<Bn256, Bdfg21<Bn256>, LIMBS, BITS>>;
+
+type Pcs = Bdfg21<Bn256>;
+type As = KzgAccumulation<Pcs>;
+type Plonk = verifier::Plonk<Pcs, LimbsEncoding<LIMBS, BITS>>;
 
 pub fn accumulate<'a>(
     g1: &G1Affine,
     loader: &Rc<Halo2Loader<'a>>,
-    snark: &SnarkWitness<G1Affine>,
-    curr_accumulator: Option<PreAccumulator<G1Affine, Rc<Halo2Loader<'a>>>>,
-) -> PreAccumulator<G1Affine, Rc<Halo2Loader<'a>>> {
-    let mut transcript = PoseidonTranscript::<_, Rc<Halo2Loader>, _, _>::new(
-        loader,
-        snark.proof.as_ref().map(|proof| proof.as_slice()),
-    );
-    let instances = snark
-        .instances
+    snarks: &[SnarkWitness<G1Affine>],
+    as_proof: Value<&'_ [u8]>,
+) -> Accumulator<G1Affine, Rc<Halo2Loader<'a>>> {
+    let assign_instances = |instances: &[Vec<Value<Fr>>]| {
+        instances
+            .iter()
+            .map(|instances| {
+                instances
+                    .iter()
+                    .map(|instance| loader.assign_scalar(*instance))
+                    .collect_vec()
+            })
+            .collect_vec()
+    };
+
+    let accumulators = snarks
         .iter()
-        .map(|instances| {
-            instances
-                .iter()
-                .map(|instance| loader.assign_scalar(*instance))
-                .collect_vec()
+        .flat_map(|snark| {
+            let instances = assign_instances(&snark.instances);
+            let mut transcript =
+                PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, snark.proof());
+            let proof = Plonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
+            Plonk::succinct_verify(g1, &snark.protocol, &instances, &proof).unwrap()
         })
         .collect_vec();
-    let proof = Shplonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
-    let mut accumulator = Shplonk::succint_verify(g1, &snark.protocol, &instances, &proof).unwrap();
-    if let Some(curr_accumulator) = curr_accumulator {
-        accumulator += curr_accumulator * transcript.squeeze_challenge();
-    }
-    accumulator
+
+    let acccumulator = {
+        let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, as_proof);
+        let proof = As::read_proof(true, &accumulators, &mut transcript).unwrap();
+        As::verify(&(), &accumulators, &proof).unwrap()
+    };
+
+    acccumulator
 }
 
 pub struct Accumulation {
     g1: G1Affine,
     snarks: Vec<SnarkWitness<G1Affine>>,
     instances: Vec<Fr>,
+    as_proof: Value<Vec<u8>>,
 }
 
 impl Accumulation {
@@ -114,23 +130,31 @@ impl Accumulation {
         let g1 = params.get_g()[0];
         let snarks = snarks.into_iter().collect_vec();
 
-        let accumulator = snarks
+        let accumulators = snarks
             .iter()
-            .fold(None, |curr_accumulator, snark| {
-                let mut transcript = PoseidonTranscript::init(snark.proof.as_slice());
-                let proof = Shplonk::read_proof(&snark.protocol, &snark.instances, &mut transcript)
-                    .unwrap();
-                let mut accumulator =
-                    Shplonk::succint_verify(&g1, &snark.protocol, &snark.instances, &proof)
-                        .unwrap();
-                if let Some(curr_accumulator) = curr_accumulator {
-                    accumulator += curr_accumulator * transcript.squeeze_challenge();
-                }
-                Some(accumulator)
+            .flat_map(|snark| {
+                let mut transcript =
+                    PoseidonTranscript::<NativeLoader, _, _>::new(snark.proof.as_slice());
+                let proof =
+                    Plonk::read_proof(&snark.protocol, &snark.instances, &mut transcript).unwrap();
+                Plonk::succinct_verify(&g1, &snark.protocol, &snark.instances, &proof).unwrap()
             })
-            .unwrap();
+            .collect_vec();
 
-        let Accumulator { lhs, rhs } = accumulator.evaluate();
+        let (accumulator, as_proof) = {
+            let mut transcript = PoseidonTranscript::<NativeLoader, _, _>::new(Vec::new());
+            let accumulator = As::create_proof(
+                true,
+                &(params.get_g()[0], params.get_g()[1]),
+                &accumulators,
+                &mut transcript,
+                ChaCha20Rng::from_seed(Default::default()),
+            )
+            .unwrap();
+            (accumulator, transcript.finalize())
+        };
+
+        let Accumulator { lhs, rhs } = accumulator;
         let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<_, _, LIMBS, BITS>)
             .concat();
@@ -139,6 +163,7 @@ impl Accumulation {
             g1,
             snarks: snarks.into_iter().map_into().collect(),
             instances,
+            as_proof: Value::known(as_proof),
         }
     }
 
@@ -153,9 +178,8 @@ impl Accumulation {
             let snark = halo2_kzg_create_snark!(
                 ProverSHPLONK<_>,
                 VerifierSHPLONK<_>,
-                AccumulatorStrategy<_>,
-                PoseidonTranscript<_, _, _, _>,
-                PoseidonTranscript<_, _, _, _>,
+                PoseidonTranscript<_, _, _>,
+                PoseidonTranscript<_, _, _>,
                 ChallengeScalar<_>,
                 &params,
                 &pk,
@@ -174,9 +198,8 @@ impl Accumulation {
             halo2_kzg_create_snark!(
                 ProverSHPLONK<_>,
                 VerifierSHPLONK<_>,
-                AccumulatorStrategy<_>,
-                PoseidonTranscript<_, _, _, _>,
-                PoseidonTranscript<_, _, _, _>,
+                PoseidonTranscript<_, _, _>,
+                PoseidonTranscript<_, _, _>,
                 ChallengeScalar<_>,
                 &params,
                 &pk,
@@ -189,7 +212,7 @@ impl Accumulation {
 
     pub fn two_snark_with_accumulator() -> Self {
         let (params, pk, protocol, circuits) = {
-            const K: u32 = 21;
+            const K: u32 = 22;
             halo2_kzg_prepare!(
                 K,
                 halo2_kzg_config!(true, 2, Self::accumulator_indices()),
@@ -199,9 +222,8 @@ impl Accumulation {
         let snark = halo2_kzg_create_snark!(
             ProverSHPLONK<_>,
             VerifierSHPLONK<_>,
-            AccumulatorStrategy<_>,
-            PoseidonTranscript<_, _, _, _>,
-            PoseidonTranscript<_, _, _, _>,
+            PoseidonTranscript<_, _, _>,
+            PoseidonTranscript<_, _, _>,
             ChallengeScalar<_>,
             &params,
             &pk,
@@ -213,6 +235,10 @@ impl Accumulation {
 
     pub fn instances(&self) -> Vec<Vec<Fr>> {
         vec![self.instances.clone()]
+    }
+
+    pub fn as_proof(&self) -> Value<&[u8]> {
+        self.as_proof.as_ref().map(Vec::as_slice)
     }
 }
 
@@ -229,6 +255,7 @@ impl Circuit<Fr> for Accumulation {
                 .map(SnarkWitness::without_witnesses)
                 .collect(),
             instances: Vec::new(),
+            as_proof: Value::unknown(),
         }
     }
 
@@ -257,14 +284,8 @@ impl Circuit<Fr> for Accumulation {
 
                 let ecc_chip = config.ecc_chip();
                 let loader = Halo2Loader::new(ecc_chip, ctx);
-                let accumulator = self
-                    .snarks
-                    .iter()
-                    .fold(None, |accumulator, snark| {
-                        Some(accumulate(&self.g1, &loader, snark, accumulator))
-                    })
-                    .unwrap();
-                let Accumulator { lhs, rhs } = accumulator.evaluate();
+                let Accumulator { lhs, rhs } =
+                    accumulate(&self.g1, &loader, &self.snarks, self.as_proof());
 
                 loader.print_row_metering();
                 println!("Total row cost: {}", loader.ctx().offset());
@@ -300,7 +321,6 @@ macro_rules! test {
                 let snark = halo2_kzg_create_snark!(
                     ProverSHPLONK<_>,
                     VerifierSHPLONK<_>,
-                    AccumulatorStrategy<_>,
                     Blake2bWrite<_, _, _>,
                     Blake2bRead<_, _, _>,
                     Challenge255<_>,
@@ -310,7 +330,7 @@ macro_rules! test {
                     &circuits
                 );
                 halo2_kzg_native_verify!(
-                    Shplonk,
+                    Plonk,
                     params,
                     &snark.protocol,
                     &snark.instances,
@@ -328,9 +348,9 @@ macro_rules! test {
 }
 
 test!(
-    #[ignore = "cause it requires 16GB memory to run"],
+    #[ignore = "cause it requires 32GB memory to run"],
     zk_accumulation_two_snark,
-    21,
+    22,
     halo2_kzg_config!(true, 1, Accumulation::accumulator_indices()),
     Accumulation::two_snark()
 );

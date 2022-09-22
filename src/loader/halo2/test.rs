@@ -66,4 +66,8 @@ impl<C: CurveAffine> SnarkWitness<C> {
             proof: Value::unknown(),
         }
     }
+
+    pub fn proof(&self) -> Value<&[u8]> {
+        self.proof.as_ref().map(Vec::as_slice)
+    }
 }

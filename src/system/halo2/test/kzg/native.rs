@@ -1,6 +1,6 @@
 use crate::{
     loader::halo2::test::StandardPlonk,
-    pcs::kzg::{Bdfg21, Gwc19, KzgOnSameCurve},
+    pcs::kzg::{Bdfg21, Gwc19, LimbsEncoding},
     system::halo2::test::kzg::{
         halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare,
         main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS,
@@ -9,10 +9,7 @@ use crate::{
 };
 use halo2_curves::bn256::{Bn256, G1Affine};
 use halo2_proofs::{
-    poly::kzg::{
-        multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK},
-        strategy::AccumulatorStrategy,
-    },
+    poly::kzg::multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK},
     transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer},
 };
 use paste::paste;
@@ -31,7 +28,6 @@ macro_rules! test {
                 let snark = halo2_kzg_create_snark!(
                     $prover,
                     $verifier,
-                    AccumulatorStrategy<_>,
                     Blake2bWrite<_, _, _>,
                     Blake2bRead<_, _, _>,
                     Challenge255<_>,
@@ -51,8 +47,8 @@ macro_rules! test {
         }
     };
     ($name:ident, $k:expr, $config:expr, $create_cirucit:expr) => {
-        test!(@ shplonk, $name, $k, $config, $create_cirucit, ProverSHPLONK<_>, VerifierSHPLONK<_>, Plonk::<KzgOnSameCurve<Bn256, Bdfg21<Bn256>, LIMBS, BITS>>);
-        test!(@ plonk, $name, $k, $config, $create_cirucit, ProverGWC<_>, VerifierGWC<_>, Plonk::<KzgOnSameCurve<Bn256, Gwc19<Bn256>, LIMBS, BITS>>);
+        test!(@ shplonk, $name, $k, $config, $create_cirucit, ProverSHPLONK<_>, VerifierSHPLONK<_>, Plonk<Bdfg21<Bn256>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ plonk, $name, $k, $config, $create_cirucit, ProverGWC<_>, VerifierGWC<_>, Plonk<Gwc19<Bn256>, LimbsEncoding<LIMBS, BITS>>);
     }
 }
 

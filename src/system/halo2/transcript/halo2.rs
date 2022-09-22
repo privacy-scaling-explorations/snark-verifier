@@ -5,7 +5,7 @@ use crate::{
     },
     util::{
         arithmetic::{CurveAffine, FieldExt, PrimeField},
-        transcript::{Transcript, TranscriptRead},
+        transcript::{Transcript, TranscriptRead, TranscriptWrite},
     },
     Error,
 };
@@ -381,6 +381,58 @@ impl<
 
     pub fn finalize(self) -> W {
         self.stream
+    }
+}
+
+impl<
+        C: CurveAffine,
+        E: PointRepresentation<C, C::Scalar, LIMBS, BITS>,
+        const LIMBS: usize,
+        const BITS: usize,
+        const T: usize,
+        const RATE: usize,
+        const R_F: usize,
+        const R_P: usize,
+    > TranscriptWrite<C>
+    for PoseidonTranscript<
+        C,
+        C::Scalar,
+        E,
+        NativeLoader,
+        Vec<u8>,
+        Poseidon<C::Scalar, T, RATE>,
+        LIMBS,
+        BITS,
+        T,
+        RATE,
+        R_F,
+        R_P,
+    >
+{
+    fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), Error> {
+        self.common_scalar(&scalar)?;
+        let data = scalar.to_repr();
+        self.stream_mut().write_all(data.as_ref()).map_err(|err| {
+            Error::Transcript(
+                err.kind(),
+                "Failed to write scalar to transcript".to_string(),
+            )
+        })
+    }
+
+    fn write_ec_point(&mut self, ec_point: C) -> Result<(), Error> {
+        self.common_ec_point(&ec_point)?;
+        let data = ec_point.to_bytes();
+        self.stream_mut().write_all(data.as_ref()).map_err(|err| {
+            Error::Transcript(
+                err.kind(),
+                "Failed to write elliptic curve to transcript".to_string(),
+            )
+        })
+    }
+
+    fn finalize(self) -> Vec<u8> {
+        self.finalize()
     }
 }
 

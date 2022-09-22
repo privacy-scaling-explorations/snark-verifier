@@ -1,6 +1,6 @@
 use crate::{
     loader::Loader,
-    pcs::{AccumulationStrategy, PolynomialCommitmentScheme, PreAccumulator},
+    pcs::{Decider, PolynomialCommitmentScheme},
     util::{arithmetic::CurveAffine, transcript::TranscriptRead},
     Error, Protocol,
 };
@@ -10,12 +10,11 @@ mod plonk;
 
 pub use plonk::{Plonk, PlonkProof};
 
-pub trait PlonkVerifier<C, L, PCS, AS>
+pub trait PlonkVerifier<C, L, PCS>
 where
     C: CurveAffine,
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
-    AS: AccumulationStrategy<C, L, PCS>,
 {
     type Proof: Clone + Debug;
 
@@ -27,12 +26,12 @@ where
     where
         T: TranscriptRead<C, L>;
 
-    fn succint_verify(
+    fn succinct_verify(
         svk: &PCS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<PCS::PreAccumulator, Error>;
+    ) -> Result<Vec<PCS::Accumulator>, Error>;
 
     fn verify(
         svk: &PCS::SuccinctVerifyingKey,
@@ -40,10 +39,12 @@ where
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<AS::Output, Error> {
-        let accumulator = Self::succint_verify(svk, protocol, instances, proof)
-            .unwrap()
-            .evaluate();
-        AS::finalize(dk, accumulator)
+    ) -> Result<PCS::Output, Error>
+    where
+        PCS: Decider<C, L>,
+    {
+        let accumulators = Self::succinct_verify(svk, protocol, instances, proof)?;
+        let output = PCS::decide_all(dk, accumulators);
+        Ok(output)
     }
 }

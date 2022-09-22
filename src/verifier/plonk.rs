@@ -1,7 +1,7 @@
 use crate::{
     cost::{Cost, CostEstimation},
     loader::{native::NativeLoader, LoadedScalar, Loader},
-    pcs::{self, AccumulationStrategy, PolynomialCommitmentScheme},
+    pcs::{self, AccumulatorEncoding, PolynomialCommitmentScheme},
     util::{
         arithmetic::{CurveAffine, Field, Rotation},
         msm::Msm,
@@ -16,16 +16,16 @@ use crate::{
 };
 use std::{collections::HashMap, iter, marker::PhantomData};
 
-pub struct Plonk<AS>(PhantomData<AS>);
+pub struct Plonk<PCS, AE = ()>(PhantomData<(PCS, AE)>);
 
-impl<C, L, PCS, AS> PlonkVerifier<C, L, PCS, AS> for Plonk<AS>
+impl<C, L, PCS, AE> PlonkVerifier<C, L, PCS> for Plonk<PCS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
-    AS: AccumulationStrategy<C, L, PCS>,
+    AE: AccumulatorEncoding<C, L, PCS>,
 {
-    type Proof = PlonkProof<C, L, PCS, AS>;
+    type Proof = PlonkProof<C, L, PCS>;
 
     fn read_proof<T>(
         protocol: &Protocol<C>,
@@ -35,15 +35,15 @@ where
     where
         T: TranscriptRead<C, L>,
     {
-        PlonkProof::read(protocol, instances, transcript)
+        PlonkProof::read::<T, AE>(protocol, instances, transcript)
     }
 
-    fn succint_verify(
+    fn succinct_verify(
         svk: &PCS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<PCS::PreAccumulator, Error> {
+    ) -> Result<Vec<PCS::Accumulator>, Error> {
         let common_poly_eval = {
             let mut common_poly_eval = CommonPolynomialEvaluation::new(
                 &protocol.domain,
@@ -61,24 +61,23 @@ where
         let commitments = proof.commitments(protocol, &common_poly_eval, &mut evaluations)?;
         let queries = proof.queries(protocol, evaluations);
 
-        let mut accumulator =
-            PCS::succinct_verify(svk, &commitments, &proof.z, &queries, &proof.pcs)?;
+        let accumulator = PCS::succinct_verify(svk, &commitments, &proof.z, &queries, &proof.pcs)?;
 
-        for old_accumulator in proof.old_accumulators.iter() {
-            accumulator += old_accumulator;
-        }
+        let accumulators = iter::empty()
+            .chain(Some(accumulator))
+            .chain(proof.old_accumulators.iter().cloned())
+            .collect();
 
-        Ok(accumulator)
+        Ok(accumulators)
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct PlonkProof<C, L, PCS, AS>
+pub struct PlonkProof<C, L, PCS>
 where
     C: CurveAffine,
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
-    AS: AccumulationStrategy<C, L, PCS>,
 {
     pub committed_instances: Option<Vec<L::LoadedEcPoint>>,
     pub witnesses: Vec<L::LoadedEcPoint>,
@@ -87,24 +86,23 @@ where
     pub z: L::LoadedScalar,
     pub evaluations: Vec<L::LoadedScalar>,
     pub pcs: PCS::Proof,
-    pub old_accumulators: Vec<(L::LoadedScalar, PCS::Accumulator)>,
-    _marker: PhantomData<AS>,
+    pub old_accumulators: Vec<PCS::Accumulator>,
 }
 
-impl<C, L, PCS, AS> PlonkProof<C, L, PCS, AS>
+impl<C, L, PCS> PlonkProof<C, L, PCS>
 where
     C: CurveAffine,
     L: Loader<C>,
     PCS: PolynomialCommitmentScheme<C, L>,
-    AS: AccumulationStrategy<C, L, PCS>,
 {
-    fn read<T>(
+    fn read<T, AE>(
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
     ) -> Result<Self, Error>
     where
         T: TranscriptRead<C, L>,
+        AE: AccumulatorEncoding<C, L, PCS>,
     {
         let loader = transcript.loader();
         if let Some(transcript_initial_state) = &protocol.transcript_initial_state {
@@ -141,7 +139,7 @@ where
                         .map(|(scalar, base)| Msm::<C, L>::base(base.clone()) * scalar)
                         .chain(constant.clone().map(|constant| Msm::base(constant)))
                         .sum::<Msm<_, _>>()
-                        .evaluate(C::default())
+                        .evaluate(None)
                 })
                 .collect_vec();
             for committed_instance in committed_instances.iter() {
@@ -187,16 +185,17 @@ where
 
         let pcs = PCS::read_proof(&protocol.domain, &Self::empty_queries(protocol), transcript)?;
 
-        let old_accumulators = {
-            let separators = transcript.squeeze_n_challenges(protocol.accumulator_indices.len());
-            separators
-                .into_iter()
-                .zip(AS::extract_accumulators(
-                    &protocol.accumulator_indices,
-                    instances,
-                )?)
-                .collect_vec()
-        };
+        let old_accumulators = protocol
+            .accumulator_indices
+            .iter()
+            .map(|accumulator_indices| {
+                accumulator_indices
+                    .iter()
+                    .map(|&(i, j)| instances[i][j].clone())
+                    .collect()
+            })
+            .map(AE::from_repr)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             committed_instances,
@@ -207,7 +206,6 @@ where
             evaluations,
             pcs,
             old_accumulators,
-            _marker: PhantomData,
         })
     }
 
@@ -399,12 +397,11 @@ where
     }
 }
 
-impl<C, PCS, AS> CostEstimation<(C, PCS)> for Plonk<AS>
+impl<C, PCS> CostEstimation<(C, PCS)> for Plonk<PCS>
 where
     C: CurveAffine,
     PCS: PolynomialCommitmentScheme<C, NativeLoader>
         + CostEstimation<C, Input = Vec<pcs::Query<C::Scalar>>>,
-    AS: AccumulationStrategy<C, NativeLoader, PCS>,
 {
     type Input = Protocol<C>;
 
@@ -419,7 +416,7 @@ where
             Cost::new(num_instance, num_commitment, num_evaluation, num_msm)
         };
         let pcs_cost = {
-            let queries = PlonkProof::<C, NativeLoader, PCS, AS>::empty_queries(protocol);
+            let queries = PlonkProof::<C, NativeLoader, PCS>::empty_queries(protocol);
             PCS::estimate_cost(&queries)
         };
         plonk_cost + pcs_cost

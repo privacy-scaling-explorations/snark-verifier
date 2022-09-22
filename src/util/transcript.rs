@@ -1,5 +1,5 @@
 use crate::{
-    loader::Loader,
+    loader::{native::NativeLoader, Loader},
     {util::arithmetic::CurveAffine, Error},
 };
 
@@ -37,4 +37,12 @@ where
     fn read_n_ec_points(&mut self, n: usize) -> Result<Vec<L::LoadedEcPoint>, Error> {
         (0..n).map(|_| self.read_ec_point()).collect()
     }
+}
+
+pub trait TranscriptWrite<C: CurveAffine>: Transcript<C, NativeLoader> {
+    fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), Error>;
+
+    fn write_ec_point(&mut self, ec_point: C) -> Result<(), Error>;
+
+    fn finalize(self) -> Vec<u8>;
 }

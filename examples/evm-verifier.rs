@@ -22,14 +22,14 @@ use halo2_proofs::{
 use itertools::Itertools;
 use plonk_verifier::{
     loader::evm::{encode_calldata, EvmLoader},
-    pcs::kzg::{Gwc19, KzgDecider},
+    pcs::kzg::Gwc19,
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     verifier::{self, PlonkVerifier},
 };
 use rand::{rngs::OsRng, RngCore};
 use std::rc::Rc;
 
-type Plonk = verifier::Plonk<KzgDecider<Bn256, Gwc19<Bn256>>>;
+type Plonk = verifier::Plonk<Gwc19<Bn256>>;
 
 #[derive(Clone, Copy)]
 struct StandardPlonkConfig {

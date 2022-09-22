@@ -1,42 +1,17 @@
+use rand::Rng;
+
 use crate::{
-    loader::Loader,
+    loader::{native::NativeLoader, Loader},
     util::{
         arithmetic::{CurveAffine, Domain, PrimeField},
         msm::Msm,
-        transcript::TranscriptRead,
+        transcript::{TranscriptRead, TranscriptWrite},
     },
     Error,
 };
-use std::{fmt::Debug, ops::AddAssign};
+use std::fmt::Debug;
 
 pub mod kzg;
-
-pub trait PreAccumulator: Sized + Clone + Debug {
-    type Accumulator;
-
-    fn evaluate(self) -> Self::Accumulator;
-}
-
-pub trait AccumulationStrategy<C, L, PCS>: Clone + Debug
-where
-    C: CurveAffine,
-    L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L>,
-{
-    type Output: Debug;
-
-    fn extract_accumulators(
-        accumulator_indices: &[Vec<(usize, usize)>],
-        _instances: &[Vec<L::LoadedScalar>],
-    ) -> Result<Vec<PCS::Accumulator>, Error> {
-        assert_eq!(accumulator_indices.len(), 0);
-        Ok(Vec::new())
-    }
-
-    fn finalize(_: &PCS::DecidingKey, _: PCS::Accumulator) -> Result<Self::Output, Error> {
-        unimplemented!()
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct Query<F: PrimeField, T = ()> {
@@ -61,11 +36,7 @@ where
     L: Loader<C>,
 {
     type SuccinctVerifyingKey: Clone + Debug;
-    type DecidingKey: Clone + Debug;
     type Proof: Clone + Debug;
-    type PreAccumulator: PreAccumulator<Accumulator = Self::Accumulator>
-        + for<'a> AddAssign<&'a Self::PreAccumulator>
-        + for<'a> AddAssign<&'a (L::LoadedScalar, Self::Accumulator)>;
     type Accumulator: Clone + Debug;
 
     fn read_proof<T>(
@@ -82,5 +53,81 @@ where
         point: &L::LoadedScalar,
         queries: &[Query<C::Scalar, L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<Self::PreAccumulator, Error>;
+    ) -> Result<Self::Accumulator, Error>;
+}
+
+pub trait Decider<C, L>: PolynomialCommitmentScheme<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
+    type DecidingKey: Clone + Debug;
+    type Output: Clone + Debug;
+
+    fn decide(dk: &Self::DecidingKey, accumulator: Self::Accumulator) -> Self::Output;
+
+    fn decide_all(dk: &Self::DecidingKey, accumulators: Vec<Self::Accumulator>) -> Self::Output;
+}
+
+pub trait AccumulationScheme<C, L, PCS>: Clone + Debug
+where
+    C: CurveAffine,
+    L: Loader<C>,
+    PCS: PolynomialCommitmentScheme<C, L>,
+{
+    type VerifyingKey: Clone + Debug;
+    type Proof: Clone + Debug;
+
+    fn read_proof<T>(
+        zk: bool,
+        instances: &[PCS::Accumulator],
+        transcript: &mut T,
+    ) -> Result<Self::Proof, Error>
+    where
+        T: TranscriptRead<C, L>;
+
+    fn verify(
+        vk: &Self::VerifyingKey,
+        instances: &[PCS::Accumulator],
+        proof: &Self::Proof,
+    ) -> Result<PCS::Accumulator, Error>;
+}
+
+pub trait AccumulationSchemeProver<C, PCS>: AccumulationScheme<C, NativeLoader, PCS>
+where
+    C: CurveAffine,
+    PCS: PolynomialCommitmentScheme<C, NativeLoader>,
+{
+    type ProvingKey: Clone + Debug;
+
+    fn create_proof<T, R>(
+        zk: bool,
+        pk: &Self::ProvingKey,
+        instances: &[PCS::Accumulator],
+        transcript: &mut T,
+        rng: R,
+    ) -> Result<PCS::Accumulator, Error>
+    where
+        T: TranscriptWrite<C>,
+        R: Rng;
+}
+
+pub trait AccumulatorEncoding<C, L, PCS>: Clone + Debug
+where
+    C: CurveAffine,
+    L: Loader<C>,
+    PCS: PolynomialCommitmentScheme<C, L>,
+{
+    fn from_repr(repr: Vec<L::LoadedScalar>) -> Result<PCS::Accumulator, Error>;
+}
+
+impl<C, L, PCS> AccumulatorEncoding<C, L, PCS> for ()
+where
+    C: CurveAffine,
+    L: Loader<C>,
+    PCS: PolynomialCommitmentScheme<C, L>,
+{
+    fn from_repr(_: Vec<L::LoadedScalar>) -> Result<PCS::Accumulator, Error> {
+        unimplemented!()
+    }
 }

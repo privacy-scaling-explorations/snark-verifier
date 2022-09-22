@@ -63,16 +63,17 @@ where
         self.bases.is_empty().then(|| self.constant.unwrap())
     }
 
-    pub fn evaluate(self, gen: C) -> L::LoadedEcPoint {
-        let gen = self
-            .bases
-            .first()
-            .unwrap()
-            .loader()
-            .ec_point_load_const(&gen);
+    pub fn evaluate(self, gen: Option<C>) -> L::LoadedEcPoint {
+        let gen = gen.map(|gen| {
+            self.bases
+                .first()
+                .unwrap()
+                .loader()
+                .ec_point_load_const(&gen)
+        });
         L::LoadedEcPoint::multi_scalar_multiplication(
             iter::empty()
-                .chain(self.constant.map(|constant| (constant, gen)))
+                .chain(self.constant.map(|constant| (constant, gen.unwrap())))
                 .chain(self.scalars.into_iter().zip(self.bases.into_iter())),
         )
     }
