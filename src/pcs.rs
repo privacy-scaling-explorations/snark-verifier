@@ -10,6 +10,7 @@ use crate::{
 use rand::Rng;
 use std::fmt::Debug;
 
+pub mod ipa;
 pub mod kzg;
 
 pub trait PolynomialCommitmentScheme<C, L>: Clone + Debug

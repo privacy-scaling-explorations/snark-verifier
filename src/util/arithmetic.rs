@@ -250,3 +250,15 @@ pub fn fe_to_limbs<F1: PrimeField, F2: PrimeField, const LIMBS: usize, const BIT
         .try_into()
         .unwrap()
 }
+
+pub fn powers<F: Field>(scalar: F) -> impl Iterator<Item = F> {
+    iter::successors(Some(F::one()), move |power| Some(scalar * power))
+}
+
+pub fn inner_product<F: Field>(lhs: &[F], rhs: &[F]) -> F {
+    lhs.iter()
+        .zip_eq(rhs.iter())
+        .map(|(lhs, rhs)| *lhs * rhs)
+        .reduce(|acc, product| acc + product)
+        .unwrap_or_default()
+}

@@ -1,10 +1,15 @@
 use crate::{
     loader::{LoadedEcPoint, Loader},
-    util::{arithmetic::CurveAffine, Itertools},
+    util::{
+        arithmetic::{CurveAffine, Group, PrimeField},
+        Itertools,
+    },
 };
+use num_integer::Integer;
 use std::{
     default::Default,
     iter::{self, Sum},
+    mem::size_of,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
 
@@ -207,5 +212,121 @@ where
 {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
         iter.reduce(|acc, item| acc + item).unwrap_or_default()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Bucket<C: CurveAffine> {
+    None,
+    Affine(C),
+    Projective(C::Curve),
+}
+
+impl<C: CurveAffine> Bucket<C> {
+    fn add_assign(&mut self, rhs: &C) {
+        *self = match *self {
+            Bucket::None => Bucket::Affine(*rhs),
+            Bucket::Affine(lhs) => Bucket::Projective(lhs + *rhs),
+            Bucket::Projective(mut lhs) => {
+                lhs += *rhs;
+                Bucket::Projective(lhs)
+            }
+        }
+    }
+
+    fn add(self, mut rhs: C::Curve) -> C::Curve {
+        match self {
+            Bucket::None => rhs,
+            Bucket::Affine(lhs) => {
+                rhs += lhs;
+                rhs
+            }
+            Bucket::Projective(lhs) => lhs + rhs,
+        }
+    }
+}
+
+fn multi_scalar_multiplication_serial<C: CurveAffine>(
+    scalars: &[C::Scalar],
+    bases: &[C],
+    result: &mut C::Curve,
+) {
+    let scalars = scalars.iter().map(|scalar| scalar.to_repr()).collect_vec();
+    let num_bytes = scalars[0].as_ref().len();
+    let num_bits = 8 * num_bytes;
+
+    let window_size = (scalars.len() as f64).ln().ceil() as usize + 2;
+    let num_buckets = (1 << window_size) - 1;
+
+    let windowed_scalar = |idx: usize, bytes: &<C::Scalar as PrimeField>::Repr| {
+        let skip_bits = idx * window_size;
+        let skip_bytes = skip_bits / 8;
+
+        let mut value = [0; size_of::<usize>()];
+        for (dst, src) in value.iter_mut().zip(bytes.as_ref()[skip_bytes..].iter()) {
+            *dst = *src;
+        }
+
+        (usize::from_le_bytes(value) >> (skip_bits - (skip_bytes * 8))) & num_buckets
+    };
+
+    let num_window = Integer::div_ceil(&num_bits, &window_size);
+    for idx in (0..num_window).rev() {
+        for _ in 0..window_size {
+            *result = result.double();
+        }
+
+        let mut buckets = vec![Bucket::None; num_buckets];
+
+        for (scalar, base) in scalars.iter().zip(bases.iter()) {
+            let scalar = windowed_scalar(idx, scalar);
+            if scalar != 0 {
+                buckets[scalar - 1].add_assign(base);
+            }
+        }
+
+        let mut running_sum = C::Curve::identity();
+        for bucket in buckets.into_iter().rev() {
+            running_sum = bucket.add(running_sum);
+            *result += &running_sum;
+        }
+    }
+}
+
+// Copy from https://github.com/zcash/halo2/blob/main/halo2_proofs/src/arithmetic.rs
+pub fn multi_scalar_multiplication<C: CurveAffine>(scalars: &[C::Scalar], bases: &[C]) -> C::Curve {
+    assert_eq!(scalars.len(), bases.len());
+
+    #[cfg(feature = "parallel")]
+    {
+        use crate::util::{current_num_threads, parallelize_iter};
+
+        let num_threads = current_num_threads();
+        if scalars.len() < num_threads {
+            let mut result = C::Curve::identity();
+            multi_scalar_multiplication_serial(scalars, bases, &mut result);
+            return result;
+        }
+
+        let chunk_size = Integer::div_ceil(&scalars.len(), &num_threads);
+        let mut results = vec![C::Curve::identity(); num_threads];
+        parallelize_iter(
+            scalars
+                .chunks(chunk_size)
+                .zip(bases.chunks(chunk_size))
+                .zip(results.iter_mut()),
+            |((scalars, bases), result)| {
+                multi_scalar_multiplication_serial(scalars, bases, result);
+            },
+        );
+        results
+            .iter()
+            .fold(C::Curve::identity(), |acc, result| acc + result)
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut result = C::Curve::identity();
+        multi_scalar_multiplication_serial(scalars, bases, &mut result);
+        result
     }
 }

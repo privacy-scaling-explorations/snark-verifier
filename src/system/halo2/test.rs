@@ -12,6 +12,7 @@ use rand_chacha::rand_core::RngCore;
 use std::{fs, io::Cursor};
 
 mod circuit;
+mod ipa;
 mod kzg;
 
 pub use circuit::{

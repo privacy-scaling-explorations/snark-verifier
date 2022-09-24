@@ -4,6 +4,7 @@ use crate::{
 };
 use halo2_proofs::circuit::Value;
 
+#[derive(Clone, Debug)]
 pub struct Snark<C: CurveAffine> {
     pub protocol: Protocol<C>,
     pub instances: Vec<Vec<C::Scalar>>,
@@ -27,6 +28,7 @@ impl<C: CurveAffine> Snark<C> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct SnarkWitness<C: CurveAffine> {
     pub protocol: Protocol<C>,
     pub instances: Vec<Vec<Value<C::Scalar>>>,
@@ -48,16 +50,21 @@ impl<C: CurveAffine> From<Snark<C>> for SnarkWitness<C> {
 }
 
 impl<C: CurveAffine> SnarkWitness<C> {
-    pub fn without_witnesses(&self) -> Self {
+    pub fn new_without_witness(protocol: Protocol<C>) -> Self {
+        let instances = protocol
+            .num_instance
+            .iter()
+            .map(|num_instance| vec![Value::unknown(); *num_instance])
+            .collect();
         SnarkWitness {
-            protocol: self.protocol.clone(),
-            instances: self
-                .instances
-                .iter()
-                .map(|instances| vec![Value::unknown(); instances.len()])
-                .collect(),
+            protocol,
+            instances,
             proof: Value::unknown(),
         }
+    }
+
+    pub fn without_witnesses(&self) -> Self {
+        SnarkWitness::new_without_witness(self.protocol.clone())
     }
 
     pub fn proof(&self) -> Value<&[u8]> {
