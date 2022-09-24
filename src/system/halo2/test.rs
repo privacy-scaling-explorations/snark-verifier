@@ -151,8 +151,7 @@ macro_rules! halo2_create_snark {
     ) => {{
         use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
         use $crate::{
-            collect_slice, loader::halo2::test::Snark, system::halo2::test::create_proof_checked,
-            util::Itertools,
+            loader::halo2::test::Snark, system::halo2::test::create_proof_checked, util::Itertools,
         };
 
         let instances = $circuits
@@ -160,30 +159,30 @@ macro_rules! halo2_create_snark {
             .map(|circuit| circuit.instances())
             .collect_vec();
         let proof = {
-            collect_slice!(instances, 2);
             #[allow(clippy::needless_borrow)]
-            if $protocol.zk {
-                create_proof_checked::<
-                    $commitment_scheme,
-                    _,
-                    $prover,
-                    $verifier,
-                    $verification_strategy,
-                    $transcript_read,
-                    $transcript_write,
-                    $encoded_challenge,
-                    _,
-                >(
-                    $params,
-                    $pk,
-                    $circuits,
-                    &instances,
-                    &mut ChaCha20Rng::from_seed(Default::default()),
-                    $finalize,
-                )
-            } else {
-                unimplemented!()
-            }
+            let instances = instances
+                .iter()
+                .map(|instances| instances.iter().map(Vec::as_slice).collect_vec())
+                .collect_vec();
+            let instances = instances.iter().map(Vec::as_slice).collect_vec();
+            create_proof_checked::<
+                $commitment_scheme,
+                _,
+                $prover,
+                $verifier,
+                $verification_strategy,
+                $transcript_read,
+                $transcript_write,
+                $encoded_challenge,
+                _,
+            >(
+                $params,
+                $pk,
+                $circuits,
+                &instances,
+                &mut ChaCha20Rng::from_seed(Default::default()),
+                $finalize,
+            )
         };
 
         Snark::new(
@@ -207,7 +206,8 @@ macro_rules! halo2_native_verify {
         use halo2_proofs::poly::commitment::ParamsProver;
         use $crate::verifier::PlonkVerifier;
 
-        let proof = <$plonk_verifier>::read_proof($protocol, $instances, $transcript).unwrap();
+        let proof =
+            <$plonk_verifier>::read_proof($svk, $protocol, $instances, $transcript).unwrap();
         assert!(<$plonk_verifier>::verify($svk, $dk, $protocol, $instances, &proof).unwrap())
     }};
 }

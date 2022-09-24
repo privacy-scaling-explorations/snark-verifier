@@ -1,9 +1,12 @@
 use crate::{
     cost::{Cost, CostEstimation},
     loader::{LoadedScalar, Loader, ScalarLoader},
-    pcs::{kzg::accumulator::Accumulator, PolynomialCommitmentScheme, Query},
+    pcs::{
+        kzg::{Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
+        MultiOpenScheme, Query,
+    },
     util::{
-        arithmetic::{CurveAffine, Domain, FieldExt, Fraction, MultiMillerLoop},
+        arithmetic::{CurveAffine, FieldExt, Fraction, MultiMillerLoop},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -16,22 +19,21 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
-pub struct Bdfg21<M: MultiMillerLoop>(PhantomData<M>);
+pub struct Bdfg21;
 
-impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for Bdfg21<M>
+impl<M, L> MultiOpenScheme<M::G1Affine, L> for Kzg<M, Bdfg21>
 where
     M: MultiMillerLoop,
     L: Loader<M::G1Affine>,
 {
-    type SuccinctVerifyingKey = M::G1Affine;
+    type SuccinctVerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
     type Proof = Bdfg21Proof<M::G1Affine, L>;
-    type Accumulator = Accumulator<M::G1Affine, L>;
 
     fn read_proof<T>(
-        _: &Domain<M::Scalar>,
+        _: &KzgSuccinctVerifyingKey<M::G1Affine>,
         _: &[Query<M::Scalar>],
         transcript: &mut T,
-    ) -> Result<Self::Proof, Error>
+    ) -> Result<Bdfg21Proof<M::G1Affine, L>, Error>
     where
         T: TranscriptRead<M::G1Affine, L>,
     {
@@ -39,11 +41,11 @@ where
     }
 
     fn succinct_verify(
-        g1: &M::G1Affine,
+        svk: &KzgSuccinctVerifyingKey<M::G1Affine>,
         commitments: &[Msm<M::G1Affine, L>],
         z: &L::LoadedScalar,
         queries: &[Query<M::Scalar, L::LoadedScalar>],
-        proof: &Self::Proof,
+        proof: &Bdfg21Proof<M::G1Affine, L>,
     ) -> Result<Self::Accumulator, Error> {
         let f = {
             let sets = query_sets(queries);
@@ -66,9 +68,9 @@ where
         let rhs = Msm::base(proof.w_prime.clone());
         let lhs = f + rhs.clone() * &proof.z_prime;
 
-        Ok(Accumulator::new(
-            lhs.evaluate(Some(*g1)),
-            rhs.evaluate(Some(*g1)),
+        Ok(KzgAccumulator::new(
+            lhs.evaluate(Some(svk.g)),
+            rhs.evaluate(Some(svk.g)),
         ))
     }
 }
@@ -370,7 +372,7 @@ where
     }
 }
 
-impl<M> CostEstimation<M::G1Affine> for Bdfg21<M>
+impl<M> CostEstimation<M::G1Affine> for Kzg<M, Bdfg21>
 where
     M: MultiMillerLoop,
 {

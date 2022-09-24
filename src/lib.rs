@@ -18,13 +18,13 @@ pub enum Error {
     InvalidLinearization,
     InvalidQuery(util::protocol::Query),
     InvalidChallenge(usize),
+    AssertionFailure(String),
     Transcript(std::io::ErrorKind, String),
 }
 
 #[derive(Clone, Debug)]
 pub struct Protocol<C: util::arithmetic::CurveAffine> {
     // Common description
-    pub zk: bool,
     pub domain: util::arithmetic::Domain<C::Scalar>,
     pub preprocessed: Vec<C>,
     pub num_instance: Vec<usize>,

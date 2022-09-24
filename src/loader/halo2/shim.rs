@@ -1,6 +1,7 @@
 use crate::util::arithmetic::{CurveAffine, FieldExt};
 use halo2_proofs::{circuit::Value, plonk::Error};
 use halo2_wrong_ecc::{
+    integer::rns::Common,
     maingate::{
         AssignedValue, CombinationOptionCommon, MainGate, MainGateInstructions, RegionCtx, Term,
     },
@@ -73,6 +74,13 @@ pub trait IntegerInstructions<W: FieldExt, N: FieldExt>: Clone + Debug {
         ctx: &mut RegionCtx<'_, N>,
         a: &Self::AssignedInteger,
     ) -> Result<Self::AssignedInteger, Error>;
+
+    fn assert_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, N>,
+        a: &Self::AssignedInteger,
+        b: &Self::AssignedInteger,
+    ) -> Result<(), Error>;
 }
 
 pub trait EccInstructions<C: CurveAffine, N: FieldExt>: Clone + Debug {
@@ -132,6 +140,13 @@ pub trait EccInstructions<C: CurveAffine, N: FieldExt>: Clone + Debug {
         ctx: &mut RegionCtx<'_, N>,
         point: &Self::AssignedPoint,
     ) -> Result<Self::AssignedPoint, Error>;
+
+    fn assert_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, N>,
+        a: &Self::AssignedPoint,
+        b: &Self::AssignedPoint,
+    ) -> Result<(), Error>;
 }
 
 impl<F: FieldExt> IntegerInstructions<F, F> for MainGate<F> {
@@ -228,6 +243,20 @@ impl<F: FieldExt> IntegerInstructions<F, F> for MainGate<F> {
     ) -> Result<Self::AssignedInteger, Error> {
         MainGateInstructions::invert_unsafe(self, ctx, a)
     }
+
+    fn assert_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, F>,
+        a: &Self::AssignedInteger,
+        b: &Self::AssignedInteger,
+    ) -> Result<(), Error> {
+        let mut eq = true;
+        a.value().zip(b.value()).map(|(lhs, rhs)| {
+            eq &= lhs == rhs;
+        });
+        MainGateInstructions::assert_equal(self, ctx, a, b)
+            .and(eq.then_some(()).ok_or(Error::Synthesis))
+    }
 }
 
 // TODO: Use `EccInstructions` in `halo2_wrong` when it's implemented.
@@ -300,5 +329,21 @@ impl<C: CurveAffine, const LIMBS: usize, const BITS: usize> EccInstructions<C, C
         point: &Self::AssignedPoint,
     ) -> Result<Self::AssignedPoint, Error> {
         self.normalize(ctx, point)
+    }
+
+    fn assert_equal(
+        &self,
+        ctx: &mut RegionCtx<'_, C::Scalar>,
+        a: &Self::AssignedPoint,
+        b: &Self::AssignedPoint,
+    ) -> Result<(), Error> {
+        let mut eq = true;
+        [(a.x(), b.x()), (a.y(), b.y())].map(|(lhs, rhs)| {
+            lhs.integer().zip(rhs.integer()).map(|(lhs, rhs)| {
+                eq &= lhs.value() == rhs.value();
+            });
+        });
+        self.assert_equal(ctx, a, b)
+            .and(eq.then_some(()).ok_or(Error::Synthesis))
     }
 }

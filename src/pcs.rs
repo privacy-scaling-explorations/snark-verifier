@@ -1,17 +1,30 @@
-use rand::Rng;
-
 use crate::{
     loader::{native::NativeLoader, Loader},
     util::{
-        arithmetic::{CurveAffine, Domain, PrimeField},
+        arithmetic::{CurveAffine, PrimeField},
         msm::Msm,
         transcript::{TranscriptRead, TranscriptWrite},
     },
     Error,
 };
+use rand::Rng;
 use std::fmt::Debug;
 
+use sealed::PolynomialCommitmentScheme;
 pub mod kzg;
+
+mod sealed {
+    use crate::{loader::Loader, util::arithmetic::CurveAffine};
+    use std::fmt::Debug;
+
+    pub trait PolynomialCommitmentScheme<C, L>: Clone + Debug
+    where
+        C: CurveAffine,
+        L: Loader<C>,
+    {
+        type Accumulator: Clone + Debug;
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Query<F: PrimeField, T = ()> {
@@ -30,17 +43,16 @@ impl<F: PrimeField> Query<F> {
     }
 }
 
-pub trait PolynomialCommitmentScheme<C, L>: Clone + Debug
+pub trait MultiOpenScheme<C, L>: PolynomialCommitmentScheme<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
 {
     type SuccinctVerifyingKey: Clone + Debug;
     type Proof: Clone + Debug;
-    type Accumulator: Clone + Debug;
 
     fn read_proof<T>(
-        domain: &Domain<C::Scalar>,
+        svk: &Self::SuccinctVerifyingKey,
         queries: &[Query<C::Scalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
@@ -79,7 +91,7 @@ where
     type Proof: Clone + Debug;
 
     fn read_proof<T>(
-        zk: bool,
+        vk: &Self::VerifyingKey,
         instances: &[PCS::Accumulator],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
@@ -101,7 +113,6 @@ where
     type ProvingKey: Clone + Debug;
 
     fn create_proof<T, R>(
-        zk: bool,
         pk: &Self::ProvingKey,
         instances: &[PCS::Accumulator],
         transcript: &mut T,

@@ -1,6 +1,9 @@
-use crate::util::{
-    arithmetic::{CurveAffine, FieldOps, PrimeField},
-    Itertools,
+use crate::{
+    util::{
+        arithmetic::{CurveAffine, FieldOps, PrimeField},
+        Itertools,
+    },
+    Error,
 };
 use std::{fmt::Debug, iter};
 
@@ -92,6 +95,13 @@ pub trait EcPointLoader<C: CurveAffine> {
     fn ec_point_load_one(&self) -> Self::LoadedEcPoint {
         self.ec_point_load_const(&C::generator())
     }
+
+    fn ec_point_assert_eq(
+        &self,
+        annotation: &str,
+        lhs: &Self::LoadedEcPoint,
+        rhs: &Self::LoadedEcPoint,
+    ) -> Result<(), Error>;
 }
 
 pub trait ScalarLoader<F: PrimeField> {
@@ -106,6 +116,13 @@ pub trait ScalarLoader<F: PrimeField> {
     fn load_one(&self) -> Self::LoadedScalar {
         self.load_const(&F::one())
     }
+
+    fn assert_eq(
+        &self,
+        annotation: &str,
+        lhs: &Self::LoadedScalar,
+        rhs: &Self::LoadedScalar,
+    ) -> Result<(), Error>;
 
     fn sum_with_coeff_and_constant(
         &self,

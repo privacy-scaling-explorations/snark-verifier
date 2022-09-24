@@ -1,6 +1,6 @@
 use crate::{
     loader::Loader,
-    pcs::{Decider, PolynomialCommitmentScheme},
+    pcs::{Decider, MultiOpenScheme},
     util::{arithmetic::CurveAffine, transcript::TranscriptRead},
     Error, Protocol,
 };
@@ -10,15 +10,16 @@ mod plonk;
 
 pub use plonk::{Plonk, PlonkProof};
 
-pub trait PlonkVerifier<C, L, PCS>
+pub trait PlonkVerifier<C, L, MOS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L>,
+    MOS: MultiOpenScheme<C, L>,
 {
     type Proof: Clone + Debug;
 
     fn read_proof<T>(
+        svk: &MOS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
@@ -27,24 +28,24 @@ where
         T: TranscriptRead<C, L>;
 
     fn succinct_verify(
-        svk: &PCS::SuccinctVerifyingKey,
+        svk: &MOS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<Vec<PCS::Accumulator>, Error>;
+    ) -> Result<Vec<MOS::Accumulator>, Error>;
 
     fn verify(
-        svk: &PCS::SuccinctVerifyingKey,
-        dk: &PCS::DecidingKey,
+        svk: &MOS::SuccinctVerifyingKey,
+        dk: &MOS::DecidingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<PCS::Output, Error>
+    ) -> Result<MOS::Output, Error>
     where
-        PCS: Decider<C, L>,
+        MOS: Decider<C, L>,
     {
         let accumulators = Self::succinct_verify(svk, protocol, instances, proof)?;
-        let output = PCS::decide_all(dk, accumulators);
+        let output = MOS::decide_all(dk, accumulators);
         Ok(output)
     }
 }

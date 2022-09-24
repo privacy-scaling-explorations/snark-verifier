@@ -8,6 +8,7 @@ use crate::{
         arithmetic::{CurveAffine, FieldOps, PrimeField},
         Itertools,
     },
+    Error,
 };
 use ethereum_types::{U256, U512};
 use std::{
@@ -834,6 +835,10 @@ where
             .map(|coordinate| U256::from_little_endian(coordinate.to_repr().as_ref()));
         self.ec_point(Value::Constant((x, y)))
     }
+
+    fn ec_point_assert_eq(&self, _: &str, _: &EcPoint, _: &EcPoint) -> Result<(), Error> {
+        unimplemented!()
+    }
 }
 
 impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
@@ -841,6 +846,10 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
 
     fn load_const(&self, value: &F) -> Scalar {
         self.scalar(Value::Constant(fe_to_u256(*value)))
+    }
+
+    fn assert_eq(&self, _: &str, _: &Scalar, _: &Scalar) -> Result<(), Error> {
+        unimplemented!()
     }
 
     fn sum_with_coeff_and_constant(&self, values: &[(F, &Scalar)], constant: F) -> Scalar {

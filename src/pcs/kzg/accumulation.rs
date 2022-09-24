@@ -1,7 +1,8 @@
 use crate::{
     loader::{native::NativeLoader, LoadedScalar, Loader},
     pcs::{
-        kzg::Accumulator, AccumulationScheme, AccumulationSchemeProver, PolynomialCommitmentScheme,
+        kzg::KzgAccumulator, AccumulationScheme, AccumulationSchemeProver,
+        PolynomialCommitmentScheme,
     },
     util::{
         arithmetic::{Curve, CurveAffine, Field},
@@ -14,26 +15,26 @@ use rand::Rng;
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-pub struct KzgAccumulation<PCS>(PhantomData<PCS>);
+pub struct KzgAs<PCS>(PhantomData<PCS>);
 
-impl<C, L, PCS> AccumulationScheme<C, L, PCS> for KzgAccumulation<PCS>
+impl<C, L, PCS> AccumulationScheme<C, L, PCS> for KzgAs<PCS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = Accumulator<C, L>>,
+    PCS: PolynomialCommitmentScheme<C, L, Accumulator = KzgAccumulator<C, L>>,
 {
-    type VerifyingKey = ();
-    type Proof = KzgAccumulationProof<C, L, PCS>;
+    type VerifyingKey = KzgAsVerifyingKey;
+    type Proof = KzgAsProof<C, L, PCS>;
 
     fn read_proof<T>(
-        zk: bool,
+        vk: &Self::VerifyingKey,
         instances: &[PCS::Accumulator],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
     where
         T: TranscriptRead<C, L>,
     {
-        KzgAccumulationProof::read(zk, instances, transcript)
+        KzgAsProof::read(vk, instances, transcript)
     }
 
     fn verify(
@@ -48,38 +49,68 @@ where
             .chain(proof.blind.clone())
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
-        let separators = proof.separator.powers(lhs.len());
+        let powers_of_r = proof.r.powers(lhs.len());
         let [lhs, rhs] = [lhs, rhs].map(|msms| {
             msms.into_iter()
-                .zip(separators.iter())
-                .map(|(msm, separator)| Msm::<C, L>::base(msm) * separator)
+                .zip(powers_of_r.iter())
+                .map(|(msm, r)| Msm::<C, L>::base(msm) * r)
                 .sum::<Msm<_, _>>()
                 .evaluate(None)
         });
 
-        Ok(Accumulator::new(lhs, rhs))
+        Ok(KzgAccumulator::new(lhs, rhs))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct KzgAsProvingKey<C>(pub Option<(C, C)>);
+
+impl<C: Clone> KzgAsProvingKey<C> {
+    pub fn new(g: Option<(C, C)>) -> Self {
+        Self(g)
+    }
+
+    pub fn zk(&self) -> bool {
+        self.0.is_some()
+    }
+
+    pub fn vk(&self) -> KzgAsVerifyingKey {
+        KzgAsVerifyingKey(self.zk())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct KzgAsVerifyingKey(bool);
+
+impl KzgAsVerifyingKey {
+    pub fn zk(&self) -> bool {
+        self.0
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct KzgAccumulationProof<C, L, PCS>
+pub struct KzgAsProof<C, L, PCS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = Accumulator<C, L>>,
+    PCS: PolynomialCommitmentScheme<C, L, Accumulator = KzgAccumulator<C, L>>,
 {
     blind: Option<(L::LoadedEcPoint, L::LoadedEcPoint)>,
-    separator: L::LoadedScalar,
+    r: L::LoadedScalar,
     _marker: PhantomData<PCS>,
 }
 
-impl<C, L, PCS> KzgAccumulationProof<C, L, PCS>
+impl<C, L, PCS> KzgAsProof<C, L, PCS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = Accumulator<C, L>>,
+    PCS: PolynomialCommitmentScheme<C, L, Accumulator = KzgAccumulator<C, L>>,
 {
-    fn read<T>(zk: bool, instances: &[PCS::Accumulator], transcript: &mut T) -> Result<Self, Error>
+    fn read<T>(
+        vk: &KzgAsVerifyingKey,
+        instances: &[PCS::Accumulator],
+        transcript: &mut T,
+    ) -> Result<Self, Error>
     where
         T: TranscriptRead<C, L>,
     {
@@ -90,30 +121,30 @@ where
             transcript.common_ec_point(&accumulator.rhs)?;
         }
 
-        let blind = zk
+        let blind = vk
+            .zk()
             .then(|| Ok((transcript.read_ec_point()?, transcript.read_ec_point()?)))
             .transpose()?;
 
-        let separator = transcript.squeeze_challenge();
+        let r = transcript.squeeze_challenge();
 
         Ok(Self {
             blind,
-            separator,
+            r,
             _marker: PhantomData,
         })
     }
 }
 
-impl<C, PCS> AccumulationSchemeProver<C, PCS> for KzgAccumulation<PCS>
+impl<C, PCS> AccumulationSchemeProver<C, PCS> for KzgAs<PCS>
 where
     C: CurveAffine,
-    PCS: PolynomialCommitmentScheme<C, NativeLoader, Accumulator = Accumulator<C, NativeLoader>>,
+    PCS: PolynomialCommitmentScheme<C, NativeLoader, Accumulator = KzgAccumulator<C, NativeLoader>>,
 {
-    type ProvingKey = (C, C);
+    type ProvingKey = KzgAsProvingKey<C>;
 
     fn create_proof<T, R>(
-        zk: bool,
-        (g, s_g): &(C, C),
+        pk: &Self::ProvingKey,
         instances: &[PCS::Accumulator],
         transcript: &mut T,
         rng: R,
@@ -129,18 +160,20 @@ where
             transcript.common_ec_point(&accumulator.rhs)?;
         }
 
-        let blind = zk
+        let blind = pk
+            .zk()
             .then(|| {
                 let s = C::Scalar::random(rng);
-                let lhs = (*s_g * s).to_affine();
-                let rhs = (*g * s).to_affine();
+                let (g, s_g) = pk.0.unwrap();
+                let lhs = (s_g * s).to_affine();
+                let rhs = (g * s).to_affine();
                 transcript.write_ec_point(lhs)?;
                 transcript.write_ec_point(rhs)?;
                 Ok((lhs, rhs))
             })
             .transpose()?;
 
-        let separator = transcript.squeeze_challenge();
+        let r = transcript.squeeze_challenge();
 
         let (lhs, rhs) = instances
             .iter()
@@ -149,15 +182,15 @@ where
             .chain(blind)
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
-        let separators = separator.powers(lhs.len());
+        let powers_of_r = r.powers(lhs.len());
         let [lhs, rhs] = [lhs, rhs].map(|msms| {
             msms.into_iter()
-                .zip(separators.iter())
-                .map(|(msm, separator)| Msm::<C, NativeLoader>::base(msm) * separator)
+                .zip(powers_of_r.iter())
+                .map(|(msm, power_of_r)| Msm::<C, NativeLoader>::base(msm) * power_of_r)
                 .sum::<Msm<_, _>>()
                 .evaluate(None)
         });
 
-        Ok(Accumulator::new(lhs, rhs))
+        Ok(KzgAccumulator::new(lhs, rhs))
     }
 }

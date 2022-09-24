@@ -22,14 +22,14 @@ use halo2_proofs::{
 use itertools::Itertools;
 use plonk_verifier::{
     loader::evm::{encode_calldata, EvmLoader},
-    pcs::kzg::Gwc19,
+    pcs::kzg::{Gwc19, Kzg},
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     verifier::{self, PlonkVerifier},
 };
 use rand::{rngs::OsRng, RngCore};
 use std::rc::Rc;
 
-type Plonk = verifier::Plonk<Gwc19<Bn256>>;
+type Plonk = verifier::Plonk<Kzg<Bn256, Gwc19>>;
 
 #[derive(Clone, Copy)]
 struct StandardPlonkConfig {
@@ -207,6 +207,8 @@ fn gen_evm_verifier(
     vk: &VerifyingKey<G1Affine>,
     num_instance: Vec<usize>,
 ) -> Vec<u8> {
+    let svk = params.get_g()[0].into();
+    let dk = (params.g2(), params.s_g2()).into();
     let protocol = compile(
         params,
         vk,
@@ -217,15 +219,8 @@ fn gen_evm_verifier(
     let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
 
     let instances = transcript.load_instances(num_instance);
-    let proof = Plonk::read_proof(&protocol, &instances, &mut transcript).unwrap();
-    Plonk::verify(
-        &params.get_g()[0],
-        &(params.g2(), params.s_g2()),
-        &protocol,
-        &instances,
-        &proof,
-    )
-    .unwrap();
+    let proof = Plonk::read_proof(&svk, &protocol, &instances, &mut transcript).unwrap();
+    Plonk::verify(&svk, &dk, &protocol, &instances, &proof).unwrap();
 
     loader.deployment_code()
 }

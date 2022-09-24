@@ -1,7 +1,7 @@
 use crate::{
     cost::{Cost, CostEstimation},
     loader::{native::NativeLoader, LoadedScalar, Loader},
-    pcs::{self, AccumulatorEncoding, PolynomialCommitmentScheme},
+    pcs::{self, AccumulatorEncoding, MultiOpenScheme},
     util::{
         arithmetic::{CurveAffine, Field, Rotation},
         msm::Msm,
@@ -16,18 +16,19 @@ use crate::{
 };
 use std::{collections::HashMap, iter, marker::PhantomData};
 
-pub struct Plonk<PCS, AE = ()>(PhantomData<(PCS, AE)>);
+pub struct Plonk<MOS, AE = ()>(PhantomData<(MOS, AE)>);
 
-impl<C, L, PCS, AE> PlonkVerifier<C, L, PCS> for Plonk<PCS, AE>
+impl<C, L, MOS, AE> PlonkVerifier<C, L, MOS> for Plonk<MOS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L>,
-    AE: AccumulatorEncoding<C, L, PCS>,
+    MOS: MultiOpenScheme<C, L>,
+    AE: AccumulatorEncoding<C, L, MOS>,
 {
-    type Proof = PlonkProof<C, L, PCS>;
+    type Proof = PlonkProof<C, L, MOS>;
 
     fn read_proof<T>(
+        svk: &MOS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
@@ -35,15 +36,15 @@ where
     where
         T: TranscriptRead<C, L>,
     {
-        PlonkProof::read::<T, AE>(protocol, instances, transcript)
+        PlonkProof::read::<T, AE>(svk, protocol, instances, transcript)
     }
 
     fn succinct_verify(
-        svk: &PCS::SuccinctVerifyingKey,
+        svk: &MOS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<Vec<PCS::Accumulator>, Error> {
+    ) -> Result<Vec<MOS::Accumulator>, Error> {
         let common_poly_eval = {
             let mut common_poly_eval = CommonPolynomialEvaluation::new(
                 &protocol.domain,
@@ -61,7 +62,7 @@ where
         let commitments = proof.commitments(protocol, &common_poly_eval, &mut evaluations)?;
         let queries = proof.queries(protocol, evaluations);
 
-        let accumulator = PCS::succinct_verify(svk, &commitments, &proof.z, &queries, &proof.pcs)?;
+        let accumulator = MOS::succinct_verify(svk, &commitments, &proof.z, &queries, &proof.pcs)?;
 
         let accumulators = iter::empty()
             .chain(Some(accumulator))
@@ -73,11 +74,11 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct PlonkProof<C, L, PCS>
+pub struct PlonkProof<C, L, MOS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L>,
+    MOS: MultiOpenScheme<C, L>,
 {
     pub committed_instances: Option<Vec<L::LoadedEcPoint>>,
     pub witnesses: Vec<L::LoadedEcPoint>,
@@ -85,24 +86,25 @@ where
     pub quotients: Vec<L::LoadedEcPoint>,
     pub z: L::LoadedScalar,
     pub evaluations: Vec<L::LoadedScalar>,
-    pub pcs: PCS::Proof,
-    pub old_accumulators: Vec<PCS::Accumulator>,
+    pub pcs: MOS::Proof,
+    pub old_accumulators: Vec<MOS::Accumulator>,
 }
 
-impl<C, L, PCS> PlonkProof<C, L, PCS>
+impl<C, L, MOS> PlonkProof<C, L, MOS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L>,
+    MOS: MultiOpenScheme<C, L>,
 {
     fn read<T, AE>(
+        svk: &MOS::SuccinctVerifyingKey,
         protocol: &Protocol<C>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
     ) -> Result<Self, Error>
     where
         T: TranscriptRead<C, L>,
-        AE: AccumulatorEncoding<C, L, PCS>,
+        AE: AccumulatorEncoding<C, L, MOS>,
     {
         let loader = transcript.loader();
         if let Some(transcript_initial_state) = &protocol.transcript_initial_state {
@@ -183,7 +185,7 @@ where
         let z = transcript.squeeze_challenge();
         let evaluations = transcript.read_n_scalars(protocol.evaluations.len())?;
 
-        let pcs = PCS::read_proof(&protocol.domain, &Self::empty_queries(protocol), transcript)?;
+        let pcs = MOS::read_proof(svk, &Self::empty_queries(protocol), transcript)?;
 
         let old_accumulators = protocol
             .accumulator_indices
@@ -397,11 +399,10 @@ where
     }
 }
 
-impl<C, PCS> CostEstimation<(C, PCS)> for Plonk<PCS>
+impl<C, MOS> CostEstimation<(C, MOS)> for Plonk<MOS>
 where
     C: CurveAffine,
-    PCS: PolynomialCommitmentScheme<C, NativeLoader>
-        + CostEstimation<C, Input = Vec<pcs::Query<C::Scalar>>>,
+    MOS: MultiOpenScheme<C, NativeLoader> + CostEstimation<C, Input = Vec<pcs::Query<C::Scalar>>>,
 {
     type Input = Protocol<C>;
 
@@ -416,8 +417,8 @@ where
             Cost::new(num_instance, num_commitment, num_evaluation, num_msm)
         };
         let pcs_cost = {
-            let queries = PlonkProof::<C, NativeLoader, PCS>::empty_queries(protocol);
-            PCS::estimate_cost(&queries)
+            let queries = PlonkProof::<C, NativeLoader, MOS>::empty_queries(protocol);
+            MOS::estimate_cost(&queries)
         };
         plonk_cost + pcs_cost
     }

@@ -7,7 +7,10 @@ use crate::{
         native::NativeLoader,
     },
     pcs::{
-        kzg::{Accumulator, Bdfg21, KzgAccumulation, LimbsEncoding},
+        kzg::{
+            Bdfg21, Kzg, KzgAccumulator, KzgAs, KzgAsProvingKey, KzgAsVerifyingKey,
+            KzgSuccinctVerifyingKey, LimbsEncoding,
+        },
         AccumulationScheme, AccumulationSchemeProver,
     },
     system::{
@@ -69,16 +72,20 @@ type PoseidonTranscript<L, S, B> = system::halo2::transcript::halo2::PoseidonTra
     R_P,
 >;
 
-type Pcs = Bdfg21<Bn256>;
-type As = KzgAccumulation<Pcs>;
+type Pcs = Kzg<Bn256, Bdfg21>;
+type Svk = KzgSuccinctVerifyingKey<G1Affine>;
+type As = KzgAs<Pcs>;
+type AsPk = KzgAsProvingKey<G1Affine>;
+type AsVk = KzgAsVerifyingKey;
 type Plonk = verifier::Plonk<Pcs, LimbsEncoding<LIMBS, BITS>>;
 
 pub fn accumulate<'a>(
-    g1: &G1Affine,
+    svk: &Svk,
     loader: &Rc<Halo2Loader<'a>>,
     snarks: &[SnarkWitness<G1Affine>],
+    as_vk: &AsVk,
     as_proof: Value<&'_ [u8]>,
-) -> Accumulator<G1Affine, Rc<Halo2Loader<'a>>> {
+) -> KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>> {
     let assign_instances = |instances: &[Vec<Value<Fr>>]| {
         instances
             .iter()
@@ -97,24 +104,26 @@ pub fn accumulate<'a>(
             let instances = assign_instances(&snark.instances);
             let mut transcript =
                 PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, snark.proof());
-            let proof = Plonk::read_proof(&snark.protocol, &instances, &mut transcript).unwrap();
-            Plonk::succinct_verify(g1, &snark.protocol, &instances, &proof).unwrap()
+            let proof =
+                Plonk::read_proof(svk, &snark.protocol, &instances, &mut transcript).unwrap();
+            Plonk::succinct_verify(svk, &snark.protocol, &instances, &proof).unwrap()
         })
         .collect_vec();
 
     let acccumulator = {
         let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, as_proof);
-        let proof = As::read_proof(true, &accumulators, &mut transcript).unwrap();
-        As::verify(&(), &accumulators, &proof).unwrap()
+        let proof = As::read_proof(as_vk, &accumulators, &mut transcript).unwrap();
+        As::verify(as_vk, &accumulators, &proof).unwrap()
     };
 
     acccumulator
 }
 
 pub struct Accumulation {
-    g1: G1Affine,
+    svk: Svk,
     snarks: Vec<SnarkWitness<G1Affine>>,
     instances: Vec<Fr>,
+    as_vk: AsVk,
     as_proof: Value<Vec<u8>>,
 }
 
@@ -127,7 +136,7 @@ impl Accumulation {
         params: &ParamsKZG<Bn256>,
         snarks: impl IntoIterator<Item = Snark<G1Affine>>,
     ) -> Self {
-        let g1 = params.get_g()[0];
+        let svk = params.get_g()[0].into();
         let snarks = snarks.into_iter().collect_vec();
 
         let accumulators = snarks
@@ -136,16 +145,17 @@ impl Accumulation {
                 let mut transcript =
                     PoseidonTranscript::<NativeLoader, _, _>::new(snark.proof.as_slice());
                 let proof =
-                    Plonk::read_proof(&snark.protocol, &snark.instances, &mut transcript).unwrap();
-                Plonk::succinct_verify(&g1, &snark.protocol, &snark.instances, &proof).unwrap()
+                    Plonk::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript)
+                        .unwrap();
+                Plonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap()
             })
             .collect_vec();
 
+        let as_pk = AsPk::new(Some((params.get_g()[0], params.get_g()[1])));
         let (accumulator, as_proof) = {
             let mut transcript = PoseidonTranscript::<NativeLoader, _, _>::new(Vec::new());
             let accumulator = As::create_proof(
-                true,
-                &(params.get_g()[0], params.get_g()[1]),
+                &as_pk,
                 &accumulators,
                 &mut transcript,
                 ChaCha20Rng::from_seed(Default::default()),
@@ -154,15 +164,16 @@ impl Accumulation {
             (accumulator, transcript.finalize())
         };
 
-        let Accumulator { lhs, rhs } = accumulator;
+        let KzgAccumulator { lhs, rhs } = accumulator;
         let instances = [lhs.x, lhs.y, rhs.x, rhs.y]
             .map(fe_to_limbs::<_, _, LIMBS, BITS>)
             .concat();
 
         Self {
-            g1,
+            svk,
             snarks: snarks.into_iter().map_into().collect(),
             instances,
+            as_vk: as_pk.vk(),
             as_proof: Value::known(as_proof),
         }
     }
@@ -248,13 +259,14 @@ impl Circuit<Fr> for Accumulation {
 
     fn without_witnesses(&self) -> Self {
         Self {
-            g1: self.g1,
+            svk: self.svk,
             snarks: self
                 .snarks
                 .iter()
                 .map(SnarkWitness::without_witnesses)
                 .collect(),
             instances: Vec::new(),
+            as_vk: self.as_vk,
             as_proof: Value::unknown(),
         }
     }
@@ -284,8 +296,13 @@ impl Circuit<Fr> for Accumulation {
 
                 let ecc_chip = config.ecc_chip();
                 let loader = Halo2Loader::new(ecc_chip, ctx);
-                let Accumulator { lhs, rhs } =
-                    accumulate(&self.g1, &loader, &self.snarks, self.as_proof());
+                let KzgAccumulator { lhs, rhs } = accumulate(
+                    &self.svk,
+                    &loader,
+                    &self.snarks,
+                    &self.as_vk,
+                    self.as_proof(),
+                );
 
                 loader.print_row_metering();
                 println!("Total row cost: {}", loader.ctx().offset());

@@ -1,31 +1,32 @@
 use crate::{
     cost::{Cost, CostEstimation},
     loader::{LoadedScalar, Loader},
-    pcs::{kzg::accumulator::Accumulator, PolynomialCommitmentScheme, Query},
+    pcs::{
+        kzg::{Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
+        MultiOpenScheme, Query,
+    },
     util::{
-        arithmetic::{CurveAffine, Domain, MultiMillerLoop, PrimeField},
+        arithmetic::{CurveAffine, MultiMillerLoop, PrimeField},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
     },
     Error,
 };
-use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-pub struct Gwc19<M: MultiMillerLoop>(PhantomData<M>);
+pub struct Gwc19;
 
-impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for Gwc19<M>
+impl<M, L> MultiOpenScheme<M::G1Affine, L> for Kzg<M, Gwc19>
 where
     M: MultiMillerLoop,
     L: Loader<M::G1Affine>,
 {
-    type SuccinctVerifyingKey = M::G1Affine;
+    type SuccinctVerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
     type Proof = Gwc19Proof<M::G1Affine, L>;
-    type Accumulator = Accumulator<M::G1Affine, L>;
 
     fn read_proof<T>(
-        _: &Domain<M::Scalar>,
+        _: &Self::SuccinctVerifyingKey,
         queries: &[Query<M::Scalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
@@ -36,7 +37,7 @@ where
     }
 
     fn succinct_verify(
-        g1: &M::G1Affine,
+        svk: &Self::SuccinctVerifyingKey,
         commitments: &[Msm<M::G1Affine, L>],
         z: &L::LoadedScalar,
         queries: &[Query<M::Scalar, L::LoadedScalar>],
@@ -70,9 +71,9 @@ where
             .map(|(uw, z_omega)| uw.clone() * &z_omega)
             .sum();
 
-        Ok(Accumulator::new(
-            lhs.evaluate(Some(*g1)),
-            rhs.into_iter().sum::<Msm<_, _>>().evaluate(Some(*g1)),
+        Ok(KzgAccumulator::new(
+            lhs.evaluate(Some(svk.g)),
+            rhs.into_iter().sum::<Msm<_, _>>().evaluate(Some(svk.g)),
         ))
     }
 }
@@ -153,7 +154,7 @@ where
     })
 }
 
-impl<M> CostEstimation<M::G1Affine> for Gwc19<M>
+impl<M> CostEstimation<M::G1Affine> for Kzg<M, Gwc19>
 where
     M: MultiMillerLoop,
 {

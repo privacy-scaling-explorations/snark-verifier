@@ -2,7 +2,7 @@ use crate::{loader::Loader, util::arithmetic::CurveAffine};
 use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
-pub struct Accumulator<C, L>
+pub struct KzgAccumulator<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
@@ -11,7 +11,7 @@ where
     pub rhs: L::LoadedEcPoint,
 }
 
-impl<C, L> Accumulator<C, L>
+impl<C, L> KzgAccumulator<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
@@ -33,7 +33,7 @@ mod native {
     use crate::{
         loader::native::NativeLoader,
         pcs::{
-            kzg::accumulator::{Accumulator, LimbsEncoding},
+            kzg::{KzgAccumulator, LimbsEncoding},
             AccumulatorEncoding, PolynomialCommitmentScheme,
         },
         util::{
@@ -47,8 +47,11 @@ mod native {
         for LimbsEncoding<LIMBS, BITS>
     where
         C: CurveAffine,
-        PCS:
-            PolynomialCommitmentScheme<C, NativeLoader, Accumulator = Accumulator<C, NativeLoader>>,
+        PCS: PolynomialCommitmentScheme<
+            C,
+            NativeLoader,
+            Accumulator = KzgAccumulator<C, NativeLoader>,
+        >,
     {
         fn from_repr(limbs: Vec<C::Scalar>) -> Result<PCS::Accumulator, Error> {
             assert_eq!(limbs.len(), 4 * LIMBS);
@@ -60,7 +63,7 @@ mod native {
                 .collect_vec()
                 .try_into()
                 .unwrap();
-            let accumulator = Accumulator::new(
+            let accumulator = KzgAccumulator::new(
                 C::from_xy(lhs_x, lhs_y).unwrap(),
                 C::from_xy(rhs_x, rhs_y).unwrap(),
             );
@@ -75,7 +78,7 @@ mod evm {
     use crate::{
         loader::evm::{EvmLoader, Scalar},
         pcs::{
-            kzg::accumulator::{Accumulator, LimbsEncoding},
+            kzg::{KzgAccumulator, LimbsEncoding},
             AccumulatorEncoding, PolynomialCommitmentScheme,
         },
         util::{
@@ -94,7 +97,7 @@ mod evm {
         PCS: PolynomialCommitmentScheme<
             C,
             Rc<EvmLoader>,
-            Accumulator = Accumulator<C, Rc<EvmLoader>>,
+            Accumulator = KzgAccumulator<C, Rc<EvmLoader>>,
         >,
     {
         fn from_repr(limbs: Vec<Scalar>) -> Result<PCS::Accumulator, Error> {
@@ -109,7 +112,7 @@ mod evm {
                 .collect_vec()
                 .try_into()
                 .unwrap();
-            let accumulator = Accumulator::new(
+            let accumulator = KzgAccumulator::new(
                 loader.ec_point_from_limbs::<LIMBS, BITS>(lhs_x, lhs_y),
                 loader.ec_point_from_limbs::<LIMBS, BITS>(rhs_x, rhs_y),
             );
@@ -124,7 +127,7 @@ mod halo2 {
     use crate::{
         loader::halo2::{EccInstructions, Halo2Loader, Scalar, Valuetools},
         pcs::{
-            kzg::accumulator::{Accumulator, LimbsEncoding},
+            kzg::{KzgAccumulator, LimbsEncoding},
             AccumulatorEncoding, PolynomialCommitmentScheme,
         },
         util::{
@@ -164,7 +167,7 @@ mod halo2 {
         PCS: PolynomialCommitmentScheme<
             C,
             Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>,
-            Accumulator = Accumulator<C, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>>,
+            Accumulator = KzgAccumulator<C, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>>,
         >,
         EccChip: EccInstructions<
             C,
@@ -200,7 +203,7 @@ mod halo2 {
                     .constrain_equal(src.cell(), dst.as_ref().cell())
                     .unwrap();
             }
-            let accumulator = Accumulator::new(lhs, rhs);
+            let accumulator = KzgAccumulator::new(lhs, rhs);
 
             Ok(accumulator)
         }

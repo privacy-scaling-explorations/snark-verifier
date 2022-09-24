@@ -1,6 +1,6 @@
 use crate::{
     loader::halo2::test::StandardPlonk,
-    pcs::kzg::{Bdfg21, Gwc19, LimbsEncoding},
+    pcs::kzg::{Bdfg21, Gwc19, Kzg, LimbsEncoding},
     system::halo2::test::kzg::{
         halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare,
         main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS,
@@ -47,8 +47,8 @@ macro_rules! test {
         }
     };
     ($name:ident, $k:expr, $config:expr, $create_cirucit:expr) => {
-        test!(@ shplonk, $name, $k, $config, $create_cirucit, ProverSHPLONK<_>, VerifierSHPLONK<_>, Plonk<Bdfg21<Bn256>, LimbsEncoding<LIMBS, BITS>>);
-        test!(@ plonk, $name, $k, $config, $create_cirucit, ProverGWC<_>, VerifierGWC<_>, Plonk<Gwc19<Bn256>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ shplonk, $name, $k, $config, $create_cirucit, ProverSHPLONK<_>, VerifierSHPLONK<_>, Plonk<Kzg<Bn256, Bdfg21>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ plonk, $name, $k, $config, $create_cirucit, ProverGWC<_>, VerifierGWC<_>, Plonk<Kzg<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
     }
 }
 

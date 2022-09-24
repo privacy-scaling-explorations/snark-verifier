@@ -585,6 +585,17 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> ScalarLoad
     fn load_const(&self, value: &C::Scalar) -> Scalar<'a, C, N, EccChip> {
         self.scalar(Value::Constant(*value))
     }
+
+    fn assert_eq(
+        &self,
+        annotation: &str,
+        lhs: &Scalar<'a, C, N, EccChip>,
+        rhs: &Scalar<'a, C, N, EccChip>,
+    ) -> Result<(), crate::Error> {
+        self.scalar_chip()
+            .assert_equal(&mut self.ctx_mut(), &lhs.assigned(), &rhs.assigned())
+            .map_err(|_| crate::Error::AssertionFailure(annotation.to_string()))
+    }
 }
 
 impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> EcPointLoader<C>
@@ -594,6 +605,17 @@ impl<'a, C: CurveAffine, N: FieldExt, EccChip: EccInstructions<C, N>> EcPointLoa
 
     fn ec_point_load_const(&self, ec_point: &C) -> EcPoint<'a, C, N, EccChip> {
         self.assign_const_ec_point(*ec_point)
+    }
+
+    fn ec_point_assert_eq(
+        &self,
+        annotation: &str,
+        lhs: &EcPoint<'a, C, N, EccChip>,
+        rhs: &EcPoint<'a, C, N, EccChip>,
+    ) -> Result<(), crate::Error> {
+        self.ecc_chip()
+            .assert_equal(&mut self.ctx_mut(), &lhs.assigned(), &rhs.assigned())
+            .map_err(|_| crate::Error::AssertionFailure(annotation.to_string()))
     }
 }
 

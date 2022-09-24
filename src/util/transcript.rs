@@ -43,6 +43,4 @@ pub trait TranscriptWrite<C: CurveAffine>: Transcript<C, NativeLoader> {
     fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), Error>;
 
     fn write_ec_point(&mut self, ec_point: C) -> Result<(), Error>;
-
-    fn finalize(self) -> Vec<u8>;
 }

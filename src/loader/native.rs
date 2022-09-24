@@ -1,6 +1,7 @@
 use crate::{
     loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
     util::arithmetic::{Curve, CurveAffine, FieldOps, PrimeField},
+    Error,
 };
 use lazy_static::lazy_static;
 use std::fmt::Debug;
@@ -49,6 +50,17 @@ impl<C: CurveAffine> EcPointLoader<C> for NativeLoader {
     fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint {
         *value
     }
+
+    fn ec_point_assert_eq(
+        &self,
+        annotation: &str,
+        lhs: &Self::LoadedEcPoint,
+        rhs: &Self::LoadedEcPoint,
+    ) -> Result<(), Error> {
+        lhs.eq(rhs)
+            .then_some(())
+            .ok_or_else(|| Error::AssertionFailure(annotation.to_string()))
+    }
 }
 
 impl<F: PrimeField> ScalarLoader<F> for NativeLoader {
@@ -56,6 +68,17 @@ impl<F: PrimeField> ScalarLoader<F> for NativeLoader {
 
     fn load_const(&self, value: &F) -> Self::LoadedScalar {
         *value
+    }
+
+    fn assert_eq(
+        &self,
+        annotation: &str,
+        lhs: &Self::LoadedScalar,
+        rhs: &Self::LoadedScalar,
+    ) -> Result<(), Error> {
+        lhs.eq(rhs)
+            .then_some(())
+            .ok_or_else(|| Error::AssertionFailure(annotation.to_string()))
     }
 }
 

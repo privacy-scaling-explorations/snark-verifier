@@ -387,6 +387,7 @@ impl<
 impl<
         C: CurveAffine,
         E: PointRepresentation<C, C::Scalar, LIMBS, BITS>,
+        W: Write,
         const LIMBS: usize,
         const BITS: usize,
         const T: usize,
@@ -399,7 +400,7 @@ impl<
         C::Scalar,
         E,
         NativeLoader,
-        Vec<u8>,
+        W,
         Poseidon<C::Scalar, T, RATE>,
         LIMBS,
         BITS,
@@ -429,10 +430,6 @@ impl<
                 "Failed to write elliptic curve to transcript".to_string(),
             )
         })
-    }
-
-    fn finalize(self) -> Vec<u8> {
-        self.finalize()
     }
 }
 

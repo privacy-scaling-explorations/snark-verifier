@@ -139,7 +139,6 @@ pub fn compile<'a, C: CurveAffine, P: Params<'a, C>>(
         .unwrap_or_default();
 
     Protocol {
-        zk: config.zk,
         domain,
         preprocessed,
         num_instance: polynomials.num_instance(),
