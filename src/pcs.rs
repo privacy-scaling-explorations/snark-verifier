@@ -10,20 +10,14 @@ use crate::{
 use rand::Rng;
 use std::fmt::Debug;
 
-use sealed::PolynomialCommitmentScheme;
 pub mod kzg;
 
-mod sealed {
-    use crate::{loader::Loader, util::arithmetic::CurveAffine};
-    use std::fmt::Debug;
-
-    pub trait PolynomialCommitmentScheme<C, L>: Clone + Debug
-    where
-        C: CurveAffine,
-        L: Loader<C>,
-    {
-        type Accumulator: Clone + Debug;
-    }
+pub trait PolynomialCommitmentScheme<C, L>: Clone + Debug
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
+    type Accumulator: Clone + Debug;
 }
 
 #[derive(Clone, Debug)]

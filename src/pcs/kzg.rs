@@ -1,6 +1,6 @@
 use crate::{
     loader::Loader,
-    pcs::sealed::PolynomialCommitmentScheme,
+    pcs::PolynomialCommitmentScheme,
     util::arithmetic::{CurveAffine, MultiMillerLoop},
 };
 use std::{fmt::Debug, marker::PhantomData};
