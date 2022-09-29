@@ -98,7 +98,7 @@ pub fn accumulate<'a>(
             .collect_vec()
     };
 
-    let accumulators = snarks
+    let mut accumulators = snarks
         .iter()
         .flat_map(|snark| {
             let instances = assign_instances(&snark.instances);
@@ -110,10 +110,12 @@ pub fn accumulate<'a>(
         })
         .collect_vec();
 
-    let acccumulator = {
+    let acccumulator = if accumulators.len() > 1 {
         let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, as_proof);
         let proof = As::read_proof(as_vk, &accumulators, &mut transcript).unwrap();
         As::verify(as_vk, &accumulators, &proof).unwrap()
+    } else {
+        accumulators.pop().unwrap()
     };
 
     acccumulator
@@ -139,7 +141,7 @@ impl Accumulation {
         let svk = params.get_g()[0].into();
         let snarks = snarks.into_iter().collect_vec();
 
-        let accumulators = snarks
+        let mut accumulators = snarks
             .iter()
             .flat_map(|snark| {
                 let mut transcript =
@@ -152,7 +154,7 @@ impl Accumulation {
             .collect_vec();
 
         let as_pk = AsPk::new(Some((params.get_g()[0], params.get_g()[1])));
-        let (accumulator, as_proof) = {
+        let (accumulator, as_proof) = if accumulators.len() > 1 {
             let mut transcript = PoseidonTranscript::<NativeLoader, _, _>::new(Vec::new());
             let accumulator = As::create_proof(
                 &as_pk,
@@ -161,7 +163,9 @@ impl Accumulation {
                 ChaCha20Rng::from_seed(Default::default()),
             )
             .unwrap();
-            (accumulator, transcript.finalize())
+            (accumulator, Value::known(transcript.finalize()))
+        } else {
+            (accumulators.pop().unwrap(), Value::unknown())
         };
 
         let KzgAccumulator { lhs, rhs } = accumulator;
@@ -174,7 +178,7 @@ impl Accumulation {
             snarks: snarks.into_iter().map_into().collect(),
             instances,
             as_vk: as_pk.vk(),
-            as_proof: Value::known(as_proof),
+            as_proof,
         }
     }
 

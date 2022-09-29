@@ -145,10 +145,11 @@ pub enum Expression<F> {
     Sum(Box<Expression<F>>, Box<Expression<F>>),
     Product(Box<Expression<F>>, Box<Expression<F>>),
     Scaled(Box<Expression<F>>, F),
+    DistributePowers(Vec<Expression<F>>, Box<Expression<F>>),
 }
 
 impl<F: Clone> Expression<F> {
-    pub fn evaluate<T>(
+    pub fn evaluate<T: Clone>(
         &self,
         constant: &impl Fn(F) -> T,
         common_poly: &impl Fn(CommonPolynomial) -> T,
@@ -159,82 +160,52 @@ impl<F: Clone> Expression<F> {
         product: &impl Fn(T, T) -> T,
         scaled: &impl Fn(T, F) -> T,
     ) -> T {
+        let evaluate = |expr: &Expression<F>| {
+            expr.evaluate(
+                constant,
+                common_poly,
+                poly,
+                challenge,
+                negated,
+                sum,
+                product,
+                scaled,
+            )
+        };
         match self {
             Expression::Constant(scalar) => constant(scalar.clone()),
             Expression::CommonPolynomial(poly) => common_poly(*poly),
             Expression::Polynomial(query) => poly(*query),
             Expression::Challenge(index) => challenge(*index),
             Expression::Negated(a) => {
-                let a = a.evaluate(
-                    constant,
-                    common_poly,
-                    poly,
-                    challenge,
-                    negated,
-                    sum,
-                    product,
-                    scaled,
-                );
+                let a = evaluate(a);
                 negated(a)
             }
             Expression::Sum(a, b) => {
-                let a = a.evaluate(
-                    constant,
-                    common_poly,
-                    poly,
-                    challenge,
-                    negated,
-                    sum,
-                    product,
-                    scaled,
-                );
-                let b = b.evaluate(
-                    constant,
-                    common_poly,
-                    poly,
-                    challenge,
-                    negated,
-                    sum,
-                    product,
-                    scaled,
-                );
+                let a = evaluate(a);
+                let b = evaluate(b);
                 sum(a, b)
             }
             Expression::Product(a, b) => {
-                let a = a.evaluate(
-                    constant,
-                    common_poly,
-                    poly,
-                    challenge,
-                    negated,
-                    sum,
-                    product,
-                    scaled,
-                );
-                let b = b.evaluate(
-                    constant,
-                    common_poly,
-                    poly,
-                    challenge,
-                    negated,
-                    sum,
-                    product,
-                    scaled,
-                );
+                let a = evaluate(a);
+                let b = evaluate(b);
                 product(a, b)
             }
             Expression::Scaled(a, scalar) => {
-                let a = a.evaluate(
-                    constant,
-                    common_poly,
-                    poly,
-                    challenge,
-                    negated,
-                    sum,
-                    product,
-                    scaled,
-                );
+                let a = evaluate(a);
                 scaled(a, scalar.clone())
+            }
+            Expression::DistributePowers(exprs, scalar) => {
+                assert!(!exprs.is_empty());
+                if exprs.len() == 1 {
+                    return evaluate(exprs.first().unwrap());
+                }
+                let mut exprs = exprs.iter();
+                let first = evaluate(exprs.next().unwrap());
+                let scalar = evaluate(scalar);
+                exprs.fold(first, |acc, expr| {
+                    sum(product(acc, scalar.clone()), evaluate(expr))
+                })
             }
         }
     }
@@ -249,6 +220,12 @@ impl<F: Clone> Expression<F> {
             Expression::Sum(a, b) => max(a.degree(), b.degree()),
             Expression::Product(a, b) => a.degree() + b.degree(),
             Expression::Scaled(a, _) => a.degree(),
+            Expression::DistributePowers(a, b) => a
+                .iter()
+                .chain(Some(b.as_ref()))
+                .map(Self::degree)
+                .max()
+                .unwrap_or_default(),
         }
     }
 

@@ -1,6 +1,6 @@
 use crate::{
     util::{
-        arithmetic::{powers, root_of_unity, CurveAffine, Domain, FieldExt, Rotation},
+        arithmetic::{root_of_unity, CurveAffine, Domain, FieldExt, Rotation},
         protocol::{
             CommonPolynomial, Expression, InstanceCommittingKey, Query, QuotientPolynomial,
         },
@@ -634,7 +634,6 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
         let l_0 = &Expression::<F>::CommonPolynomial(CommonPolynomial::Lagrange(0));
         let l_last = &self.l_last();
         let l_active = &self.l_active();
-        let theta = &self.theta();
         let beta = &self.beta();
         let gamma = &self.gamma();
 
@@ -652,15 +651,13 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             .collect_vec();
 
         let compress = |expressions: &'a [plonk::Expression<F>]| {
-            expressions
-                .iter()
-                .rev()
-                .zip(iter::successors(Some(one.clone()), |power_of_theta| {
-                    Some(power_of_theta * theta)
-                }))
-                .map(|(expression, power_of_theta)| power_of_theta * self.convert(expression, t))
-                .reduce(|acc, expr| acc + expr)
-                .unwrap()
+            Expression::DistributePowers(
+                expressions
+                    .iter()
+                    .map(|expression| self.convert(expression, t))
+                    .collect(),
+                self.theta().into(),
+            )
         };
 
         self.cs
@@ -705,14 +702,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     .chain(self.lookup_constraints(t))
             })
             .collect_vec();
-        let numerator = powers(self.alpha())
-            .take(constraints.len())
-            .collect_vec()
-            .into_iter()
-            .rev()
-            .zip(constraints)
-            .map(|(power_of_alpha, constraint)| power_of_alpha * constraint)
-            .sum();
+        let numerator = Expression::DistributePowers(constraints, self.alpha().into());
         QuotientPolynomial {
             chunk_degree: 1,
             numerator,
