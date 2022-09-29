@@ -57,7 +57,7 @@ mod native {
             assert_eq!(limbs.len(), 4 * LIMBS);
 
             let [lhs_x, lhs_y, rhs_x, rhs_y]: [_; 4] = limbs
-                .chunks(4)
+                .chunks(LIMBS)
                 .into_iter()
                 .map(|limbs| fe_from_limbs::<_, _, LIMBS, BITS>(limbs.try_into().unwrap()))
                 .collect_vec()
@@ -106,7 +106,7 @@ mod evm {
             let loader = limbs[0].loader();
 
             let [lhs_x, lhs_y, rhs_x, rhs_y]: [[_; LIMBS]; 4] = limbs
-                .chunks(4)
+                .chunks(LIMBS)
                 .into_iter()
                 .map(|limbs| limbs.to_vec().try_into().unwrap())
                 .collect_vec()
