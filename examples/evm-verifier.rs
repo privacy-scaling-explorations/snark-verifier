@@ -241,7 +241,7 @@ fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>)
             .call_raw(caller, verifier, calldata.into(), 0.into())
             .unwrap();
 
-        dbg!(result.gas);
+        dbg!(result.gas_used);
 
         !result.reverted
     };

@@ -52,5 +52,5 @@ pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64, Vec<u64>) {
         Tui::new(result.debug.unwrap().flatten(0), 0).start();
     }
 
-    (!result.reverted, result.gas, costs)
+    (!result.reverted, result.gas_used, costs)
 }
