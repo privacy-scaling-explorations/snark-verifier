@@ -4,13 +4,6 @@ use crate::{
 };
 use halo2_proofs::circuit::Value;
 
-mod circuit;
-
-pub use circuit::{
-    maingate::{MainGateWithRange, MainGateWithRangeConfig},
-    standard::StandardPlonk,
-};
-
 pub struct Snark<C: CurveAffine> {
     pub protocol: Protocol<C>,
     pub instances: Vec<Vec<C::Scalar>>,

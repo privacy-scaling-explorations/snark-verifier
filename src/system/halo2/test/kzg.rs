@@ -1,6 +1,5 @@
 use crate::{
-    loader::halo2::test::MainGateWithRange,
-    system::halo2::test::read_or_create_srs,
+    system::halo2::test::{read_or_create_srs, MainGateWithRange},
     util::arithmetic::{fe_to_limbs, CurveAffine, MultiMillerLoop},
 };
 use halo2_proofs::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG};

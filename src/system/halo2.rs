@@ -18,7 +18,7 @@ use std::{io, iter, mem::size_of};
 pub mod transcript;
 
 #[cfg(test)]
-mod test;
+pub(crate) mod test;
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {

@@ -11,7 +11,13 @@ use halo2_proofs::{
 use rand_chacha::rand_core::RngCore;
 use std::{fs, io::Cursor};
 
+mod circuit;
 mod kzg;
+
+pub use circuit::{
+    maingate::{MainGateWithRange, MainGateWithRangeConfig},
+    standard::StandardPlonk,
+};
 
 pub fn read_or_create_srs<'a, C: CurveAffine, P: ParamsProver<'a, C>>(
     dir: &str,

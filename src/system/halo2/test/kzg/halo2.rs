@@ -1,9 +1,7 @@
 use crate::{
     loader,
     loader::{
-        halo2::test::{
-            MainGateWithRange, MainGateWithRangeConfig, Snark, SnarkWitness, StandardPlonk,
-        },
+        halo2::test::{Snark, SnarkWitness},
         native::NativeLoader,
     },
     pcs::{
@@ -16,9 +14,12 @@ use crate::{
     system::{
         self,
         halo2::{
-            test::kzg::{
-                halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify,
-                halo2_kzg_prepare, BITS, LIMBS,
+            test::{
+                kzg::{
+                    halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify,
+                    halo2_kzg_prepare, BITS, LIMBS,
+                },
+                MainGateWithRange, MainGateWithRangeConfig, StandardPlonk,
             },
             transcript::halo2::ChallengeScalar,
         },

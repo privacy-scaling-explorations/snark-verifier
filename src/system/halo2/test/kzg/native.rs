@@ -1,9 +1,11 @@
 use crate::{
-    loader::halo2::test::StandardPlonk,
     pcs::kzg::{Bdfg21, Gwc19, Kzg, LimbsEncoding},
-    system::halo2::test::kzg::{
-        halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare,
-        main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS,
+    system::halo2::test::{
+        kzg::{
+            halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare,
+            main_gate_with_range_with_mock_kzg_accumulator, BITS, LIMBS,
+        },
+        StandardPlonk,
     },
     verifier::Plonk,
 };
