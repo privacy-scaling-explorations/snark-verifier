@@ -53,6 +53,11 @@ impl Config {
         self
     }
 
+    pub fn set_query_instance(mut self, query_instance: bool) -> Self {
+        self.query_instance = query_instance;
+        self
+    }
+
     pub fn with_num_proof(mut self, num_proof: usize) -> Self {
         assert!(num_proof > 0);
         self.num_proof = num_proof;
@@ -75,6 +80,8 @@ pub fn compile<'a, C: CurveAffine, P: Params<'a, C>>(
     vk: &VerifyingKey<C>,
     config: Config,
 ) -> Protocol<C> {
+    assert_eq!(vk.get_domain().k(), params.k());
+
     let cs = vk.cs();
     let Config {
         zk,
@@ -84,8 +91,8 @@ pub fn compile<'a, C: CurveAffine, P: Params<'a, C>>(
         accumulator_indices,
     } = config;
 
-    let k = vk.get_domain().empty_lagrange().len().ilog2();
-    let domain = Domain::new(k as usize, root_of_unity(k as usize));
+    let k = params.k() as usize;
+    let domain = Domain::new(k, root_of_unity(k));
 
     let preprocessed = vk
         .fixed_commitments()

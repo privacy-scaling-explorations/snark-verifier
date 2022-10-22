@@ -114,7 +114,7 @@ where
     where
         T: TranscriptRead<C, L>,
     {
-        assert!(instances.len() > 1);
+        assert!(!instances.is_empty());
 
         for accumulator in instances {
             transcript.common_ec_point(&accumulator.lhs)?;
@@ -153,7 +153,7 @@ where
         T: TranscriptWrite<C>,
         R: Rng,
     {
-        assert!(instances.len() > 1);
+        assert!(!instances.is_empty());
 
         for accumulator in instances {
             transcript.common_ec_point(&accumulator.lhs)?;
