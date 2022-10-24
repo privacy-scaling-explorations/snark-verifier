@@ -24,7 +24,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run test
-        run: cargo test --all --features test -- --nocapture
+        run: cargo test --all --all-features -- --nocapture
 
 
   lint:

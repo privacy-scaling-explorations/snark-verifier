@@ -9,12 +9,6 @@ use std::env::var_os;
 
 mod tui;
 
-fn small_address(lsb: u8) -> Address {
-    let mut address = Address::zero();
-    *address.0.last_mut().unwrap() = lsb;
-    address
-}
-
 fn debug() -> bool {
     matches!(
         var_os("DEBUG"),
@@ -23,9 +17,15 @@ fn debug() -> bool {
 }
 
 pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64, Vec<u64>) {
+    assert!(
+        code.len() <= 0x6000,
+        "Contract size {} exceeds the limit 24576",
+        code.len()
+    );
+
     let debug = debug();
-    let caller = small_address(0xfe);
-    let callee = small_address(0xff);
+    let caller = Address::from_low_u64_be(0xfe);
+    let callee = Address::from_low_u64_be(0xff);
 
     let mut evm = ExecutorBuilder::default()
         .with_gas_limit(u64::MAX.into())
@@ -52,5 +52,5 @@ pub fn execute(code: Vec<u8>, calldata: Vec<u8>) -> (bool, u64, Vec<u64>) {
         Tui::new(result.debug.unwrap().flatten(0), 0).start();
     }
 
-    (!result.reverted, result.gas, costs)
+    (!result.reverted, result.gas_used, costs)
 }
