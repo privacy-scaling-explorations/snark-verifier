@@ -125,7 +125,7 @@ mod evm {
 #[cfg(feature = "loader_halo2")]
 mod halo2 {
     use crate::{
-        loader::halo2::{EccInstructions, Halo2Loader, Scalar, Valuetools},
+        loader::halo2::{Context, EccInstructions, Halo2Loader, Scalar, Valuetools},
         pcs::{
             kzg::{KzgAccumulator, LimbsEncoding},
             AccumulatorEncoding, PolynomialCommitmentScheme,
@@ -160,25 +160,22 @@ mod halo2 {
     }
 
     impl<'a, C, PCS, EccChip, const LIMBS: usize, const BITS: usize>
-        AccumulatorEncoding<C, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>, PCS>
-        for LimbsEncoding<LIMBS, BITS>
+        AccumulatorEncoding<C, Rc<Halo2Loader<'a, C, EccChip>>, PCS> for LimbsEncoding<LIMBS, BITS>
     where
         C: CurveAffine,
         PCS: PolynomialCommitmentScheme<
             C,
-            Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>,
-            Accumulator = KzgAccumulator<C, Rc<Halo2Loader<'a, C, C::Scalar, EccChip>>>,
+            Rc<Halo2Loader<'a, C, EccChip>>,
+            Accumulator = KzgAccumulator<C, Rc<Halo2Loader<'a, C, EccChip>>>,
         >,
         EccChip: EccInstructions<
+            'a,
             C,
-            C::Scalar,
-            AssignedPoint = AssignedPoint<<C as CurveAffine>::Base, C::Scalar, LIMBS, BITS>,
+            AssignedEcPoint = AssignedPoint<<C as CurveAffine>::Base, C::Scalar, LIMBS, BITS>,
             AssignedScalar = AssignedValue<C::Scalar>,
         >,
     {
-        fn from_repr(
-            limbs: Vec<Scalar<'a, C, C::Scalar, EccChip>>,
-        ) -> Result<PCS::Accumulator, Error> {
+        fn from_repr(limbs: Vec<Scalar<'a, C, EccChip>>) -> Result<PCS::Accumulator, Error> {
             assert_eq!(limbs.len(), 4 * LIMBS);
 
             let loader = limbs[0].loader();

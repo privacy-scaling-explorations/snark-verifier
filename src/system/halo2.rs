@@ -13,6 +13,7 @@ use halo2_proofs::{
     poly::{self, commitment::Params},
     transcript::{EncodedChallenge, Transcript},
 };
+use num_integer::Integer;
 use std::{io, iter, mem::size_of};
 
 pub mod transcript;
@@ -237,11 +238,10 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             challenge_index,
             num_lookup_permuted: 2 * cs.lookups().len(),
             permutation_chunk_size,
-            num_permutation_z: cs
-                .permutation()
-                .get_columns()
-                .len()
-                .div_ceil(permutation_chunk_size),
+            num_permutation_z: Integer::div_ceil(
+                &cs.permutation().get_columns().len(),
+                &permutation_chunk_size,
+            ),
             num_lookup_z: cs.lookups().len(),
         }
     }

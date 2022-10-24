@@ -852,7 +852,7 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
         unimplemented!()
     }
 
-    fn sum_with_coeff_and_constant(&self, values: &[(F, &Scalar)], constant: F) -> Scalar {
+    fn sum_with_coeff_and_const(&self, values: &[(F, &Scalar)], constant: F) -> Scalar {
         if values.is_empty() {
             return self.load_const(&constant);
         }
@@ -906,7 +906,7 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
         self.scalar(Value::Memory(ptr))
     }
 
-    fn sum_products_with_coeff_and_constant(
+    fn sum_products_with_coeff_and_const(
         &self,
         values: &[(F, &Scalar, &Scalar)],
         constant: F,

@@ -124,7 +124,7 @@ pub trait ScalarLoader<F: PrimeField> {
         rhs: &Self::LoadedScalar,
     ) -> Result<(), Error>;
 
-    fn sum_with_coeff_and_constant(
+    fn sum_with_coeff_and_const(
         &self,
         values: &[(F, &Self::LoadedScalar)],
         constant: F,
@@ -151,7 +151,7 @@ pub trait ScalarLoader<F: PrimeField> {
             .unwrap()
     }
 
-    fn sum_products_with_coeff_and_constant(
+    fn sum_products_with_coeff_and_const(
         &self,
         values: &[(F, &Self::LoadedScalar, &Self::LoadedScalar)],
         constant: F,
@@ -179,31 +179,11 @@ pub trait ScalarLoader<F: PrimeField> {
     }
 
     fn sum_with_coeff(&self, values: &[(F, &Self::LoadedScalar)]) -> Self::LoadedScalar {
-        self.sum_with_coeff_and_constant(values, F::zero())
-    }
-
-    fn sum_products_with_coeff(
-        &self,
-        values: &[(F, &Self::LoadedScalar, &Self::LoadedScalar)],
-    ) -> Self::LoadedScalar {
-        self.sum_products_with_coeff_and_constant(values, F::zero())
-    }
-
-    fn sum_products(
-        &self,
-        values: &[(&Self::LoadedScalar, &Self::LoadedScalar)],
-    ) -> Self::LoadedScalar {
-        self.sum_products_with_coeff_and_constant(
-            &values
-                .iter()
-                .map(|&(lhs, rhs)| (F::one(), lhs, rhs))
-                .collect_vec(),
-            F::zero(),
-        )
+        self.sum_with_coeff_and_const(values, F::zero())
     }
 
     fn sum_with_const(&self, values: &[&Self::LoadedScalar], constant: F) -> Self::LoadedScalar {
-        self.sum_with_coeff_and_constant(
+        self.sum_with_coeff_and_const(
             &values.iter().map(|&value| (F::one(), value)).collect_vec(),
             constant,
         )
@@ -211,6 +191,34 @@ pub trait ScalarLoader<F: PrimeField> {
 
     fn sum(&self, values: &[&Self::LoadedScalar]) -> Self::LoadedScalar {
         self.sum_with_const(values, F::zero())
+    }
+
+    fn sum_products_with_coeff(
+        &self,
+        values: &[(F, &Self::LoadedScalar, &Self::LoadedScalar)],
+    ) -> Self::LoadedScalar {
+        self.sum_products_with_coeff_and_const(values, F::zero())
+    }
+
+    fn sum_products_with_const(
+        &self,
+        values: &[(&Self::LoadedScalar, &Self::LoadedScalar)],
+        constant: F,
+    ) -> Self::LoadedScalar {
+        self.sum_products_with_coeff_and_const(
+            &values
+                .iter()
+                .map(|&(lhs, rhs)| (F::one(), lhs, rhs))
+                .collect_vec(),
+            constant,
+        )
+    }
+
+    fn sum_products(
+        &self,
+        values: &[(&Self::LoadedScalar, &Self::LoadedScalar)],
+    ) -> Self::LoadedScalar {
+        self.sum_products_with_const(values, F::zero())
     }
 
     fn product(&self, values: &[&Self::LoadedScalar]) -> Self::LoadedScalar {

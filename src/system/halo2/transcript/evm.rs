@@ -6,6 +6,7 @@ use crate::{
     },
     util::{
         arithmetic::{Coordinates, CurveAffine, PrimeField},
+        hash::{Digest, Keccak256},
         transcript::{Transcript, TranscriptRead},
         Itertools,
     },
@@ -13,7 +14,6 @@ use crate::{
 };
 use ethereum_types::U256;
 use halo2_proofs::transcript::EncodedChallenge;
-use sha3::{Digest, Keccak256};
 use std::{
     io::{self, Read, Write},
     iter,

@@ -5,12 +5,10 @@ mod shim;
 pub(crate) mod test;
 
 pub use loader::{EcPoint, Halo2Loader, Scalar};
-pub use shim::{EccInstructions, IntegerInstructions};
+pub use shim::{Context, EccInstructions, IntegerInstructions};
 pub use util::Valuetools;
 
 pub use halo2_wrong_ecc;
-pub use halo2_wrong_transcript;
-pub use poseidon;
 
 mod util {
     use halo2_proofs::circuit::Value;

@@ -46,7 +46,6 @@ use halo2_wrong_ecc::{
     integer::rns::Rns,
     maingate::{MainGateInstructions, RangeInstructions, RegionCtx},
 };
-use halo2_wrong_transcript::NativeRepresentation;
 use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 use std::{iter, rc::Rc};
@@ -57,21 +56,9 @@ const R_F: usize = 8;
 const R_P: usize = 60;
 
 type BaseFieldEccChip = halo2_wrong_ecc::BaseFieldEccChip<G1Affine, LIMBS, BITS>;
-type Halo2Loader<'a> = loader::halo2::Halo2Loader<'a, G1Affine, Fr, BaseFieldEccChip>;
-type PoseidonTranscript<L, S, B> = system::halo2::transcript::halo2::PoseidonTranscript<
-    G1Affine,
-    Fr,
-    NativeRepresentation,
-    L,
-    S,
-    B,
-    LIMBS,
-    BITS,
-    T,
-    RATE,
-    R_F,
-    R_P,
->;
+type Halo2Loader<'a> = loader::halo2::Halo2Loader<'a, G1Affine, BaseFieldEccChip>;
+type PoseidonTranscript<L, S> =
+    system::halo2::transcript::halo2::PoseidonTranscript<G1Affine, L, S, T, RATE, R_F, R_P>;
 
 type Pcs = Kzg<Bn256, Bdfg21>;
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
@@ -104,7 +91,7 @@ pub fn accumulate<'a>(
         .flat_map(|snark| {
             let instances = assign_instances(&snark.instances);
             let mut transcript =
-                PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, snark.proof());
+                PoseidonTranscript::<Rc<Halo2Loader>, _>::new(loader, snark.proof());
             let proof =
                 Plonk::read_proof(svk, &snark.protocol, &instances, &mut transcript).unwrap();
             Plonk::succinct_verify(svk, &snark.protocol, &instances, &proof).unwrap()
@@ -112,7 +99,7 @@ pub fn accumulate<'a>(
         .collect_vec();
 
     let acccumulator = if accumulators.len() > 1 {
-        let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _, _>::new(loader, as_proof);
+        let mut transcript = PoseidonTranscript::<Rc<Halo2Loader>, _>::new(loader, as_proof);
         let proof = As::read_proof(as_vk, &accumulators, &mut transcript).unwrap();
         As::verify(as_vk, &accumulators, &proof).unwrap()
     } else {
@@ -146,7 +133,7 @@ impl Accumulation {
             .iter()
             .flat_map(|snark| {
                 let mut transcript =
-                    PoseidonTranscript::<NativeLoader, _, _>::new(snark.proof.as_slice());
+                    PoseidonTranscript::<NativeLoader, _>::new(snark.proof.as_slice());
                 let proof =
                     Plonk::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript)
                         .unwrap();
@@ -156,7 +143,7 @@ impl Accumulation {
 
         let as_pk = AsPk::new(Some((params.get_g()[0], params.get_g()[1])));
         let (accumulator, as_proof) = if accumulators.len() > 1 {
-            let mut transcript = PoseidonTranscript::<NativeLoader, _, _>::new(Vec::new());
+            let mut transcript = PoseidonTranscript::<NativeLoader, _>::new(Vec::new());
             let accumulator = As::create_proof(
                 &as_pk,
                 &accumulators,
@@ -194,8 +181,8 @@ impl Accumulation {
             let snark = halo2_kzg_create_snark!(
                 ProverSHPLONK<_>,
                 VerifierSHPLONK<_>,
-                PoseidonTranscript<_, _, _>,
-                PoseidonTranscript<_, _, _>,
+                PoseidonTranscript<_, _>,
+                PoseidonTranscript<_, _>,
                 ChallengeScalar<_>,
                 &params,
                 &pk,
@@ -214,8 +201,8 @@ impl Accumulation {
             halo2_kzg_create_snark!(
                 ProverSHPLONK<_>,
                 VerifierSHPLONK<_>,
-                PoseidonTranscript<_, _, _>,
-                PoseidonTranscript<_, _, _>,
+                PoseidonTranscript<_, _>,
+                PoseidonTranscript<_, _>,
                 ChallengeScalar<_>,
                 &params,
                 &pk,
@@ -238,8 +225,8 @@ impl Accumulation {
         let snark = halo2_kzg_create_snark!(
             ProverSHPLONK<_>,
             VerifierSHPLONK<_>,
-            PoseidonTranscript<_, _, _>,
-            PoseidonTranscript<_, _, _>,
+            PoseidonTranscript<_, _>,
+            PoseidonTranscript<_, _>,
             ChallengeScalar<_>,
             &params,
             &pk,

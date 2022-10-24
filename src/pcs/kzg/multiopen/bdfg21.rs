@@ -6,7 +6,7 @@ use crate::{
         MultiOpenScheme, Query,
     },
     util::{
-        arithmetic::{CurveAffine, FieldExt, Fraction, MultiMillerLoop},
+        arithmetic::{ilog2, CurveAffine, FieldExt, Fraction, MultiMillerLoop},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -175,10 +175,7 @@ fn query_set_coeffs<F: FieldExt, T: LoadedScalar<F>>(
         .dedup();
 
     let size = 2.max(
-        (sets.iter().map(|set| set.shifts.len()).max().unwrap() - 1)
-            .next_power_of_two()
-            .ilog2() as usize
-            + 1,
+        ilog2((sets.iter().map(|set| set.shifts.len()).max().unwrap() - 1).next_power_of_two()) + 1,
     );
     let powers_of_z = z.powers(size);
     let z_prime_minus_z_shift_i = BTreeMap::from_iter(superset.map(|shift| {

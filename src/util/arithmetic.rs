@@ -199,6 +199,10 @@ impl<T: FieldOps + Clone> Fraction<T> {
     }
 }
 
+pub fn ilog2(value: usize) -> usize {
+    (usize::BITS - value.leading_zeros() - 1) as usize
+}
+
 pub fn modulus<F: PrimeField>() -> BigUint {
     fe_to_big(-F::one()) + 1usize
 }
