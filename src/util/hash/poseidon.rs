@@ -113,7 +113,7 @@ pub struct Poseidon<F: FieldExt, L, const T: usize, const RATE: usize> {
 }
 
 impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> Poseidon<F, L, T, RATE> {
-    pub fn new(loader: L::Loader, r_f: usize, r_p: usize) -> Self {
+    pub fn new(loader: &L::Loader, r_f: usize, r_p: usize) -> Self {
         Self {
             spec: Spec::new(r_f, r_p),
             state: State::new(

@@ -20,10 +20,14 @@ pub enum Error {
 }
 
 #[derive(Clone, Debug)]
-pub struct Protocol<C: util::arithmetic::CurveAffine> {
+pub struct Protocol<C, L = loader::native::NativeLoader>
+where
+    C: util::arithmetic::CurveAffine,
+    L: loader::Loader<C>,
+{
     // Common description
     pub domain: util::arithmetic::Domain<C::Scalar>,
-    pub preprocessed: Vec<C>,
+    pub preprocessed: Vec<L::LoadedEcPoint>,
     pub num_instance: Vec<usize>,
     pub num_witness: Vec<usize>,
     pub num_challenge: Vec<usize>,
@@ -31,7 +35,7 @@ pub struct Protocol<C: util::arithmetic::CurveAffine> {
     pub queries: Vec<util::protocol::Query>,
     pub quotient: util::protocol::QuotientPolynomial<C::Scalar>,
     // Minor customization
-    pub transcript_initial_state: Option<C::Scalar>,
+    pub transcript_initial_state: Option<L::LoadedScalar>,
     pub instance_committing_key: Option<util::protocol::InstanceCommittingKey<C>>,
     pub linearization: Option<util::protocol::LinearizationStrategy>,
     pub accumulator_indices: Vec<Vec<(usize, usize)>>,

@@ -70,8 +70,11 @@ impl Config {
         self
     }
 
-    pub fn with_accumulator_indices(mut self, accumulator_indices: Vec<(usize, usize)>) -> Self {
-        self.accumulator_indices = Some(accumulator_indices);
+    pub fn with_accumulator_indices(
+        mut self,
+        accumulator_indices: Option<Vec<(usize, usize)>>,
+    ) -> Self {
+        self.accumulator_indices = accumulator_indices;
         self
     }
 }
@@ -202,7 +205,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             degree - 1
         };
 
-        let num_phase = *cs.advice_column_phase().iter().max().unwrap() as usize + 1;
+        let num_phase = *cs.advice_column_phase().iter().max().unwrap_or(&0) as usize + 1;
         let remapping = |phase: Vec<u8>| {
             let num = phase.iter().fold(vec![0; num_phase], |mut num, phase| {
                 num[*phase as usize] += 1;

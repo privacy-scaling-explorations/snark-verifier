@@ -203,8 +203,8 @@ fn query_set_coeffs<F: FieldExt, T: LoadedScalar<F>>(
         })
         .collect_vec();
 
-    T::batch_invert(coeffs.iter_mut().flat_map(QuerySetCoeff::denoms));
-    T::batch_invert(coeffs.iter_mut().flat_map(QuerySetCoeff::denoms));
+    T::Loader::batch_invert(coeffs.iter_mut().flat_map(QuerySetCoeff::denoms));
+    T::Loader::batch_invert(coeffs.iter_mut().flat_map(QuerySetCoeff::denoms));
     coeffs.iter_mut().for_each(QuerySetCoeff::evaluate);
 
     coeffs

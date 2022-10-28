@@ -596,17 +596,6 @@ where
     fn loader(&self) -> &Rc<EvmLoader> {
         &self.loader
     }
-
-    fn multi_scalar_multiplication(pairs: impl IntoIterator<Item = (Scalar, EcPoint)>) -> Self {
-        pairs
-            .into_iter()
-            .map(|(scalar, ec_point)| match scalar.value {
-                Value::Constant(constant) if constant == U256::one() => ec_point,
-                _ => ec_point.loader.ec_point_scalar_mul(&ec_point, &scalar),
-            })
-            .reduce(|acc, ec_point| acc.loader.ec_point_add(&acc, &ec_point))
-            .unwrap()
-    }
 }
 
 #[derive(Clone)]
@@ -759,73 +748,12 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> LoadedScalar<F> for Scalar {
     fn loader(&self) -> &Rc<EvmLoader> {
         &self.loader
     }
-
-    fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self>) {
-        let values = values.into_iter().collect_vec();
-        let loader = &values.first().unwrap().loader;
-        let products = iter::once(values[0].clone())
-            .chain(
-                iter::repeat_with(|| loader.allocate(0x20))
-                    .map(|ptr| loader.scalar(Value::Memory(ptr)))
-                    .take(values.len() - 1),
-            )
-            .collect_vec();
-
-        loader.code.borrow_mut().push(loader.scalar_modulus);
-        for _ in 2..values.len() {
-            loader.code.borrow_mut().dup(0);
-        }
-
-        loader.push(products.first().unwrap());
-        for (idx, (value, product)) in values.iter().zip(products.iter()).skip(1).enumerate() {
-            loader.push(value);
-            loader.code.borrow_mut().mulmod();
-            if idx < values.len() - 2 {
-                loader.code.borrow_mut().dup(0);
-            }
-            loader.code.borrow_mut().push(product.ptr()).mstore();
-        }
-
-        let inv = loader.invert(products.last().unwrap());
-
-        loader.code.borrow_mut().push(loader.scalar_modulus);
-        for _ in 2..values.len() {
-            loader.code.borrow_mut().dup(0);
-        }
-
-        loader.push(&inv);
-        for (value, product) in values.iter().rev().zip(
-            products
-                .iter()
-                .rev()
-                .skip(1)
-                .map(Some)
-                .chain(iter::once(None)),
-        ) {
-            if let Some(product) = product {
-                loader.push(value);
-                loader
-                    .code
-                    .borrow_mut()
-                    .dup(2)
-                    .dup(2)
-                    .push(product.ptr())
-                    .mload()
-                    .mulmod()
-                    .push(value.ptr())
-                    .mstore()
-                    .mulmod();
-            } else {
-                loader.code.borrow_mut().push(value.ptr()).mstore();
-            }
-        }
-    }
 }
 
 impl<C> EcPointLoader<C> for Rc<EvmLoader>
 where
     C: CurveAffine,
-    C::Scalar: PrimeField<Repr = [u8; 0x20]>,
+    C::ScalarExt: PrimeField<Repr = [u8; 0x20]>,
 {
     type LoadedEcPoint = EcPoint;
 
@@ -838,6 +766,19 @@ where
 
     fn ec_point_assert_eq(&self, _: &str, _: &EcPoint, _: &EcPoint) -> Result<(), Error> {
         unimplemented!()
+    }
+
+    fn multi_scalar_multiplication(
+        pairs: impl IntoIterator<Item = (<Self as ScalarLoader<C::Scalar>>::LoadedScalar, EcPoint)>,
+    ) -> EcPoint {
+        pairs
+            .into_iter()
+            .map(|(scalar, ec_point)| match scalar.value {
+                Value::Constant(constant) if constant == U256::one() => ec_point,
+                _ => ec_point.loader.ec_point_scalar_mul(&ec_point, &scalar),
+            })
+            .reduce(|acc, ec_point| acc.loader.ec_point_add(&acc, &ec_point))
+            .unwrap()
     }
 }
 
@@ -976,6 +917,67 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
         self.code.borrow_mut().push(ptr).mstore();
 
         self.scalar(Value::Memory(ptr))
+    }
+
+    fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Scalar>) {
+        let values = values.into_iter().collect_vec();
+        let loader = &values.first().unwrap().loader;
+        let products = iter::once(values[0].clone())
+            .chain(
+                iter::repeat_with(|| loader.allocate(0x20))
+                    .map(|ptr| loader.scalar(Value::Memory(ptr)))
+                    .take(values.len() - 1),
+            )
+            .collect_vec();
+
+        loader.code.borrow_mut().push(loader.scalar_modulus);
+        for _ in 2..values.len() {
+            loader.code.borrow_mut().dup(0);
+        }
+
+        loader.push(products.first().unwrap());
+        for (idx, (value, product)) in values.iter().zip(products.iter()).skip(1).enumerate() {
+            loader.push(value);
+            loader.code.borrow_mut().mulmod();
+            if idx < values.len() - 2 {
+                loader.code.borrow_mut().dup(0);
+            }
+            loader.code.borrow_mut().push(product.ptr()).mstore();
+        }
+
+        let inv = loader.invert(products.last().unwrap());
+
+        loader.code.borrow_mut().push(loader.scalar_modulus);
+        for _ in 2..values.len() {
+            loader.code.borrow_mut().dup(0);
+        }
+
+        loader.push(&inv);
+        for (value, product) in values.iter().rev().zip(
+            products
+                .iter()
+                .rev()
+                .skip(1)
+                .map(Some)
+                .chain(iter::once(None)),
+        ) {
+            if let Some(product) = product {
+                loader.push(value);
+                loader
+                    .code
+                    .borrow_mut()
+                    .dup(2)
+                    .dup(2)
+                    .push(product.ptr())
+                    .mload()
+                    .mulmod()
+                    .push(value.ptr())
+                    .mstore()
+                    .mulmod();
+            } else {
+                loader.code.borrow_mut().push(value.ptr()).mstore();
+            }
+        }
     }
 }
 

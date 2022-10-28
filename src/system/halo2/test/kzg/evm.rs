@@ -37,16 +37,17 @@ macro_rules! halo2_kzg_evm_verify {
         let runtime_code = {
             let svk = $params.get_g()[0].into();
             let dk = ($params.g2(), $params.s_g2()).into();
-            let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(loader.clone());
+            let protocol = $protocol.loaded(&loader);
+            let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(&loader);
             let instances = transcript.load_instances(
                 $instances
                     .iter()
                     .map(|instances| instances.len())
                     .collect_vec(),
             );
-            let proof = <$plonk_verifier>::read_proof(&svk, $protocol, &instances, &mut transcript)
+            let proof = <$plonk_verifier>::read_proof(&svk, &protocol, &instances, &mut transcript)
                 .unwrap();
-            <$plonk_verifier>::verify(&svk, &dk, $protocol, &instances, &proof).unwrap();
+            <$plonk_verifier>::verify(&svk, &dk, &protocol, &instances, &proof).unwrap();
 
             loader.runtime_code()
         };

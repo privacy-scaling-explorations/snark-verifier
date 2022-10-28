@@ -4,6 +4,7 @@ use crate::{
         arithmetic::{CurveAffine, Domain, Field, Fraction, Rotation},
         Itertools,
     },
+    Protocol,
 };
 use num_integer::Integer;
 use num_traits::One;
@@ -14,6 +15,37 @@ use std::{
     iter::{self, Sum},
     ops::{Add, Mul, Neg, Sub},
 };
+
+impl<C> Protocol<C>
+where
+    C: CurveAffine,
+{
+    pub fn loaded<L: Loader<C>>(&self, loader: &L) -> Protocol<C, L> {
+        let preprocessed = self
+            .preprocessed
+            .iter()
+            .map(|preprocessed| loader.ec_point_load_const(preprocessed))
+            .collect();
+        let transcript_initial_state = self
+            .transcript_initial_state
+            .as_ref()
+            .map(|transcript_initial_state| loader.load_const(transcript_initial_state));
+        Protocol {
+            domain: self.domain.clone(),
+            preprocessed,
+            num_instance: self.num_instance.clone(),
+            num_witness: self.num_witness.clone(),
+            num_challenge: self.num_challenge.clone(),
+            evaluations: self.evaluations.clone(),
+            queries: self.queries.clone(),
+            quotient: self.quotient.clone(),
+            transcript_initial_state,
+            instance_committing_key: self.instance_committing_key.clone(),
+            linearization: self.linearization.clone(),
+            accumulator_indices: self.accumulator_indices.clone(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum CommonPolynomial {
