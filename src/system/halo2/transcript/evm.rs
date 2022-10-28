@@ -32,13 +32,13 @@ where
     C: CurveAffine,
     C::Scalar: PrimeField<Repr = [u8; 0x20]>,
 {
-    pub fn new(loader: Rc<EvmLoader>) -> Self {
+    pub fn new(loader: &Rc<EvmLoader>) -> Self {
         let ptr = loader.allocate(0x20);
         assert_eq!(ptr, 0);
         let mut buf = MemoryChunk::new(ptr);
         buf.extend(0x20);
         Self {
-            loader,
+            loader: loader.clone(),
             stream: 0,
             buf,
             _marker: PhantomData,

@@ -89,12 +89,12 @@ pub fn accumulate<'a>(
     let mut accumulators = snarks
         .iter()
         .flat_map(|snark| {
+            let protocol = snark.protocol.loaded(loader);
             let instances = assign_instances(&snark.instances);
             let mut transcript =
                 PoseidonTranscript::<Rc<Halo2Loader>, _>::new(loader, snark.proof());
-            let proof =
-                Plonk::read_proof(svk, &snark.protocol, &instances, &mut transcript).unwrap();
-            Plonk::succinct_verify(svk, &snark.protocol, &instances, &proof).unwrap()
+            let proof = Plonk::read_proof(svk, &protocol, &instances, &mut transcript).unwrap();
+            Plonk::succinct_verify(svk, &protocol, &instances, &proof).unwrap()
         })
         .collect_vec();
 

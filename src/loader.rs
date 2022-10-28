@@ -19,15 +19,6 @@ pub trait LoadedEcPoint<C: CurveAffine>: Clone + Debug + PartialEq {
     type Loader: Loader<C, LoadedEcPoint = Self>;
 
     fn loader(&self) -> &Self::Loader;
-
-    fn multi_scalar_multiplication(
-        pairs: impl IntoIterator<
-            Item = (
-                <Self::Loader as ScalarLoader<C::Scalar>>::LoadedScalar,
-                Self,
-            ),
-        >,
-    ) -> Self;
 }
 
 pub trait LoadedScalar<F: PrimeField>: Clone + Debug + PartialEq + FieldOps {
@@ -41,15 +32,6 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + PartialEq + FieldOps {
 
     fn invert(&self) -> Option<Self> {
         FieldOps::invert(self)
-    }
-
-    fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self>)
-    where
-        Self: 'a,
-    {
-        values
-            .into_iter()
-            .for_each(|value| *value = LoadedScalar::invert(value).unwrap_or_else(|| value.clone()))
     }
 
     fn pow_const(&self, mut exp: u64) -> Self {
@@ -102,6 +84,12 @@ pub trait EcPointLoader<C: CurveAffine> {
         lhs: &Self::LoadedEcPoint,
         rhs: &Self::LoadedEcPoint,
     ) -> Result<(), Error>;
+
+    fn multi_scalar_multiplication(
+        pairs: &[(Self::LoadedScalar, Self::LoadedEcPoint)],
+    ) -> Self::LoadedEcPoint
+    where
+        Self: ScalarLoader<C::ScalarExt>;
 }
 
 pub trait ScalarLoader<F: PrimeField> {
@@ -225,6 +213,15 @@ pub trait ScalarLoader<F: PrimeField> {
         values
             .iter()
             .fold(self.load_one(), |acc, value| acc * *value)
+    }
+
+    fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self::LoadedScalar>)
+    where
+        Self::LoadedScalar: 'a,
+    {
+        values
+            .into_iter()
+            .for_each(|value| *value = LoadedScalar::invert(value).unwrap_or_else(|| value.clone()))
     }
 }
 

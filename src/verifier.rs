@@ -20,7 +20,7 @@ where
 
     fn read_proof<T>(
         svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
@@ -29,7 +29,7 @@ where
 
     fn succinct_verify(
         svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
     ) -> Result<Vec<MOS::Accumulator>, Error>;
@@ -37,7 +37,7 @@ where
     fn verify(
         svk: &MOS::SuccinctVerifyingKey,
         dk: &MOS::DecidingKey,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
     ) -> Result<MOS::Output, Error>

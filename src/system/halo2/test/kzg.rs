@@ -45,7 +45,7 @@ macro_rules! halo2_kzg_config {
         $crate::system::halo2::Config::kzg()
             .set_zk($zk)
             .with_num_proof($num_proof)
-            .with_accumulator_indices($accumulator_indices)
+            .with_accumulator_indices(Some($accumulator_indices))
     };
 }
 

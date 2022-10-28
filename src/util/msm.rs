@@ -1,6 +1,6 @@
 use crate::{
     loader::{LoadedEcPoint, Loader},
-    util::arithmetic::CurveAffine,
+    util::{arithmetic::CurveAffine, Itertools},
 };
 use std::{
     default::Default,
@@ -71,11 +71,11 @@ where
                 .loader()
                 .ec_point_load_const(&gen)
         });
-        L::LoadedEcPoint::multi_scalar_multiplication(
-            iter::empty()
-                .chain(self.constant.map(|constant| (constant, gen.unwrap())))
-                .chain(self.scalars.into_iter().zip(self.bases.into_iter())),
-        )
+        let pairs = iter::empty()
+            .chain(self.constant.map(|constant| (constant, gen.unwrap())))
+            .chain(self.scalars.into_iter().zip(self.bases.into_iter()))
+            .collect_vec();
+        L::multi_scalar_multiplication(&pairs)
     }
 
     pub fn scale(&mut self, factor: &L::LoadedScalar) {

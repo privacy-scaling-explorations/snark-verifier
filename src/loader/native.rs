@@ -19,15 +19,6 @@ impl<C: CurveAffine> LoadedEcPoint<C> for C {
     fn loader(&self) -> &NativeLoader {
         &LOADER
     }
-
-    fn multi_scalar_multiplication(pairs: impl IntoIterator<Item = (C::Scalar, C)>) -> Self {
-        pairs
-            .into_iter()
-            .map(|(scalar, base)| base * scalar)
-            .reduce(|acc, value| acc + value)
-            .unwrap()
-            .to_affine()
-    }
 }
 
 impl<F: PrimeField> FieldOps for F {
@@ -60,6 +51,17 @@ impl<C: CurveAffine> EcPointLoader<C> for NativeLoader {
         lhs.eq(rhs)
             .then_some(())
             .ok_or_else(|| Error::AssertionFailure(annotation.to_string()))
+    }
+
+    fn multi_scalar_multiplication(
+        pairs: &[(<Self as ScalarLoader<C::Scalar>>::LoadedScalar, C)],
+    ) -> C {
+        pairs
+            .iter()
+            .map(|(scalar, base)| *base * scalar)
+            .reduce(|acc, value| acc + value)
+            .unwrap()
+            .to_affine()
     }
 }
 

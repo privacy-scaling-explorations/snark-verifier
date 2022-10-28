@@ -98,17 +98,23 @@ pub trait EccInstructions<'a, C: CurveAffine>: Clone + Debug {
         point: Value<C>,
     ) -> Result<Self::AssignedEcPoint, Error>;
 
-    fn add(
+    fn sum_with_const(
         &self,
         ctx: &mut Self::Context,
-        p0: &Self::AssignedEcPoint,
-        p1: &Self::AssignedEcPoint,
+        values: &[Self::AssignedEcPoint],
+        constant: C,
     ) -> Result<Self::AssignedEcPoint, Error>;
 
-    fn multi_scalar_multiplication(
+    fn fixed_base_msm(
         &mut self,
         ctx: &mut Self::Context,
-        pairs: Vec<(Self::AssignedEcPoint, Self::AssignedScalar)>,
+        pairs: &[(Self::AssignedScalar, C)],
+    ) -> Result<Self::AssignedEcPoint, Error>;
+
+    fn variable_base_msm(
+        &mut self,
+        ctx: &mut Self::Context,
+        pairs: &[(Self::AssignedScalar, Self::AssignedEcPoint)],
     ) -> Result<Self::AssignedEcPoint, Error>;
 
     fn normalize(
@@ -146,6 +152,7 @@ mod halo2_wrong {
         AssignedPoint, BaseFieldEccChip,
     };
     use rand::rngs::OsRng;
+    use std::iter;
 
     impl<'a, F: FieldExt> Context for RegionCtx<'a, F> {
         fn constrain_equal(&mut self, lhs: Cell, rhs: Cell) -> Result<(), Error> {
@@ -348,21 +355,51 @@ mod halo2_wrong {
             self.assign_point(ctx, point)
         }
 
-        fn add(
+        fn sum_with_const(
             &self,
             ctx: &mut Self::Context,
-            p0: &Self::AssignedEcPoint,
-            p1: &Self::AssignedEcPoint,
+            values: &[Self::AssignedEcPoint],
+            constant: C,
         ) -> Result<Self::AssignedEcPoint, Error> {
-            self.add(ctx, p0, p1)
+            if values.is_empty() {
+                return self.assign_constant(ctx, constant);
+            }
+
+            iter::empty()
+                .chain(
+                    (!bool::from(constant.is_identity()))
+                        .then(|| self.assign_constant(ctx, constant)),
+                )
+                .chain(values.iter().cloned().map(Ok))
+                .reduce(|acc, ec_point| self.add(ctx, &acc?, &ec_point?))
+                .unwrap()
         }
 
-        fn multi_scalar_multiplication(
+        fn fixed_base_msm(
             &mut self,
             ctx: &mut Self::Context,
-            pairs: Vec<(Self::AssignedEcPoint, Self::AssignedScalar)>,
+            pairs: &[(Self::AssignedScalar, C)],
+        ) -> Result<Self::AssignedEcPoint, Error> {
+            // FIXME: Implement fixed base MSM in halo2_wrong
+            let pairs = pairs
+                .iter()
+                .map(|(scalar, base)| {
+                    Ok::<_, Error>((scalar.clone(), self.assign_constant(ctx, *base)?))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            self.variable_base_msm(ctx, &pairs)
+        }
+
+        fn variable_base_msm(
+            &mut self,
+            ctx: &mut Self::Context,
+            pairs: &[(Self::AssignedScalar, Self::AssignedEcPoint)],
         ) -> Result<Self::AssignedEcPoint, Error> {
             const WINDOW_SIZE: usize = 3;
+            let pairs = pairs
+                .iter()
+                .map(|(scalar, base)| (base.clone(), scalar.clone()))
+                .collect_vec();
             match self.mul_batch_1d_horizontal(ctx, pairs.clone(), WINDOW_SIZE) {
                 Err(_) => {
                     if self.assign_aux(ctx, WINDOW_SIZE, pairs.len()).is_err() {

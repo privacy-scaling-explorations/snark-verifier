@@ -29,7 +29,7 @@ where
 
     fn read_proof<T>(
         svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
@@ -41,7 +41,7 @@ where
 
     fn succinct_verify(
         svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
     ) -> Result<Vec<MOS::Accumulator>, Error> {
@@ -52,7 +52,7 @@ where
                 &proof.z,
             );
 
-            L::LoadedScalar::batch_invert(common_poly_eval.denoms());
+            L::batch_invert(common_poly_eval.denoms());
             common_poly_eval.evaluate();
 
             common_poly_eval
@@ -96,9 +96,9 @@ where
     L: Loader<C>,
     MOS: MultiOpenScheme<C, L>,
 {
-    fn read<T, AE>(
+    pub fn read<T, AE>(
         svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
     ) -> Result<Self, Error>
@@ -106,9 +106,8 @@ where
         T: TranscriptRead<C, L>,
         AE: AccumulatorEncoding<C, L, MOS>,
     {
-        let loader = transcript.loader();
         if let Some(transcript_initial_state) = &protocol.transcript_initial_state {
-            transcript.common_scalar(&loader.load_const(transcript_initial_state))?;
+            transcript.common_scalar(transcript_initial_state)?;
         }
 
         if protocol.num_instance
@@ -211,7 +210,7 @@ where
         })
     }
 
-    fn empty_queries(protocol: &Protocol<C>) -> Vec<pcs::Query<C::Scalar>> {
+    pub fn empty_queries(protocol: &Protocol<C, L>) -> Vec<pcs::Query<C::Scalar>> {
         protocol
             .queries
             .iter()
@@ -227,7 +226,7 @@ where
 
     fn queries(
         &self,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         mut evaluations: HashMap<Query, L::LoadedScalar>,
     ) -> Vec<pcs::Query<C::Scalar, L::LoadedScalar>> {
         Self::empty_queries(protocol)
@@ -244,7 +243,7 @@ where
 
     fn commitments(
         &self,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
         evaluations: &mut HashMap<Query, L::LoadedScalar>,
     ) -> Result<Vec<Msm<C, L>>, Error> {
@@ -254,7 +253,7 @@ where
                 protocol
                     .preprocessed
                     .iter()
-                    .map(|value| Msm::base(loader.ec_point_load_const(value))),
+                    .map(|value| Msm::base(value.clone())),
             )
             .chain(
                 self.committed_instances
@@ -357,7 +356,7 @@ where
 
     fn evaluations(
         &self,
-        protocol: &Protocol<C>,
+        protocol: &Protocol<C, L>,
         instances: &[Vec<L::LoadedScalar>],
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
     ) -> Result<HashMap<Query, L::LoadedScalar>, Error> {
@@ -424,9 +423,13 @@ where
     }
 }
 
-fn langranges<C, T>(protocol: &Protocol<C>, instances: &[Vec<T>]) -> impl IntoIterator<Item = i32>
+fn langranges<C, L>(
+    protocol: &Protocol<C, L>,
+    instances: &[Vec<L::LoadedScalar>],
+) -> impl IntoIterator<Item = i32>
 where
     C: CurveAffine,
+    L: Loader<C>,
 {
     let instance_eval_lagrange = protocol.instance_committing_key.is_none().then(|| {
         let queries = {
