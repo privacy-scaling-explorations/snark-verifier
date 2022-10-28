@@ -12,7 +12,6 @@ use halo2_proofs::circuit;
 use std::{
     cell::{Ref, RefCell, RefMut},
     fmt::{self, Debug},
-    iter,
     marker::PhantomData,
     ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign},
     rc::Rc,
@@ -62,7 +61,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
         self.ctx.borrow_mut()
     }
 
-    pub fn assign_const_scalar(self: &Rc<Self>, constant: C::Scalar) -> Scalar<'a, C, EccChip> {
+    fn assign_const_scalar(self: &Rc<Self>, constant: C::Scalar) -> Scalar<'a, C, EccChip> {
         let assigned = self
             .scalar_chip()
             .assign_constant(&mut self.ctx_mut(), constant)
@@ -101,7 +100,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
         }
     }
 
-    pub fn assign_const_ec_point(self: &Rc<Self>, constant: C) -> EcPoint<'a, C, EccChip> {
+    fn assign_const_ec_point(self: &Rc<Self>, constant: C) -> EcPoint<'a, C, EccChip> {
         self.ec_point_from_assigned(
             self.ecc_chip()
                 .assign_constant(&mut self.ctx_mut(), constant)
@@ -124,12 +123,19 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
         self: &Rc<Self>,
         assigned: EccChip::AssignedEcPoint,
     ) -> EcPoint<'a, C, EccChip> {
+        self.ec_point(Value::Assigned(assigned))
+    }
+
+    fn ec_point(
+        self: &Rc<Self>,
+        value: Value<C, EccChip::AssignedEcPoint>,
+    ) -> EcPoint<'a, C, EccChip> {
         let index = *self.num_ec_point.borrow();
         *self.num_ec_point.borrow_mut() += 1;
         EcPoint {
             loader: self.clone(),
             index,
-            assigned,
+            value,
         }
     }
 
@@ -447,12 +453,15 @@ impl<'a, 'b, C: CurveAffine, EccChip: EccInstructions<'a, C>> MulAssign<&'b Self
 pub struct EcPoint<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> {
     loader: Rc<Halo2Loader<'a, C, EccChip>>,
     index: usize,
-    assigned: EccChip::AssignedEcPoint,
+    value: Value<C, EccChip::AssignedEcPoint>,
 }
 
 impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> EcPoint<'a, C, EccChip> {
     pub fn assigned(&self) -> EccChip::AssignedEcPoint {
-        self.assigned.clone()
+        match &self.value {
+            Value::Constant(constant) => self.loader.assign_const_ec_point(*constant).assigned(),
+            Value::Assigned(assigned) => assigned.clone(),
+        }
     }
 }
 
@@ -476,7 +485,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Debug for EcPoint<'a, 
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EcPoint")
             .field("index", &self.index)
-            .field("assigned", &self.assigned)
+            .field("value", &self.value)
             .finish()
     }
 }
@@ -540,7 +549,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> EcPointLoader<C>
     type LoadedEcPoint = EcPoint<'a, C, EccChip>;
 
     fn ec_point_load_const(&self, ec_point: &C) -> EcPoint<'a, C, EccChip> {
-        self.assign_const_ec_point(*ec_point)
+        self.ec_point(Value::Constant(*ec_point))
     }
 
     fn ec_point_assert_eq(
@@ -549,66 +558,100 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> EcPointLoader<C>
         lhs: &EcPoint<'a, C, EccChip>,
         rhs: &EcPoint<'a, C, EccChip>,
     ) -> Result<(), crate::Error> {
-        self.ecc_chip()
-            .assert_equal(&mut self.ctx_mut(), &lhs.assigned(), &rhs.assigned())
-            .map_err(|_| crate::Error::AssertionFailure(annotation.to_string()))
+        match (&lhs.value, &rhs.value) {
+            (Value::Constant(lhs), Value::Constant(rhs)) => {
+                assert_eq!(lhs, rhs);
+                Ok(())
+            }
+            (Value::Constant(constant), Value::Assigned(assigned))
+            | (Value::Assigned(assigned), Value::Constant(constant)) => {
+                let constant = self.assign_const_ec_point(*constant).assigned();
+                self.ecc_chip()
+                    .assert_equal(&mut self.ctx_mut(), assigned, &constant)
+                    .map_err(|_| crate::Error::AssertionFailure(annotation.to_string()))
+            }
+            (Value::Assigned(lhs), Value::Assigned(rhs)) => self
+                .ecc_chip()
+                .assert_equal(&mut self.ctx_mut(), lhs, rhs)
+                .map_err(|_| crate::Error::AssertionFailure(annotation.to_string())),
+        }
     }
 
     fn multi_scalar_multiplication(
-        pairs: impl IntoIterator<
-            Item = (
-                <Self as ScalarLoader<C::Scalar>>::LoadedScalar,
-                EcPoint<'a, C, EccChip>,
-            ),
-        >,
+        pairs: &[(
+            <Self as ScalarLoader<C::Scalar>>::LoadedScalar,
+            EcPoint<'a, C, EccChip>,
+        )],
     ) -> EcPoint<'a, C, EccChip> {
-        let pairs = pairs.into_iter().collect_vec();
         let loader = &pairs[0].0.loader;
 
-        let (non_scaled, scaled) = pairs.iter().fold(
-            (Vec::new(), Vec::new()),
-            |(mut non_scaled, mut scaled), (scalar, ec_point)| {
-                if matches!(scalar.value, Value::Constant(constant) if constant == C::Scalar::one())
-                {
-                    non_scaled.push(ec_point.assigned());
-                } else {
-                    scaled.push((ec_point.assigned(), scalar.assigned()))
-                }
-                (non_scaled, scaled)
-            },
-        );
+        let (constant, fixed_base, variable_base_non_scaled, variable_base_scaled) =
+            pairs.iter().fold(
+                (C::identity(), Vec::new(), Vec::new(), Vec::new()),
+                |(
+                    mut constant,
+                    mut fixed_base,
+                    mut variable_base_non_scaled,
+                    mut variable_base_scaled,
+                ),
+                 (scalar, ec_point)| {
+                    match (&ec_point.value, &scalar.value) {
+                        (Value::Constant(ec_point), Value::Constant(scalar)) => {
+                            constant = (*ec_point * scalar + constant).into()
+                        }
+                        (Value::Constant(ec_point), Value::Assigned(scalar)) => {
+                            fixed_base.push((scalar.clone(), *ec_point))
+                        }
+                        (Value::Assigned(ec_point), Value::Constant(scalar))
+                            if scalar.eq(&C::Scalar::one()) =>
+                        {
+                            variable_base_non_scaled.push(ec_point.clone());
+                        }
+                        (Value::Assigned(ec_point), _) => {
+                            variable_base_scaled.push((scalar.assigned(), ec_point.clone()))
+                        }
+                    };
+                    (
+                        constant,
+                        fixed_base,
+                        variable_base_non_scaled,
+                        variable_base_scaled,
+                    )
+                },
+            );
 
-        let output = iter::empty()
-            .chain(if scaled.is_empty() {
-                None
-            } else {
-                Some(
-                    loader
-                        .ecc_chip
-                        .borrow_mut()
-                        .multi_scalar_multiplication(&mut loader.ctx_mut(), scaled)
-                        .unwrap(),
-                )
-            })
-            .chain(non_scaled)
-            .reduce(|acc, ec_point| {
-                EccInstructions::add(
-                    loader.ecc_chip().deref(),
-                    &mut loader.ctx_mut(),
-                    &acc,
-                    &ec_point,
-                )
+        let fixed_base_msm = (!fixed_base.is_empty()).then(|| {
+            loader
+                .ecc_chip
+                .borrow_mut()
+                .fixed_base_msm(&mut loader.ctx_mut(), &fixed_base)
                 .unwrap()
-            })
-            .map(|output| {
-                loader
-                    .ecc_chip()
-                    .normalize(&mut loader.ctx_mut(), &output)
-                    .unwrap()
-            })
+        });
+        let variable_base_msm = (!variable_base_scaled.is_empty()).then(|| {
+            loader
+                .ecc_chip
+                .borrow_mut()
+                .variable_base_msm(&mut loader.ctx_mut(), &variable_base_scaled)
+                .unwrap()
+        });
+        let output = loader
+            .ecc_chip()
+            .sum_with_const(
+                &mut loader.ctx_mut(),
+                &variable_base_non_scaled
+                    .into_iter()
+                    .chain(fixed_base_msm)
+                    .chain(variable_base_msm)
+                    .collect_vec(),
+                constant,
+            )
+            .unwrap();
+        let normalized = loader
+            .ecc_chip()
+            .normalize(&mut loader.ctx_mut(), &output)
             .unwrap();
 
-        loader.ec_point_from_assigned(output)
+        loader.ec_point_from_assigned(normalized)
     }
 }
 

@@ -86,7 +86,7 @@ pub trait EcPointLoader<C: CurveAffine> {
     ) -> Result<(), Error>;
 
     fn multi_scalar_multiplication(
-        pairs: impl IntoIterator<Item = (Self::LoadedScalar, Self::LoadedEcPoint)>,
+        pairs: &[(Self::LoadedScalar, Self::LoadedEcPoint)],
     ) -> Self::LoadedEcPoint
     where
         Self: ScalarLoader<C::ScalarExt>;

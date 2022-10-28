@@ -769,13 +769,13 @@ where
     }
 
     fn multi_scalar_multiplication(
-        pairs: impl IntoIterator<Item = (<Self as ScalarLoader<C::Scalar>>::LoadedScalar, EcPoint)>,
+        pairs: &[(<Self as ScalarLoader<C::Scalar>>::LoadedScalar, EcPoint)],
     ) -> EcPoint {
         pairs
-            .into_iter()
+            .iter()
             .map(|(scalar, ec_point)| match scalar.value {
-                Value::Constant(constant) if constant == U256::one() => ec_point,
-                _ => ec_point.loader.ec_point_scalar_mul(&ec_point, &scalar),
+                Value::Constant(constant) if U256::one() == constant => ec_point.clone(),
+                _ => ec_point.loader.ec_point_scalar_mul(ec_point, scalar),
             })
             .reduce(|acc, ec_point| acc.loader.ec_point_add(&acc, &ec_point))
             .unwrap()
