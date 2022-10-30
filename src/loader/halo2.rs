@@ -23,7 +23,7 @@ mod util {
             Self: Sized,
             F: FnMut(B, V) -> B,
         {
-            self.into_iter().fold(Value::known(init), |acc, value| {
+            self.fold(Value::known(init), |acc, value| {
                 acc.zip(value).map(|(acc, value)| f(acc, value))
             })
         }
@@ -49,9 +49,7 @@ where
             self.transcript_initial_state
                 .as_ref()
                 .map(|transcript_initial_state| {
-                    loader.assign_scalar(circuit::Value::known(
-                        loader.scalar_chip().integer(*transcript_initial_state),
-                    ))
+                    loader.assign_scalar(circuit::Value::known(*transcript_initial_state))
                 });
         Protocol {
             domain: self.domain.clone(),

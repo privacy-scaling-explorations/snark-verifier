@@ -188,7 +188,7 @@ mod halo2 {
                 },
             );
 
-            for (src, dst) in assigned_limbs.iter().zip(
+            for (src, dst) in assigned_limbs.iter().zip_eq(
                 iter::empty()
                     .chain(lhs.assigned().x().limbs())
                     .chain(lhs.assigned().y().limbs())

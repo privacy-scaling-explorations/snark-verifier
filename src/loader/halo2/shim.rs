@@ -13,15 +13,12 @@ pub trait Context: Debug {
 
 pub trait IntegerInstructions<'a, F: FieldExt>: Clone + Debug {
     type Context: Context;
-    type Integer: Clone + Debug;
     type AssignedInteger: Clone + Debug;
-
-    fn integer(&self, fe: F) -> Self::Integer;
 
     fn assign_integer(
         &self,
         ctx: &mut Self::Context,
-        integer: Value<Self::Integer>,
+        integer: Value<F>,
     ) -> Result<Self::AssignedInteger, Error>;
 
     fn assign_constant(
@@ -77,11 +74,9 @@ pub trait EccInstructions<'a, C: CurveAffine>: Clone + Debug {
         'a,
         C::Scalar,
         Context = Self::Context,
-        Integer = Self::Scalar,
         AssignedInteger = Self::AssignedScalar,
     >;
     type AssignedEcPoint: Clone + Debug;
-    type Scalar: Clone + Debug;
     type AssignedScalar: Clone + Debug;
 
     fn scalar_chip(&self) -> &Self::ScalarChip;
@@ -166,17 +161,12 @@ mod halo2_wrong {
 
     impl<'a, F: FieldExt> IntegerInstructions<'a, F> for MainGate<F> {
         type Context = RegionCtx<'a, F>;
-        type Integer = F;
         type AssignedInteger = AssignedCell<F, F>;
-
-        fn integer(&self, scalar: F) -> Self::Integer {
-            scalar
-        }
 
         fn assign_integer(
             &self,
             ctx: &mut Self::Context,
-            integer: Value<Self::Integer>,
+            integer: Value<F>,
         ) -> Result<Self::AssignedInteger, Error> {
             self.assign_value(ctx, integer)
         }
@@ -332,7 +322,6 @@ mod halo2_wrong {
         type Context = RegionCtx<'a, C::Scalar>;
         type ScalarChip = MainGate<C::Scalar>;
         type AssignedEcPoint = AssignedPoint<C::Base, C::Scalar, LIMBS, BITS>;
-        type Scalar = C::Scalar;
         type AssignedScalar = AssignedCell<C::Scalar, C::Scalar>;
 
         fn scalar_chip(&self) -> &Self::ScalarChip {

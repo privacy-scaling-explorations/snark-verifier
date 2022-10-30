@@ -71,7 +71,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
 
     pub fn assign_scalar(
         self: &Rc<Self>,
-        scalar: circuit::Value<EccChip::Scalar>,
+        scalar: circuit::Value<C::Scalar>,
     ) -> Scalar<'a, C, EccChip> {
         let assigned = self
             .scalar_chip()
