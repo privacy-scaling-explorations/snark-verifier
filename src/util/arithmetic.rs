@@ -186,14 +186,14 @@ impl<T: FieldOps + Clone> Fraction<T> {
 
         self.eval = Some(
             self.numer
-                .as_ref()
-                .map(|numer| numer.clone() * &self.denom)
+                .take()
+                .map(|numer| numer * &self.denom)
                 .unwrap_or_else(|| self.denom.clone()),
         );
     }
 
     pub fn evaluated(&self) -> &T {
-        assert!(self.inv);
+        assert!(self.eval.is_some());
 
         self.eval.as_ref().unwrap()
     }

@@ -88,7 +88,7 @@ impl Tui {
         self.terminal.clear().unwrap();
         let mut draw_memory: DrawMemory = DrawMemory::default();
 
-        let debug_call: Vec<(Address, Vec<DebugStep>, CallKind)> = self.debug_arena.clone();
+        let debug_call = &self.debug_arena;
         let mut opcode_list: Vec<String> = debug_call[0]
             .1
             .iter()
@@ -205,7 +205,7 @@ impl Tui {
                     }
                     KeyCode::Char('s') => {
                         for _ in 0..Tui::buffer_as_number(&self.key_buffer, 1) {
-                            let remaining_ops = opcode_list[self.current_step..].to_vec().clone();
+                            let remaining_ops = &opcode_list[self.current_step..];
                             self.current_step += remaining_ops
                                 .iter()
                                 .enumerate()
@@ -231,7 +231,7 @@ impl Tui {
                     }
                     KeyCode::Char('a') => {
                         for _ in 0..Tui::buffer_as_number(&self.key_buffer, 1) {
-                            let prev_ops = opcode_list[..self.current_step].to_vec().clone();
+                            let prev_ops = &opcode_list[..self.current_step];
                             self.current_step = prev_ops
                                 .iter()
                                 .enumerate()

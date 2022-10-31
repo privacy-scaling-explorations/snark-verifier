@@ -27,8 +27,8 @@ pub fn main_gate_with_range_with_mock_kzg_accumulator<M: MultiMillerLoop>(
     let srs = read_or_create_srs(TESTDATA_DIR, 1, setup::<M>);
     let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());
     MainGateWithRange::new(
-        [*s_g1.x(), *s_g1.y(), *g1.x(), *g1.y()]
-            .iter()
+        [s_g1.x(), s_g1.y(), g1.x(), g1.y()]
+            .into_iter()
             .cloned()
             .flat_map(fe_to_limbs::<_, _, LIMBS, BITS>)
             .collect(),

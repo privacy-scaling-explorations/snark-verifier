@@ -55,15 +55,13 @@ where
                 .map(|(msm, power_of_u)| msm * power_of_u)
                 .sum::<Msm<_, _>>()
         };
-        let z_omegas = sets
-            .iter()
-            .map(|set| z.clone() * &z.loader().load_const(&set.shift));
+        let z_omegas = sets.iter().map(|set| z.loader().load_const(&set.shift) * z);
 
         let rhs = proof
             .ws
             .iter()
             .zip(powers_of_u.iter())
-            .map(|(w, power_of_u)| Msm::base(w.clone()) * power_of_u)
+            .map(|(w, power_of_u)| Msm::base(w) * power_of_u)
             .collect_vec();
         let lhs = f + rhs
             .iter()
@@ -105,25 +103,25 @@ where
     }
 }
 
-struct QuerySet<F, T> {
+struct QuerySet<'a, F, T> {
     shift: F,
     polys: Vec<usize>,
-    evals: Vec<T>,
+    evals: Vec<&'a T>,
 }
 
-impl<F, T> QuerySet<F, T>
+impl<'a, F, T> QuerySet<'a, F, T>
 where
     F: PrimeField,
     T: Clone,
 {
     fn msm<C: CurveAffine, L: Loader<C, LoadedScalar = T>>(
         &self,
-        commitments: &[Msm<C, L>],
+        commitments: &[Msm<'a, C, L>],
         powers_of_v: &[L::LoadedScalar],
     ) -> Msm<C, L> {
         self.polys
             .iter()
-            .zip(self.evals.iter())
+            .zip(self.evals.iter().cloned())
             .map(|(poly, eval)| {
                 let commitment = commitments[*poly].clone();
                 commitment - Msm::constant(eval.clone())
@@ -142,12 +140,12 @@ where
     queries.iter().fold(Vec::new(), |mut sets, query| {
         if let Some(pos) = sets.iter().position(|set| set.shift == query.shift) {
             sets[pos].polys.push(query.poly);
-            sets[pos].evals.push(query.eval.clone());
+            sets[pos].evals.push(&query.eval);
         } else {
             sets.push(QuerySet {
                 shift: query.shift,
                 polys: vec![query.poly],
-                evals: vec![query.eval.clone()],
+                evals: vec![&query.eval],
             });
         }
         sets

@@ -44,16 +44,16 @@ where
     ) -> Result<PCS::Accumulator, Error> {
         let (lhs, rhs) = instances
             .iter()
-            .cloned()
-            .map(|accumulator| (accumulator.lhs, accumulator.rhs))
-            .chain(proof.blind.clone())
+            .map(|accumulator| (&accumulator.lhs, &accumulator.rhs))
+            .chain(proof.blind.as_ref().map(|(lhs, rhs)| (lhs, rhs)))
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
         let powers_of_r = proof.r.powers(lhs.len());
-        let [lhs, rhs] = [lhs, rhs].map(|msms| {
-            msms.into_iter()
+        let [lhs, rhs] = [lhs, rhs].map(|bases| {
+            bases
+                .into_iter()
                 .zip(powers_of_r.iter())
-                .map(|(msm, r)| Msm::<C, L>::base(msm) * r)
+                .map(|(base, r)| Msm::<C, L>::base(base) * r)
                 .sum::<Msm<_, _>>()
                 .evaluate(None)
         });
@@ -184,7 +184,7 @@ where
 
         let powers_of_r = r.powers(lhs.len());
         let [lhs, rhs] = [lhs, rhs].map(|msms| {
-            msms.into_iter()
+            msms.iter()
                 .zip(powers_of_r.iter())
                 .map(|(msm, power_of_r)| Msm::<C, NativeLoader>::base(msm) * power_of_r)
                 .sum::<Msm<_, _>>()

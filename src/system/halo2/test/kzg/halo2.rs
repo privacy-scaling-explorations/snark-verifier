@@ -299,7 +299,7 @@ impl Circuit<Fr> for Accumulation {
                 loader.print_row_metering();
                 println!("Total row cost: {}", loader.ctx().offset());
 
-                Ok((lhs.assigned(), rhs.assigned()))
+                Ok((lhs.into_assigned(), rhs.into_assigned()))
             },
         )?;
 

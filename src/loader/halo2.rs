@@ -62,7 +62,7 @@ where
             quotient: self.quotient.clone(),
             transcript_initial_state,
             instance_committing_key: self.instance_committing_key.clone(),
-            linearization: self.linearization.clone(),
+            linearization: self.linearization,
             accumulator_indices: self.accumulator_indices.clone(),
         }
     }

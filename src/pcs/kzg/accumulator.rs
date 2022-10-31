@@ -53,13 +53,22 @@ mod native {
             Accumulator = KzgAccumulator<C, NativeLoader>,
         >,
     {
-        fn from_repr(limbs: Vec<C::Scalar>) -> Result<PCS::Accumulator, Error> {
+        fn from_repr(limbs: &[&C::Scalar]) -> Result<PCS::Accumulator, Error> {
             assert_eq!(limbs.len(), 4 * LIMBS);
 
             let [lhs_x, lhs_y, rhs_x, rhs_y]: [_; 4] = limbs
                 .chunks(LIMBS)
                 .into_iter()
-                .map(|limbs| fe_from_limbs::<_, _, LIMBS, BITS>(limbs.try_into().unwrap()))
+                .map(|limbs| {
+                    fe_from_limbs::<_, _, LIMBS, BITS>(
+                        limbs
+                            .iter()
+                            .map(|limb| **limb)
+                            .collect_vec()
+                            .try_into()
+                            .unwrap(),
+                    )
+                })
                 .collect_vec()
                 .try_into()
                 .unwrap();
@@ -100,7 +109,7 @@ mod evm {
             Accumulator = KzgAccumulator<C, Rc<EvmLoader>>,
         >,
     {
-        fn from_repr(limbs: Vec<Scalar>) -> Result<PCS::Accumulator, Error> {
+        fn from_repr(limbs: &[&Scalar]) -> Result<PCS::Accumulator, Error> {
             assert_eq!(limbs.len(), 4 * LIMBS);
 
             let loader = limbs[0].loader();
@@ -138,10 +147,10 @@ mod halo2 {
     };
     use halo2_proofs::circuit::Value;
     use halo2_wrong_ecc::{maingate::AssignedValue, AssignedPoint};
-    use std::{iter, rc::Rc};
+    use std::{iter, ops::Deref, rc::Rc};
 
     fn ec_point_from_assigned_limbs<C: CurveAffine, const LIMBS: usize, const BITS: usize>(
-        limbs: &[AssignedValue<C::Scalar>],
+        limbs: &[impl Deref<Target = AssignedValue<C::Scalar>>],
     ) -> Value<C> {
         assert_eq!(limbs.len(), 2 * LIMBS);
 
@@ -175,7 +184,7 @@ mod halo2 {
             AssignedScalar = AssignedValue<C::Scalar>,
         >,
     {
-        fn from_repr(limbs: Vec<Scalar<'a, C, EccChip>>) -> Result<PCS::Accumulator, Error> {
+        fn from_repr(limbs: &[&Scalar<'a, C, EccChip>]) -> Result<PCS::Accumulator, Error> {
             assert_eq!(limbs.len(), 4 * LIMBS);
 
             let loader = limbs[0].loader();

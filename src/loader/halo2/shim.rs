@@ -3,7 +3,7 @@ use halo2_proofs::{
     circuit::{Cell, Value},
     plonk::Error,
 };
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::Deref};
 
 pub trait Context: Debug {
     fn constrain_equal(&mut self, lhs: Cell, rhs: Cell) -> Result<(), Error>;
@@ -30,14 +30,18 @@ pub trait IntegerInstructions<'a, F: FieldExt>: Clone + Debug {
     fn sum_with_coeff_and_const(
         &self,
         ctx: &mut Self::Context,
-        values: &[(F::Scalar, Self::AssignedInteger)],
+        values: &[(F::Scalar, impl Deref<Target = Self::AssignedInteger>)],
         constant: F::Scalar,
     ) -> Result<Self::AssignedInteger, Error>;
 
     fn sum_products_with_coeff_and_const(
         &self,
         ctx: &mut Self::Context,
-        values: &[(F::Scalar, Self::AssignedInteger, Self::AssignedInteger)],
+        values: &[(
+            F::Scalar,
+            impl Deref<Target = Self::AssignedInteger>,
+            impl Deref<Target = Self::AssignedInteger>,
+        )],
         constant: F::Scalar,
     ) -> Result<Self::AssignedInteger, Error>;
 
@@ -96,26 +100,29 @@ pub trait EccInstructions<'a, C: CurveAffine>: Clone + Debug {
     fn sum_with_const(
         &self,
         ctx: &mut Self::Context,
-        values: &[Self::AssignedEcPoint],
+        values: &[impl Deref<Target = Self::AssignedEcPoint>],
         constant: C,
     ) -> Result<Self::AssignedEcPoint, Error>;
 
     fn fixed_base_msm(
         &mut self,
         ctx: &mut Self::Context,
-        pairs: &[(Self::AssignedScalar, C)],
+        pairs: &[(impl Deref<Target = Self::AssignedScalar>, C)],
     ) -> Result<Self::AssignedEcPoint, Error>;
 
     fn variable_base_msm(
         &mut self,
         ctx: &mut Self::Context,
-        pairs: &[(Self::AssignedScalar, Self::AssignedEcPoint)],
+        pairs: &[(
+            impl Deref<Target = Self::AssignedScalar>,
+            impl Deref<Target = Self::AssignedEcPoint>,
+        )],
     ) -> Result<Self::AssignedEcPoint, Error>;
 
     fn normalize(
         &self,
         ctx: &mut Self::Context,
-        point: &Self::AssignedEcPoint,
+        point: impl Deref<Target = Self::AssignedEcPoint>,
     ) -> Result<Self::AssignedEcPoint, Error>;
 
     fn assert_equal(
@@ -147,7 +154,7 @@ mod halo2_wrong {
         AssignedPoint, BaseFieldEccChip,
     };
     use rand::rngs::OsRng;
-    use std::iter;
+    use std::{iter, ops::Deref};
 
     impl<'a, F: FieldExt> Context for RegionCtx<'a, F> {
         fn constrain_equal(&mut self, lhs: Cell, rhs: Cell) -> Result<(), Error> {
@@ -182,7 +189,7 @@ mod halo2_wrong {
         fn sum_with_coeff_and_const(
             &self,
             ctx: &mut Self::Context,
-            values: &[(F, Self::AssignedInteger)],
+            values: &[(F, impl Deref<Target = Self::AssignedInteger>)],
             constant: F,
         ) -> Result<Self::AssignedInteger, Error> {
             self.compose(
@@ -198,7 +205,11 @@ mod halo2_wrong {
         fn sum_products_with_coeff_and_const(
             &self,
             ctx: &mut Self::Context,
-            values: &[(F, Self::AssignedInteger, Self::AssignedInteger)],
+            values: &[(
+                F,
+                impl Deref<Target = Self::AssignedInteger>,
+                impl Deref<Target = Self::AssignedInteger>,
+            )],
             constant: F,
         ) -> Result<Self::AssignedInteger, Error> {
             match values.len() {
@@ -347,19 +358,20 @@ mod halo2_wrong {
         fn sum_with_const(
             &self,
             ctx: &mut Self::Context,
-            values: &[Self::AssignedEcPoint],
+            values: &[impl Deref<Target = Self::AssignedEcPoint>],
             constant: C,
         ) -> Result<Self::AssignedEcPoint, Error> {
             if values.is_empty() {
                 return self.assign_constant(ctx, constant);
             }
 
+            let constant = (!bool::from(constant.is_identity()))
+                .then(|| self.assign_constant(ctx, constant))
+                .transpose()?;
             iter::empty()
-                .chain(
-                    (!bool::from(constant.is_identity()))
-                        .then(|| self.assign_constant(ctx, constant)),
-                )
-                .chain(values.iter().cloned().map(Ok))
+                .chain(constant)
+                .chain(values.iter().map(|value| value.deref().clone()))
+                .map(Ok)
                 .reduce(|acc, ec_point| self.add(ctx, &acc?, &ec_point?))
                 .unwrap()
         }
@@ -367,27 +379,34 @@ mod halo2_wrong {
         fn fixed_base_msm(
             &mut self,
             ctx: &mut Self::Context,
-            pairs: &[(Self::AssignedScalar, C)],
+            pairs: &[(impl Deref<Target = Self::AssignedScalar>, C)],
         ) -> Result<Self::AssignedEcPoint, Error> {
             // FIXME: Implement fixed base MSM in halo2_wrong
             let pairs = pairs
                 .iter()
                 .map(|(scalar, base)| {
-                    Ok::<_, Error>((scalar.clone(), self.assign_constant(ctx, *base)?))
+                    Ok::<_, Error>((scalar.deref().clone(), self.assign_constant(ctx, *base)?))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            let pairs = pairs
+                .iter()
+                .map(|(scalar, base)| (scalar, base))
+                .collect_vec();
             self.variable_base_msm(ctx, &pairs)
         }
 
         fn variable_base_msm(
             &mut self,
             ctx: &mut Self::Context,
-            pairs: &[(Self::AssignedScalar, Self::AssignedEcPoint)],
+            pairs: &[(
+                impl Deref<Target = Self::AssignedScalar>,
+                impl Deref<Target = Self::AssignedEcPoint>,
+            )],
         ) -> Result<Self::AssignedEcPoint, Error> {
             const WINDOW_SIZE: usize = 3;
             let pairs = pairs
                 .iter()
-                .map(|(scalar, base)| (base.clone(), scalar.clone()))
+                .map(|(scalar, base)| (base.deref().clone(), scalar.deref().clone()))
                 .collect_vec();
             match self.mul_batch_1d_horizontal(ctx, pairs.clone(), WINDOW_SIZE) {
                 Err(_) => {
@@ -405,9 +424,9 @@ mod halo2_wrong {
         fn normalize(
             &self,
             ctx: &mut Self::Context,
-            point: &Self::AssignedEcPoint,
+            point: impl Deref<Target = Self::AssignedEcPoint>,
         ) -> Result<Self::AssignedEcPoint, Error> {
-            self.normalize(ctx, point)
+            self.normalize(ctx, point.deref())
         }
 
         fn assert_equal(

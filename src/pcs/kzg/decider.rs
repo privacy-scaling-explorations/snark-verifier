@@ -144,7 +144,7 @@ mod evm {
 
                 let powers_of_challenge = LoadedScalar::<M::Scalar>::powers(&challenge, lhs.len());
                 let [lhs, rhs] = [lhs, rhs].map(|msms| {
-                    msms.into_iter()
+                    msms.iter()
                         .zip(powers_of_challenge.iter())
                         .map(|(msm, power_of_challenge)| {
                             Msm::<M::G1Affine, Rc<EvmLoader>>::base(msm) * power_of_challenge

@@ -443,7 +443,7 @@ mod aggregation {
                     let KzgAccumulator { lhs, rhs } =
                         aggregate(&self.svk, &loader, &self.snarks, self.as_proof());
 
-                    Ok((lhs.assigned(), rhs.assigned()))
+                    Ok((lhs.into_assigned(), rhs.into_assigned()))
                 },
             )?;
 

@@ -37,7 +37,7 @@ impl<T: Debug> PartialEq for Value<T> {
 
 impl<T: Debug> Value<T> {
     fn identifier(&self) -> String {
-        match &self {
+        match self {
             Value::Constant(_) | Value::Memory(_) => format!("{:?}", self),
             Value::Negated(value) => format!("-({:?})", value),
             Value::Sum(lhs, rhs) => format!("({:?} + {:?})", lhs, rhs),
@@ -222,13 +222,13 @@ impl EvmLoader {
 
     pub fn ec_point_from_limbs<const LIMBS: usize, const BITS: usize>(
         self: &Rc<Self>,
-        x_limbs: [Scalar; LIMBS],
-        y_limbs: [Scalar; LIMBS],
+        x_limbs: [&Scalar; LIMBS],
+        y_limbs: [&Scalar; LIMBS],
     ) -> EcPoint {
         let ptr = self.allocate(0x40);
         for (ptr, limbs) in [(ptr, x_limbs), (ptr + 0x20, y_limbs)] {
             for (idx, limb) in limbs.into_iter().enumerate() {
-                self.push(&limb);
+                self.push(limb);
                 // [..., success, acc]
                 if idx > 0 {
                     self.code
@@ -769,10 +769,11 @@ where
     }
 
     fn multi_scalar_multiplication(
-        pairs: &[(<Self as ScalarLoader<C::Scalar>>::LoadedScalar, EcPoint)],
+        pairs: &[(&<Self as ScalarLoader<C::Scalar>>::LoadedScalar, &EcPoint)],
     ) -> EcPoint {
         pairs
             .iter()
+            .cloned()
             .map(|(scalar, ec_point)| match scalar.value {
                 Value::Constant(constant) if U256::one() == constant => ec_point.clone(),
                 _ => ec_point.loader.ec_point_scalar_mul(ec_point, scalar),
