@@ -166,7 +166,7 @@ mod aggregation {
     use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
-        plonk::{self, Circuit, ConstraintSystem},
+        plonk::{self, Circuit, ConstraintSystem, Error},
         poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG},
     };
     use halo2_wrong_ecc::{
@@ -181,7 +181,7 @@ mod aggregation {
     use plonk_verifier::{
         loader::{self, native::NativeLoader},
         pcs::{
-            kzg::{KzgAccumulator, KzgSuccinctVerifyingKey},
+            kzg::{KzgAccumulator, KzgSuccinctVerifyingKey, LimbsEncodingInstructions},
             AccumulationScheme, AccumulationSchemeProver,
         },
         system,
@@ -190,7 +190,7 @@ mod aggregation {
         Protocol,
     };
     use rand::rngs::OsRng;
-    use std::{iter, rc::Rc};
+    use std::rc::Rc;
 
     const T: usize = 5;
     const RATE: usize = 4;
@@ -433,28 +433,33 @@ mod aggregation {
 
             range_chip.load_table(&mut layouter)?;
 
-            let (lhs, rhs) = layouter.assign_region(
+            let accumulator_limbs = layouter.assign_region(
                 || "",
                 |region| {
                     let ctx = RegionCtx::new(region, 0);
 
                     let ecc_chip = config.ecc_chip();
                     let loader = Halo2Loader::new(ecc_chip, ctx);
-                    let KzgAccumulator { lhs, rhs } =
-                        aggregate(&self.svk, &loader, &self.snarks, self.as_proof());
+                    let accumulator = aggregate(&self.svk, &loader, &self.snarks, self.as_proof());
 
-                    Ok((lhs.into_assigned(), rhs.into_assigned()))
+                    let accumulator_limbs = [accumulator.lhs, accumulator.rhs]
+                        .iter()
+                        .map(|ec_point| {
+                            loader.ecc_chip().assign_ec_point_to_limbs(
+                                &mut loader.ctx_mut(),
+                                ec_point.assigned(),
+                            )
+                        })
+                        .collect::<Result<Vec<_>, Error>>()?
+                        .into_iter()
+                        .flatten();
+
+                    Ok(accumulator_limbs)
                 },
             )?;
 
-            for (limb, row) in iter::empty()
-                .chain(lhs.x().limbs())
-                .chain(lhs.y().limbs())
-                .chain(rhs.x().limbs())
-                .chain(rhs.y().limbs())
-                .zip(0..)
-            {
-                main_gate.expose_public(layouter.namespace(|| ""), limb.into(), row)?;
+            for (row, limb) in accumulator_limbs.enumerate() {
+                main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
             }
 
             Ok(())

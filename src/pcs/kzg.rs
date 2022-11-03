@@ -15,6 +15,9 @@ pub use accumulator::{KzgAccumulator, LimbsEncoding};
 pub use decider::KzgDecidingKey;
 pub use multiopen::{Bdfg21, Bdfg21Proof, Gwc19, Gwc19Proof};
 
+#[cfg(feature = "loader_halo2")]
+pub use accumulator::LimbsEncodingInstructions;
+
 #[derive(Clone, Debug)]
 pub struct Kzg<M, MOS>(PhantomData<(M, MOS)>);
 

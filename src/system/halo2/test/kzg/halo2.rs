@@ -7,7 +7,7 @@ use crate::{
     pcs::{
         kzg::{
             Bdfg21, Kzg, KzgAccumulator, KzgAs, KzgAsProvingKey, KzgAsVerifyingKey,
-            KzgSuccinctVerifyingKey, LimbsEncoding,
+            KzgSuccinctVerifyingKey, LimbsEncoding, LimbsEncodingInstructions,
         },
         AccumulationScheme, AccumulationSchemeProver,
     },
@@ -31,7 +31,7 @@ use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
     circuit::{floor_planner::V1, Layouter, Value},
     plonk,
-    plonk::Circuit,
+    plonk::{Circuit, Error},
     poly::{
         commitment::ParamsProver,
         kzg::{
@@ -48,7 +48,7 @@ use halo2_wrong_ecc::{
 };
 use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
-use std::{iter, rc::Rc};
+use std::rc::Rc;
 
 const T: usize = 5;
 const RATE: usize = 4;
@@ -281,14 +281,14 @@ impl Circuit<Fr> for Accumulation {
 
         range_chip.load_table(&mut layouter)?;
 
-        let (lhs, rhs) = layouter.assign_region(
+        let accumulator_limbs = layouter.assign_region(
             || "",
             |region| {
                 let ctx = RegionCtx::new(region, 0);
 
                 let ecc_chip = config.ecc_chip();
                 let loader = Halo2Loader::new(ecc_chip, ctx);
-                let KzgAccumulator { lhs, rhs } = accumulate(
+                let accumulator = accumulate(
                     &self.svk,
                     &loader,
                     &self.snarks,
@@ -296,21 +296,26 @@ impl Circuit<Fr> for Accumulation {
                     self.as_proof(),
                 );
 
+                let accumulator_limbs = [accumulator.lhs, accumulator.rhs]
+                    .iter()
+                    .map(|ec_point| {
+                        loader
+                            .ecc_chip()
+                            .assign_ec_point_to_limbs(&mut loader.ctx_mut(), ec_point.assigned())
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?
+                    .into_iter()
+                    .flatten();
+
                 loader.print_row_metering();
                 println!("Total row cost: {}", loader.ctx().offset());
 
-                Ok((lhs.into_assigned(), rhs.into_assigned()))
+                Ok(accumulator_limbs)
             },
         )?;
 
-        for (limb, row) in iter::empty()
-            .chain(lhs.x().limbs())
-            .chain(lhs.y().limbs())
-            .chain(rhs.x().limbs())
-            .chain(rhs.y().limbs())
-            .zip(0..)
-        {
-            main_gate.expose_public(layouter.namespace(|| ""), limb.into(), row)?;
+        for (row, limb) in accumulator_limbs.enumerate() {
+            main_gate.expose_public(layouter.namespace(|| ""), limb, row)?;
         }
 
         Ok(())

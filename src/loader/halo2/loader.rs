@@ -687,12 +687,8 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> EcPointLoader<C>
                 constant,
             )
             .unwrap();
-        let normalized = loader
-            .ecc_chip()
-            .normalize(&mut loader.ctx_mut(), &output)
-            .unwrap();
 
-        loader.ec_point_from_assigned(normalized)
+        loader.ec_point_from_assigned(output)
     }
 }
 
