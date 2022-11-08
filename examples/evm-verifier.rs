@@ -1,5 +1,4 @@
 use ethereum_types::Address;
-use foundry_evm::executor::{fork::MultiFork, Backend, ExecutorBuilder};
 use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -21,7 +20,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use plonk_verifier::{
-    loader::evm::{encode_calldata, EvmLoader},
+    loader::evm::{encode_calldata, EvmLoader, ExecutorBuilder},
     pcs::kzg::{Gwc19, Kzg},
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     verifier::{self, PlonkVerifier},
@@ -231,16 +230,14 @@ fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>)
     let success = {
         let mut evm = ExecutorBuilder::default()
             .with_gas_limit(u64::MAX.into())
-            .build(Backend::new(MultiFork::new().0, None));
+            .build();
 
         let caller = Address::from_low_u64_be(0xfe);
         let verifier = evm
-            .deploy(caller, deployment_code.into(), 0.into(), None)
-            .unwrap()
-            .address;
-        let result = evm
-            .call_raw(caller, verifier, calldata.into(), 0.into())
+            .deploy(caller, deployment_code.into(), 0.into())
+            .address
             .unwrap();
+        let result = evm.call_raw(caller, verifier, calldata.into(), 0.into());
 
         dbg!(result.gas_used);
 

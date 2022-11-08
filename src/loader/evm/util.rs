@@ -5,6 +5,10 @@ use crate::{
 use ethereum_types::U256;
 use std::iter;
 
+pub(crate) mod executor;
+
+pub use executor::ExecutorBuilder;
+
 pub struct MemoryChunk {
     ptr: usize,
     len: usize,
