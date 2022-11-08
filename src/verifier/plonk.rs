@@ -137,8 +137,8 @@ where
                     instances
                         .iter()
                         .zip(bases.iter())
-                        .map(|(scalar, base)| Msm::<C, L>::base(base.clone()) * scalar)
-                        .chain(constant.clone().map(|constant| Msm::base(constant)))
+                        .map(|(scalar, base)| Msm::<C, L>::base(base) * scalar)
+                        .chain(constant.as_ref().map(Msm::base))
                         .sum::<Msm<_, _>>()
                         .evaluate(None)
                 })
@@ -190,12 +190,13 @@ where
             .accumulator_indices
             .iter()
             .map(|accumulator_indices| {
-                accumulator_indices
-                    .iter()
-                    .map(|&(i, j)| instances[i][j].clone())
-                    .collect()
+                AE::from_repr(
+                    &accumulator_indices
+                        .iter()
+                        .map(|&(i, j)| &instances[i][j])
+                        .collect_vec(),
+                )
             })
-            .map(AE::from_repr)
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
@@ -241,25 +242,20 @@ where
             .collect()
     }
 
-    fn commitments(
-        &self,
-        protocol: &Protocol<C, L>,
+    fn commitments<'a>(
+        &'a self,
+        protocol: &'a Protocol<C, L>,
         common_poly_eval: &CommonPolynomialEvaluation<C, L>,
         evaluations: &mut HashMap<Query, L::LoadedScalar>,
     ) -> Result<Vec<Msm<C, L>>, Error> {
         let loader = common_poly_eval.zn().loader();
         let mut commitments = iter::empty()
-            .chain(
-                protocol
-                    .preprocessed
-                    .iter()
-                    .map(|value| Msm::base(value.clone())),
-            )
+            .chain(protocol.preprocessed.iter().map(Msm::base))
             .chain(
                 self.committed_instances
-                    .clone()
+                    .as_ref()
                     .map(|committed_instances| {
-                        committed_instances.into_iter().map(Msm::base).collect_vec()
+                        committed_instances.iter().map(Msm::base).collect_vec()
                     })
                     .unwrap_or_else(|| {
                         iter::repeat_with(Default::default)
@@ -267,7 +263,7 @@ where
                             .collect_vec()
                     }),
             )
-            .chain(self.witnesses.iter().cloned().map(Msm::base))
+            .chain(self.witnesses.iter().map(Msm::base))
             .collect_vec();
 
         let numerator = protocol.quotient.numerator.evaluate(
@@ -314,7 +310,7 @@ where
             .pow_const(protocol.quotient.chunk_degree as u64)
             .powers(self.quotients.len())
             .into_iter()
-            .zip(self.quotients.iter().cloned().map(Msm::base))
+            .zip(self.quotients.iter().map(Msm::base))
             .map(|(coeff, chunk)| chunk * &coeff)
             .sum::<Msm<_, _>>();
         match protocol.linearization {

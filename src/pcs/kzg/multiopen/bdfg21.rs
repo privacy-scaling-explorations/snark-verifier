@@ -47,8 +47,8 @@ where
         queries: &[Query<M::Scalar, L::LoadedScalar>],
         proof: &Bdfg21Proof<M::G1Affine, L>,
     ) -> Result<Self::Accumulator, Error> {
+        let sets = query_sets(queries);
         let f = {
-            let sets = query_sets(queries);
             let coeffs = query_set_coeffs(&sets, z, &proof.z_prime);
 
             let powers_of_mu = proof
@@ -62,10 +62,10 @@ where
             msms.zip(proof.gamma.powers(sets.len()).into_iter())
                 .map(|(msm, power_of_gamma)| msm * &power_of_gamma)
                 .sum::<Msm<_, _>>()
-                - Msm::base(proof.w.clone()) * &coeffs[0].z_s
+                - Msm::base(&proof.w) * &coeffs[0].z_s
         };
 
-        let rhs = Msm::base(proof.w_prime.clone());
+        let rhs = Msm::base(&proof.w_prime);
         let lhs = f + rhs.clone() * &proof.z_prime;
 
         Ok(KzgAccumulator::new(
@@ -143,7 +143,7 @@ fn query_sets<F: FieldExt, T: Clone>(queries: &[Query<F, T>]) -> Vec<QuerySet<F,
                             .iter()
                             .map(|lhs| {
                                 let idx = shifts.iter().position(|rhs| lhs == rhs).unwrap();
-                                evals[idx].clone()
+                                evals[idx]
                             })
                             .collect(),
                     );
@@ -152,7 +152,7 @@ fn query_sets<F: FieldExt, T: Clone>(queries: &[Query<F, T>]) -> Vec<QuerySet<F,
                 let set = QuerySet {
                     shifts,
                     polys: vec![poly],
-                    evals: vec![evals.into_iter().cloned().collect()],
+                    evals: vec![evals],
                 };
                 sets.push(set);
             }
@@ -161,8 +161,8 @@ fn query_sets<F: FieldExt, T: Clone>(queries: &[Query<F, T>]) -> Vec<QuerySet<F,
     )
 }
 
-fn query_set_coeffs<F: FieldExt, T: LoadedScalar<F>>(
-    sets: &[QuerySet<F, T>],
+fn query_set_coeffs<'a, F: FieldExt, T: LoadedScalar<F>>(
+    sets: &[QuerySet<'a, F, T>],
     z: &T,
     z_prime: &T,
 ) -> Vec<QuerySetCoeff<F, T>> {
@@ -211,17 +211,17 @@ fn query_set_coeffs<F: FieldExt, T: LoadedScalar<F>>(
 }
 
 #[derive(Clone, Debug)]
-struct QuerySet<F, T> {
+struct QuerySet<'a, F, T> {
     shifts: Vec<F>,
     polys: Vec<usize>,
-    evals: Vec<Vec<T>>,
+    evals: Vec<Vec<&'a T>>,
 }
 
-impl<F: FieldExt, T: LoadedScalar<F>> QuerySet<F, T> {
+impl<'a, F: FieldExt, T: LoadedScalar<F>> QuerySet<'a, F, T> {
     fn msm<C: CurveAffine, L: Loader<C, LoadedScalar = T>>(
         &self,
         coeff: &QuerySetCoeff<F, T>,
-        commitments: &[Msm<C, L>],
+        commitments: &[Msm<'a, C, L>],
         powers_of_mu: &[T],
     ) -> Msm<C, L> {
         self.polys
@@ -241,7 +241,7 @@ impl<F: FieldExt, T: LoadedScalar<F>> QuerySet<F, T> {
                     &coeff
                         .eval_coeffs
                         .iter()
-                        .zip(evals.iter())
+                        .zip(evals.iter().cloned())
                         .map(|(coeff, eval)| (coeff.evaluated(), eval))
                         .collect_vec(),
                 ) * coeff.r_eval_coeff.as_ref().unwrap().evaluated();
@@ -288,18 +288,15 @@ where
             })
             .collect_vec();
 
-        let z = &powers_of_z[1].clone();
+        let z = &powers_of_z[1];
         let z_pow_k_minus_one = {
             let k_minus_one = shifts.len() - 1;
             powers_of_z
                 .iter()
                 .enumerate()
                 .skip(1)
-                .filter_map(|(i, power_of_z)| {
-                    (k_minus_one & (1 << i) == 1).then(|| power_of_z.clone())
-                })
-                .reduce(|acc, value| acc * value)
-                .unwrap_or_else(|| loader.load_one())
+                .filter_map(|(i, power_of_z)| (k_minus_one & (1 << i) == 1).then(|| power_of_z))
+                .fold(loader.load_one(), |acc, value| acc * value)
         };
 
         let barycentric_weights = shifts
@@ -354,7 +351,7 @@ where
                     .map(Fraction::evaluated)
                     .collect_vec(),
             );
-            self.r_eval_coeff = Some(match self.commitment_coeff.clone() {
+            self.r_eval_coeff = Some(match self.commitment_coeff.as_ref() {
                 Some(coeff) => Fraction::new(coeff.evaluated().clone(), barycentric_weights_sum),
                 None => Fraction::one_over(barycentric_weights_sum),
             });

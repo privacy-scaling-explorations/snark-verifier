@@ -601,11 +601,14 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                     .zip(permutation_fixeds.chunks(self.permutation_chunk_size))
                     .enumerate()
                     .map(
-                        |(i, ((((z, z_w, _), (_, z_next_w, _)), polys), permutation_fixeds))| {
+                        |(
+                            i,
+                            ((((z, z_omega, _), (_, z_next_omega, _)), polys), permutation_fixeds),
+                        )| {
                             let left = if self.zk || zs.len() == 1 {
-                                z_w.clone()
+                                z_omega.clone()
                             } else {
-                                z_w + l_last * (z_next_w - z_w)
+                                z_omega + l_last * (z_next_omega - z_omega)
                             } * polys
                                 .iter()
                                 .zip(permutation_fixeds.iter())
@@ -675,7 +678,10 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             .iter()
             .zip(polys.iter())
             .flat_map(
-                |(lookup, (z, z_w, permuted_input, permuted_input_w_inv, permuted_table))| {
+                |(
+                    lookup,
+                    (z, z_omega, permuted_input, permuted_input_omega_inv, permuted_table),
+                )| {
                     let input = compress(lookup.input_expressions());
                     let table = compress(lookup.table_expressions());
                     iter::empty()
@@ -683,20 +689,20 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
                         .chain(self.zk.then(|| l_last * (z * z - z)))
                         .chain(Some(if self.zk {
                             l_active
-                                * (z_w * (permuted_input + beta) * (permuted_table + gamma)
+                                * (z_omega * (permuted_input + beta) * (permuted_table + gamma)
                                     - z * (input + beta) * (table + gamma))
                         } else {
-                            z_w * (permuted_input + beta) * (permuted_table + gamma)
+                            z_omega * (permuted_input + beta) * (permuted_table + gamma)
                                 - z * (input + beta) * (table + gamma)
                         }))
                         .chain(self.zk.then(|| l_0 * (permuted_input - permuted_table)))
                         .chain(Some(if self.zk {
                             l_active
                                 * (permuted_input - permuted_table)
-                                * (permuted_input - permuted_input_w_inv)
+                                * (permuted_input - permuted_input_omega_inv)
                         } else {
                             (permuted_input - permuted_table)
-                                * (permuted_input - permuted_input_w_inv)
+                                * (permuted_input - permuted_input_omega_inv)
                         }))
                 },
             )

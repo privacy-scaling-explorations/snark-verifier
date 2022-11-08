@@ -5,7 +5,7 @@ use crate::{
     },
     Error,
 };
-use std::{fmt::Debug, iter};
+use std::{borrow::Cow, fmt::Debug, iter, ops::Deref};
 
 pub mod native;
 
@@ -86,7 +86,7 @@ pub trait EcPointLoader<C: CurveAffine> {
     ) -> Result<(), Error>;
 
     fn multi_scalar_multiplication(
-        pairs: &[(Self::LoadedScalar, Self::LoadedEcPoint)],
+        pairs: &[(&Self::LoadedScalar, &Self::LoadedEcPoint)],
     ) -> Self::LoadedEcPoint
     where
         Self: ScalarLoader<C::ScalarExt>;
@@ -126,17 +126,18 @@ pub trait ScalarLoader<F: PrimeField> {
             .chain(if constant == F::zero() {
                 None
             } else {
-                Some(loader.load_const(&constant))
+                Some(Cow::Owned(loader.load_const(&constant)))
             })
             .chain(values.iter().map(|&(coeff, value)| {
                 if coeff == F::one() {
-                    value.clone()
+                    Cow::Borrowed(value)
                 } else {
-                    loader.load_const(&coeff) * value
+                    Cow::Owned(loader.load_const(&coeff) * value)
                 }
             }))
-            .reduce(|acc, term| acc + term)
+            .reduce(|acc, term| Cow::Owned(acc.into_owned() + term.deref()))
             .unwrap()
+            .into_owned()
     }
 
     fn sum_products_with_coeff_and_const(

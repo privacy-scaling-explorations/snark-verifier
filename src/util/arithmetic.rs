@@ -186,14 +186,14 @@ impl<T: FieldOps + Clone> Fraction<T> {
 
         self.eval = Some(
             self.numer
-                .as_ref()
-                .map(|numer| numer.clone() * &self.denom)
+                .take()
+                .map(|numer| numer * &self.denom)
                 .unwrap_or_else(|| self.denom.clone()),
         );
     }
 
     pub fn evaluated(&self) -> &T {
-        assert!(self.inv);
+        assert!(self.eval.is_some());
 
         self.eval.as_ref().unwrap()
     }
@@ -241,19 +241,12 @@ pub fn fe_to_limbs<F1: PrimeField, F2: PrimeField, const LIMBS: usize, const BIT
     fe: F1,
 ) -> [F2; LIMBS] {
     let big = BigUint::from_bytes_le(fe.to_repr().as_ref());
-    let mask = (BigUint::one() << BITS) - 1usize;
+    let mask = &((BigUint::one() << BITS) - 1usize);
     (0usize..)
         .step_by(BITS)
         .take(LIMBS)
-        .map(move |shift| fe_from_big((&big >> shift) & &mask))
+        .map(|shift| fe_from_big((&big >> shift) & mask))
         .collect_vec()
         .try_into()
         .unwrap()
-}
-
-pub fn powers<F>(scalar: F) -> impl Iterator<Item = F>
-where
-    for<'a> F: Mul<&'a F, Output = F> + One + Clone,
-{
-    iter::successors(Some(F::one()), move |power| Some(scalar.clone() * power))
 }

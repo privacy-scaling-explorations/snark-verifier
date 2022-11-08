@@ -1,5 +1,6 @@
 //! Copied and modified from https://github.com/foundry-rs/foundry/blob/master/ui/src/lib.rs
 
+use crate::loader::evm::util::executor::{CallKind, DebugStep};
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
@@ -8,11 +9,8 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use foundry_evm::{
-    debug::{DebugStep, Instruction},
-    revm::opcode,
-    Address, CallKind,
-};
+use ethereum_types::Address;
+use revm::opcode;
 use std::{
     cmp::{max, min},
     io,
@@ -90,7 +88,7 @@ impl Tui {
         self.terminal.clear().unwrap();
         let mut draw_memory: DrawMemory = DrawMemory::default();
 
-        let debug_call: Vec<(Address, Vec<DebugStep>, CallKind)> = self.debug_arena.clone();
+        let debug_call = &self.debug_arena;
         let mut opcode_list: Vec<String> = debug_call[0]
             .1
             .iter()
@@ -207,7 +205,7 @@ impl Tui {
                     }
                     KeyCode::Char('s') => {
                         for _ in 0..Tui::buffer_as_number(&self.key_buffer, 1) {
-                            let remaining_ops = opcode_list[self.current_step..].to_vec().clone();
+                            let remaining_ops = &opcode_list[self.current_step..];
                             self.current_step += remaining_ops
                                 .iter()
                                 .enumerate()
@@ -233,7 +231,7 @@ impl Tui {
                     }
                     KeyCode::Char('a') => {
                         for _ in 0..Tui::buffer_as_number(&self.key_buffer, 1) {
-                            let prev_ops = opcode_list[..self.current_step].to_vec().clone();
+                            let prev_ops = &opcode_list[..self.current_step];
                             self.current_step = prev_ops
                                 .iter()
                                 .enumerate()
@@ -618,12 +616,7 @@ impl Tui {
             .borders(Borders::ALL);
         let min_len = usize::max(format!("{}", stack.len()).len(), 2);
 
-        let indices_affected =
-            if let Instruction::OpCode(op) = debug_steps[current_step].instruction {
-                stack_indices_affected(op)
-            } else {
-                vec![]
-            };
+        let indices_affected = stack_indices_affected(debug_steps[current_step].instruction.0);
 
         let text: Vec<Spans> = stack
             .iter()
@@ -699,33 +692,29 @@ impl Tui {
 
         let mut word = None;
         let mut color = None;
-        if let Instruction::OpCode(op) = debug_steps[current_step].instruction {
-            let stack_len = debug_steps[current_step].stack.len();
-            if stack_len > 0 {
-                let w = debug_steps[current_step].stack[stack_len - 1];
-                match op {
-                    opcode::MLOAD => {
-                        word = Some(w.as_usize() / 32);
-                        color = Some(Color::Cyan);
-                    }
-                    opcode::MSTORE => {
-                        word = Some(w.as_usize() / 32);
-                        color = Some(Color::Red);
-                    }
-                    _ => {}
+        let stack_len = debug_steps[current_step].stack.len();
+        if stack_len > 0 {
+            let w = debug_steps[current_step].stack[stack_len - 1];
+            match debug_steps[current_step].instruction.0 {
+                opcode::MLOAD => {
+                    word = Some(w.as_usize() / 32);
+                    color = Some(Color::Cyan);
                 }
+                opcode::MSTORE => {
+                    word = Some(w.as_usize() / 32);
+                    color = Some(Color::Red);
+                }
+                _ => {}
             }
         }
 
         if current_step > 0 {
             let prev_step = current_step - 1;
             let stack_len = debug_steps[prev_step].stack.len();
-            if let Instruction::OpCode(op) = debug_steps[prev_step].instruction {
-                if op == opcode::MSTORE {
-                    let prev_top = debug_steps[prev_step].stack[stack_len - 1];
-                    word = Some(prev_top.as_usize() / 32);
-                    color = Some(Color::Green);
-                }
+            if debug_steps[prev_step].instruction.0 == opcode::MSTORE {
+                let prev_top = debug_steps[prev_step].stack[stack_len - 1];
+                word = Some(prev_top.as_usize() / 32);
+                color = Some(Color::Green);
             }
         }
 

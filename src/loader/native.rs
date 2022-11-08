@@ -54,10 +54,11 @@ impl<C: CurveAffine> EcPointLoader<C> for NativeLoader {
     }
 
     fn multi_scalar_multiplication(
-        pairs: &[(<Self as ScalarLoader<C::Scalar>>::LoadedScalar, C)],
+        pairs: &[(&<Self as ScalarLoader<C::Scalar>>::LoadedScalar, &C)],
     ) -> C {
         pairs
             .iter()
+            .cloned()
             .map(|(scalar, base)| *base * scalar)
             .reduce(|acc, value| acc + value)
             .unwrap()
