@@ -13,6 +13,9 @@ rand = "0.8"
 hex = "0.4"
 halo2_curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "0.3.0", package = "halo2curves" }
 
+# parallel
+rayon = { version = "1.5.3", optional = true }
+
 # system_halo2
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2022_10_22", optional = true }
 
@@ -41,12 +44,12 @@ tui = { version = "0.19", default-features = false, features = ["crossterm"] }
 [features]
 default = ["loader_evm", "loader_halo2", "system_halo2"]
 
+parallel = ["dep:rayon"]
+
 loader_evm = ["dep:ethereum_types", "dep:sha3", "dep:revm", "dep:bytes", "dep:rlp"]
 loader_halo2 = ["dep:halo2_proofs", "dep:halo2_wrong_ecc", "dep:poseidon"]
 
 system_halo2 = ["dep:halo2_proofs"]
-
-sanity_check = []
 
 [[example]]
 name = "evm-verifier"

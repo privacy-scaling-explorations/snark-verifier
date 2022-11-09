@@ -1,6 +1,6 @@
 use crate::{
-    loader,
     loader::{
+        self,
         halo2::test::{Snark, SnarkWitness},
         native::NativeLoader,
     },
@@ -30,8 +30,7 @@ use crate::{
 use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
     circuit::{floor_planner::V1, Layouter, Value},
-    plonk,
-    plonk::{Circuit, Error},
+    plonk::{Circuit, ConstraintSystem, Error},
     poly::{
         commitment::ParamsProver,
         kzg::{
@@ -263,7 +262,7 @@ impl Circuit<Fr> for Accumulation {
         }
     }
 
-    fn configure(meta: &mut plonk::ConstraintSystem<Fr>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
         MainGateWithRangeConfig::configure(
             meta,
             vec![BITS / LIMBS],
@@ -275,7 +274,7 @@ impl Circuit<Fr> for Accumulation {
         &self,
         config: Self::Config,
         mut layouter: impl Layouter<Fr>,
-    ) -> Result<(), plonk::Error> {
+    ) -> Result<(), Error> {
         let main_gate = config.main_gate();
         let range_chip = config.range_chip();
 
