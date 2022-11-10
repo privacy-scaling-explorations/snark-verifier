@@ -49,7 +49,8 @@ macro_rules! halo2_kzg_evm_verify {
                 .unwrap();
             <$plonk_verifier>::verify(&svk, &dk, &protocol, &instances, &proof).unwrap();
 
-            loader.runtime_code()
+            let code = loader.yul_code();
+            loader.compile(&code)
         };
 
         let (accept, total_cost, costs) =

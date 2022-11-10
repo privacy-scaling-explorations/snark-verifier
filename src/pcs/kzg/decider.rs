@@ -132,14 +132,8 @@ mod evm {
 
                 let hash_ptr = loader.keccak256(lhs[0].ptr(), lhs.len() * 0x80);
                 let challenge_ptr = loader.allocate(0x20);
-                loader
-                    .code_mut()
-                    .push(loader.scalar_modulus())
-                    .push(hash_ptr)
-                    .mload()
-                    .r#mod()
-                    .push(challenge_ptr)
-                    .mstore();
+                let code = format!("mstore({challenge_ptr}, mod(mload({hash_ptr}), f_q))");
+                loader.code_mut().runtime_append(code);
                 let challenge = loader.scalar(Value::Memory(challenge_ptr));
 
                 let powers_of_challenge = LoadedScalar::<M::Scalar>::powers(&challenge, lhs.len());
