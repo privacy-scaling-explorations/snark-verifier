@@ -17,7 +17,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use plonk_verifier::{
     loader::{
-        evm::{encode_calldata, EvmLoader, ExecutorBuilder},
+        evm::{self, encode_calldata, EvmLoader, ExecutorBuilder},
         native::NativeLoader,
     },
     pcs::kzg::{Gwc19, Kzg, KzgAs, LimbsEncoding},
@@ -570,8 +570,7 @@ fn gen_aggregation_evm_verifier(
     let proof = Plonk::read_proof(&svk, &protocol, &instances, &mut transcript).unwrap();
     Plonk::verify(&svk, &dk, &protocol, &instances, &proof).unwrap();
 
-    let code = loader.yul_code();
-    loader.compile(&code)
+    evm::compile_yul(&loader.yul_code())
 }
 
 fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {

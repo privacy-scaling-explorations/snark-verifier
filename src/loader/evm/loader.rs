@@ -14,14 +14,12 @@ use crate::{
 };
 use ethereum_types::{U256, U512};
 use hex;
-use regex::Regex;
 use std::{
     cell::RefCell,
     collections::HashMap,
     fmt::{self, Debug},
     iter,
     ops::{Add, AddAssign, DerefMut, Mul, MulAssign, Neg, Sub, SubAssign},
-    process::Command,
     rc::Rc,
 };
 
@@ -99,49 +97,6 @@ impl EvmLoader {
             hex_encode_u256(&self.base_modulus),
             hex_encode_u256(&self.scalar_modulus),
         )
-    }
-
-    // Generates Yul verifier in the current working directory.
-    // Panics when the invalid Yul code is generated.
-    pub fn compile(self: &Rc<Self>, code: &str) -> Vec<u8> {
-        let mut cmd = Command::new("solc");
-
-        use std::io::Write;
-        let mut file = std::fs::File::create("./evm-verifier.yul").unwrap();
-        write!(&mut file, "{}", code).unwrap();
-        let output = cmd
-            .arg("--bin")
-            .arg("--yul")
-            .arg("./evm-verifier.yul")
-            .output()
-            .expect("failed to execute process")
-            .stdout;
-        let output = String::from_utf8(output).unwrap();
-        let re = Regex::new(r"([\da-fA-F]{2})").unwrap();
-        let mut hex_string = String::new();
-        for hex in re.find_iter(&output) {
-            hex_string.push_str(hex.as_str());
-        }
-
-        fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
-            if s.len() % 2 == 0 {
-                (0..s.len())
-                    .step_by(2)
-                    .map(|i| {
-                        s.get(i..i + 2)
-                            .and_then(|sub| u8::from_str_radix(sub, 16).ok())
-                    })
-                    .collect()
-            } else {
-                None
-            }
-        }
-
-        let bytecode = hex_to_bytes(&hex_string).unwrap();
-        if bytecode.is_empty() {
-            panic!("Failed to compile Yul verifier.");
-        }
-        bytecode
     }
 
     pub fn allocate(self: &Rc<Self>, size: usize) -> usize {

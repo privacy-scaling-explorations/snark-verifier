@@ -3,7 +3,11 @@ use crate::{
     util::{arithmetic::PrimeField, Itertools},
 };
 use ethereum_types::U256;
-use std::iter;
+use std::{
+    io::Write,
+    iter,
+    process::{Command, Stdio},
+};
 
 pub(crate) mod executor;
 
@@ -93,4 +97,38 @@ pub fn estimate_gas(cost: Cost) -> usize {
     let ec_operation_cost = 113100 + (cost.num_msm - 2) * 6350;
 
     intrinsic_cost + calldata_cost + ec_operation_cost
+}
+
+pub fn compile_yul(code: &str) -> Vec<u8> {
+    let mut cmd = Command::new("solc")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .arg("--bin")
+        .arg("--yul")
+        .arg("-")
+        .spawn()
+        .unwrap();
+    cmd.stdin
+        .take()
+        .unwrap()
+        .write_all(code.as_bytes())
+        .unwrap();
+    let output = cmd.wait_with_output().unwrap().stdout;
+    let binary = *split_by_ascii_whitespace(&output).last().unwrap();
+    hex::decode(binary).unwrap()
+}
+
+fn split_by_ascii_whitespace(bytes: &[u8]) -> Vec<&[u8]> {
+    let mut split = Vec::new();
+    let mut start = None;
+    for (idx, byte) in bytes.iter().enumerate() {
+        if byte.is_ascii_whitespace() {
+            if let Some(start) = start.take() {
+                split.push(&bytes[start..idx]);
+            }
+        } else if start.is_none() {
+            start = Some(idx);
+        }
+    }
+    split
 }
