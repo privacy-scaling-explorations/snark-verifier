@@ -23,6 +23,9 @@ jobs:
         with:
           cache-on-failure: true
 
+      - name: Install solc
+        run: (hash svm 2>/dev/null || cargo install svm-rs) && svm install 0.8.17 && solc --version
+
       - name: Run test
         run: cargo test --all --all-features -- --nocapture
 
