@@ -20,7 +20,7 @@ use halo2_proofs::{
 };
 use itertools::Itertools;
 use plonk_verifier::{
-    loader::evm::{encode_calldata, EvmLoader, ExecutorBuilder},
+    loader::evm::{self, encode_calldata, EvmLoader, ExecutorBuilder},
     pcs::kzg::{Gwc19, Kzg},
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     verifier::{self, PlonkVerifier},
@@ -222,7 +222,7 @@ fn gen_evm_verifier(
     let proof = Plonk::read_proof(&svk, &protocol, &instances, &mut transcript).unwrap();
     Plonk::verify(&svk, &dk, &protocol, &instances, &proof).unwrap();
 
-    loader.deployment_code()
+    evm::compile_yul(&loader.yul_code())
 }
 
 fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {

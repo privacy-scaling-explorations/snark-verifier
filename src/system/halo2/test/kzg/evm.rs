@@ -24,7 +24,7 @@ macro_rules! halo2_kzg_evm_verify {
         use halo2_proofs::poly::commitment::ParamsProver;
         use std::rc::Rc;
         use $crate::{
-            loader::evm::{encode_calldata, execute, EvmLoader},
+            loader::evm::{compile_yul, encode_calldata, execute, EvmLoader},
             system::halo2::{
                 test::kzg::{BITS, LIMBS},
                 transcript::evm::EvmTranscript,
@@ -34,7 +34,7 @@ macro_rules! halo2_kzg_evm_verify {
         };
 
         let loader = EvmLoader::new::<Fq, Fr>();
-        let runtime_code = {
+        let deployment_code = {
             let svk = $params.get_g()[0].into();
             let dk = ($params.g2(), $params.s_g2()).into();
             let protocol = $protocol.loaded(&loader);
@@ -49,11 +49,11 @@ macro_rules! halo2_kzg_evm_verify {
                 .unwrap();
             <$plonk_verifier>::verify(&svk, &dk, &protocol, &instances, &proof).unwrap();
 
-            loader.runtime_code()
+            compile_yul(&loader.yul_code())
         };
 
         let (accept, total_cost, costs) =
-            execute(runtime_code, encode_calldata($instances, &$proof));
+            execute(deployment_code, encode_calldata($instances, &$proof));
 
         loader.print_gas_metering(costs);
         println!("Total gas cost: {}", total_cost);
