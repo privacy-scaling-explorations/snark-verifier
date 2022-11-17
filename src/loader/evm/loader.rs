@@ -440,7 +440,13 @@ impl EvmLoader {
         self.code.borrow_mut().runtime_append(code);
     }
 
-    fn end_gas_metering(self: &Rc<Self>) {}
+    fn end_gas_metering(self: &Rc<Self>) {
+        let code = format!(
+            "log1(0, 0, sub({}, gas()))",
+            self.gas_metering_ids.borrow().last().unwrap()
+        );
+        self.code.borrow_mut().runtime_append(code);
+    }
 
     pub fn print_gas_metering(self: &Rc<Self>, costs: Vec<u64>) {
         for (identifier, cost) in self.gas_metering_ids.borrow().iter().zip(costs) {
