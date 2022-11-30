@@ -2,12 +2,13 @@ use crate::{
     cost::Cost,
     util::{arithmetic::PrimeField, Itertools},
 };
-use ethereum_types::U256;
 use std::{
     io::Write,
     iter,
     process::{Command, Stdio},
 };
+
+pub use primitive_types::{H160 as Address, H256, U256, U512};
 
 pub(crate) mod executor;
 

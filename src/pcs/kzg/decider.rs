@@ -69,7 +69,7 @@ mod native {
 mod evm {
     use crate::{
         loader::{
-            evm::{loader::Value, EvmLoader},
+            evm::{loader::Value, EvmLoader, U256},
             LoadedScalar,
         },
         pcs::{
@@ -81,7 +81,6 @@ mod evm {
             msm::Msm,
         },
     };
-    use ethereum_types::U256;
     use std::{fmt::Debug, rc::Rc};
 
     impl<M, MOS> Decider<M::G1Affine, Rc<EvmLoader>> for Kzg<M, MOS>

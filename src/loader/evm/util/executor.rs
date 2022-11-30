@@ -1,7 +1,7 @@
 //! Copied and modified from https://github.com/foundry-rs/foundry/blob/master/evm/src/executor/mod.rs
 
+use crate::loader::evm::{Address, H256, U256};
 use bytes::Bytes;
-use ethereum_types::{Address, H256, U256, U64};
 use revm::{
     evm_inner, opcode, spec_opcode_gas, Account, BlockEnv, CallInputs, CallScheme, CreateInputs,
     CreateScheme, Database, DatabaseCommit, EVMData, Env, ExecutionResult, Gas, GasInspector,
@@ -77,14 +77,6 @@ pub struct Log {
     pub address: Address,
     pub topics: Vec<H256>,
     pub data: Bytes,
-    pub block_hash: Option<H256>,
-    pub block_number: Option<U64>,
-    pub transaction_hash: Option<H256>,
-    pub transaction_index: Option<U64>,
-    pub log_index: Option<U256>,
-    pub transaction_log_index: Option<U256>,
-    pub log_type: Option<String>,
-    pub removed: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -98,7 +90,6 @@ impl<DB: Database> Inspector<DB> for LogCollector {
             address: *address,
             topics: topics.to_vec(),
             data: data.clone(),
-            ..Default::default()
         });
     }
 

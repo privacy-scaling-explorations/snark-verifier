@@ -1,4 +1,3 @@
-use ethereum_types::Address;
 use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
     dev::MockProver,
@@ -17,7 +16,7 @@ use halo2_proofs::{
 use itertools::Itertools;
 use plonk_verifier::{
     loader::{
-        evm::{self, encode_calldata, EvmLoader, ExecutorBuilder},
+        evm::{self, encode_calldata, Address, EvmLoader, ExecutorBuilder},
         native::NativeLoader,
     },
     pcs::kzg::{Gwc19, Kzg, KzgAs, LimbsEncoding},

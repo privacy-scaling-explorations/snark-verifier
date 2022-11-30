@@ -1,8 +1,7 @@
 use crate::{
-    loader::evm::{test::tui::Tui, util::ExecutorBuilder},
+    loader::evm::{test::tui::Tui, Address, ExecutorBuilder, U256},
     util::Itertools,
 };
-use ethereum_types::{Address, U256};
 use std::env::var_os;
 
 mod tui;

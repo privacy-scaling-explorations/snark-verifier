@@ -149,7 +149,10 @@ pub struct QuotientPolynomial<F: Clone> {
 
 impl<F: Clone> QuotientPolynomial<F> {
     pub fn num_chunk(&self) -> usize {
-        Integer::div_ceil(&(self.numerator.degree() - 1), &self.chunk_degree)
+        Integer::div_ceil(
+            &(self.numerator.degree().checked_sub(1).unwrap_or_default()),
+            &self.chunk_degree,
+        )
     }
 }
 

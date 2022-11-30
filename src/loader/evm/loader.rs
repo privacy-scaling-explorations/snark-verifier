@@ -2,7 +2,7 @@ use crate::{
     loader::{
         evm::{
             code::{Precompiled, YulCode},
-            fe_to_u256, modulus, u256_to_fe,
+            fe_to_u256, modulus, u256_to_fe, U256, U512,
         },
         EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader,
     },
@@ -12,7 +12,6 @@ use crate::{
     },
     Error,
 };
-use ethereum_types::{U256, U512};
 use hex;
 use std::{
     cell::RefCell,
