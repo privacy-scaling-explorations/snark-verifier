@@ -20,11 +20,11 @@ rayon = { version = "1.5.3", optional = true }
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2022_10_22", optional = true }
 
 # loader_evm
-ethereum_types = { package = "ethereum-types", version = "0.13", default-features = false, features = ["std"], optional = true }
 sha3 = { version = "0.10", optional = true }
-revm = { version = "2.1.0", optional = true }
-bytes = { version = "1.2", optional = true }
-rlp = { version = "0.5", default-features = false, features = ["std"], optional = true }
+bytes = { version = "1.1.0", default-features = false, optional = true }
+primitive-types = { version = "0.12.1", default-features = false, features = ["std"], optional = true }
+rlp = { version = "0.5.2", default-features = false, features = ["std"], optional = true }
+revm = { version = "= 2.3.1", optional = true }
 
 # loader_halo2
 halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2022_10_22", package = "ecc", optional = true }
@@ -46,7 +46,7 @@ default = ["loader_evm", "loader_halo2", "system_halo2"]
 
 parallel = ["dep:rayon"]
 
-loader_evm = ["dep:ethereum_types", "dep:sha3", "dep:revm", "dep:bytes", "dep:rlp"]
+loader_evm = ["dep:bytes", "dep:sha3", "dep:primitive-types", "dep:rlp", "dep:revm"]
 loader_halo2 = ["dep:halo2_proofs", "dep:halo2_wrong_ecc", "dep:poseidon"]
 
 system_halo2 = ["dep:halo2_proofs"]

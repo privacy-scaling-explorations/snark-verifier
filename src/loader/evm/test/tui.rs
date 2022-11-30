@@ -1,6 +1,9 @@
 //! Copied and modified from https://github.com/foundry-rs/foundry/blob/master/ui/src/lib.rs
 
-use crate::loader::evm::util::executor::{CallKind, DebugStep};
+use crate::loader::evm::{
+    util::executor::{CallKind, DebugStep},
+    Address,
+};
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
@@ -9,7 +12,6 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ethereum_types::Address;
 use revm::opcode;
 use std::{
     cmp::{max, min},

@@ -1,6 +1,6 @@
 use crate::{
     cost::{Cost, CostEstimation},
-    loader::{native::NativeLoader, LoadedScalar, Loader},
+    loader::{LoadedScalar, Loader},
     pcs::{self, AccumulatorEncoding, MultiOpenScheme},
     util::{
         arithmetic::{CurveAffine, Field, Rotation},
@@ -394,14 +394,15 @@ where
     }
 }
 
-impl<C, MOS> CostEstimation<(C, MOS)> for Plonk<MOS>
+impl<C, L, MOS> CostEstimation<(C, L, MOS)> for Plonk<MOS>
 where
     C: CurveAffine,
-    MOS: MultiOpenScheme<C, NativeLoader> + CostEstimation<C, Input = Vec<pcs::Query<C::Scalar>>>,
+    L: Loader<C>,
+    MOS: MultiOpenScheme<C, L> + CostEstimation<C, Input = Vec<pcs::Query<C::Scalar>>>,
 {
-    type Input = Protocol<C>;
+    type Input = Protocol<C, L>;
 
-    fn estimate_cost(protocol: &Protocol<C>) -> Cost {
+    fn estimate_cost(protocol: &Protocol<C, L>) -> Cost {
         let plonk_cost = {
             let num_accumulator = protocol.accumulator_indices.len();
             let num_instance = protocol.num_instance.iter().sum();
@@ -412,7 +413,7 @@ where
             Cost::new(num_instance, num_commitment, num_evaluation, num_msm)
         };
         let pcs_cost = {
-            let queries = PlonkProof::<C, NativeLoader, MOS>::empty_queries(protocol);
+            let queries = PlonkProof::<C, L, MOS>::empty_queries(protocol);
             MOS::estimate_cost(&queries)
         };
         plonk_cost + pcs_cost

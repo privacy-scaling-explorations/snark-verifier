@@ -1,6 +1,6 @@
 use crate::{
     loader::{
-        evm::{loader::Value, u256_to_fe, EcPoint, EvmLoader, MemoryChunk, Scalar},
+        evm::{loader::Value, u256_to_fe, EcPoint, EvmLoader, MemoryChunk, Scalar, U256},
         native::{self, NativeLoader},
         Loader,
     },
@@ -12,7 +12,6 @@ use crate::{
     },
     Error,
 };
-use ethereum_types::U256;
 use halo2_proofs::transcript::EncodedChallenge;
 use std::{
     io::{self, Read, Write},
