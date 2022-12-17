@@ -1,3 +1,3 @@
-# PLONK Verifier
+# SNARK Verifier
 
-Generic PLONK verifier.
+Generic (S)NARK verifier.

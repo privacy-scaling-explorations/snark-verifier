@@ -14,7 +14,8 @@ use halo2_proofs::{
     transcript::{EncodedChallenge, TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 use itertools::Itertools;
-use plonk_verifier::{
+use rand::rngs::OsRng;
+use snark_verifier::{
     loader::{
         evm::{self, encode_calldata, Address, EvmLoader, ExecutorBuilder},
         native::NativeLoader,
@@ -23,7 +24,6 @@ use plonk_verifier::{
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     verifier::{self, PlonkVerifier},
 };
-use rand::rngs::OsRng;
 use std::{io::Cursor, rc::Rc};
 
 const LIMBS: usize = 4;
@@ -177,7 +177,7 @@ mod aggregation {
         EccConfig,
     };
     use itertools::Itertools;
-    use plonk_verifier::{
+    use snark_verifier::{
         loader::{self, native::NativeLoader},
         pcs::{
             kzg::{KzgAccumulator, KzgSuccinctVerifyingKey, LimbsEncodingInstructions},

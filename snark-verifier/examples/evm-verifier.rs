@@ -18,13 +18,13 @@ use halo2_proofs::{
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 use itertools::Itertools;
-use plonk_verifier::{
+use rand::{rngs::OsRng, RngCore};
+use snark_verifier::{
     loader::evm::{self, encode_calldata, Address, EvmLoader, ExecutorBuilder},
     pcs::kzg::{Gwc19, Kzg},
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
     verifier::{self, PlonkVerifier},
 };
-use rand::{rngs::OsRng, RngCore};
 use std::rc::Rc;
 
 type Plonk = verifier::Plonk<Kzg<Bn256, Gwc19>>;
