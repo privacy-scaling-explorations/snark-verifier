@@ -394,7 +394,7 @@ where
     }
 }
 
-impl<C, L, MOS> CostEstimation<(C, L, MOS)> for Plonk<MOS>
+impl<C, L, MOS, AE> CostEstimation<(C, L)> for Plonk<MOS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
