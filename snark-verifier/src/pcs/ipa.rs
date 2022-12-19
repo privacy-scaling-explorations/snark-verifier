@@ -1,6 +1,5 @@
 use crate::{
     loader::{native::NativeLoader, LoadedScalar, Loader, ScalarLoader},
-    pcs::PolynomialCommitmentScheme,
     util::{
         arithmetic::{
             inner_product, powers, Curve, CurveAffine, Domain, Field, Fraction, PrimeField,
@@ -24,21 +23,12 @@ mod multiopen;
 pub use accumulation::{IpaAs, IpaAsProof};
 pub use accumulator::IpaAccumulator;
 pub use decider::IpaDecidingKey;
-pub use multiopen::{Bgh19, Bgh19Proof, Bgh19SuccinctVerifyingKey};
+pub use multiopen::{Bgh19, Bgh19Proof};
 
 #[derive(Clone, Debug)]
-pub struct Ipa<C, MOS>(PhantomData<(C, MOS)>);
+pub struct Ipa<C>(PhantomData<C>);
 
-impl<C, L, MOS> PolynomialCommitmentScheme<C, L> for Ipa<C, MOS>
-where
-    C: CurveAffine,
-    L: Loader<C>,
-    MOS: Clone + Debug,
-{
-    type Accumulator = IpaAccumulator<C, L>;
-}
-
-impl<C, MOS> Ipa<C, MOS>
+impl<C> Ipa<C>
 where
     C: CurveAffine,
 {
@@ -204,11 +194,11 @@ impl<C: CurveAffine> IpaProvingKey<C> {
     }
 
     pub fn svk(&self) -> IpaSuccinctVerifyingKey<C> {
-        IpaSuccinctVerifyingKey::new(self.domain.clone(), self.h, self.s)
+        IpaSuccinctVerifyingKey::new(self.domain.clone(), self.g[0], self.h, self.s)
     }
 
     pub fn dk(&self) -> IpaDecidingKey<C> {
-        IpaDecidingKey::new(self.g.clone())
+        IpaDecidingKey::new(self.svk(), self.g.clone())
     }
 
     pub fn commit(&self, poly: &Polynomial<C::Scalar>, omega: Option<C::Scalar>) -> C {
@@ -244,13 +234,14 @@ impl<C: CurveAffine> IpaProvingKey<C> {
 #[derive(Clone, Debug)]
 pub struct IpaSuccinctVerifyingKey<C: CurveAffine> {
     pub domain: Domain<C::Scalar>,
+    pub g: C,
     pub h: C,
     pub s: Option<C>,
 }
 
 impl<C: CurveAffine> IpaSuccinctVerifyingKey<C> {
-    pub fn new(domain: Domain<C::Scalar>, h: C, s: Option<C>) -> Self {
-        Self { domain, h, s }
+    pub fn new(domain: Domain<C::Scalar>, g: C, h: C, s: Option<C>) -> Self {
+        Self { domain, g, h, s }
     }
 
     pub fn zk(&self) -> bool {
@@ -402,7 +393,7 @@ mod test {
     use crate::{
         pcs::{
             ipa::{self, IpaProvingKey},
-            Decider,
+            AccumulationDecider,
         },
         util::{arithmetic::Field, msm::Msm, poly::Polynomial},
     };
@@ -414,7 +405,8 @@ mod test {
 
     #[test]
     fn test_ipa() {
-        type Ipa = ipa::Ipa<pallas::Affine, ()>;
+        type Ipa = ipa::Ipa<pallas::Affine>;
+        type IpaAs = ipa::IpaAs<pallas::Affine>;
 
         let k = 10;
         let mut rng = OsRng;
@@ -441,7 +433,7 @@ mod test {
             };
 
             let dk = pk.dk();
-            assert!(Ipa::decide(&dk, accumulator));
+            assert!(IpaAs::decide(&dk, accumulator).is_ok());
         }
     }
 }

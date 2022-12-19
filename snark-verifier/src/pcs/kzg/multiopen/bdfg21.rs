@@ -2,8 +2,8 @@ use crate::{
     cost::{Cost, CostEstimation},
     loader::{LoadedScalar, Loader, ScalarLoader},
     pcs::{
-        kzg::{Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
-        MultiOpenScheme, Query,
+        kzg::{KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey},
+        PolynomialCommitmentScheme, Query,
     },
     util::{
         arithmetic::{ilog2, CurveAffine, FieldExt, Fraction, MultiMillerLoop},
@@ -21,13 +21,14 @@ use std::{
 #[derive(Clone, Debug)]
 pub struct Bdfg21;
 
-impl<M, L> MultiOpenScheme<M::G1Affine, L> for Kzg<M, Bdfg21>
+impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for KzgAs<M, Bdfg21>
 where
     M: MultiMillerLoop,
     L: Loader<M::G1Affine>,
 {
-    type SuccinctVerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
+    type VerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
     type Proof = Bdfg21Proof<M::G1Affine, L>;
+    type Output = KzgAccumulator<M::G1Affine, L>;
 
     fn read_proof<T>(
         _: &KzgSuccinctVerifyingKey<M::G1Affine>,
@@ -40,13 +41,13 @@ where
         Bdfg21Proof::read(transcript)
     }
 
-    fn succinct_verify(
+    fn verify(
         svk: &KzgSuccinctVerifyingKey<M::G1Affine>,
         commitments: &[Msm<M::G1Affine, L>],
         z: &L::LoadedScalar,
         queries: &[Query<M::Scalar, L::LoadedScalar>],
         proof: &Bdfg21Proof<M::G1Affine, L>,
-    ) -> Result<Self::Accumulator, Error> {
+    ) -> Result<Self::Output, Error> {
         let sets = query_sets(queries);
         let f = {
             let coeffs = query_set_coeffs(&sets, z, &proof.z_prime);
@@ -366,7 +367,7 @@ where
     }
 }
 
-impl<M> CostEstimation<M::G1Affine> for Kzg<M, Bdfg21>
+impl<M> CostEstimation<M::G1Affine> for KzgAs<M, Bdfg21>
 where
     M: MultiMillerLoop,
 {

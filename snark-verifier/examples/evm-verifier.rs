@@ -21,13 +21,13 @@ use itertools::Itertools;
 use rand::{rngs::OsRng, RngCore};
 use snark_verifier::{
     loader::evm::{self, encode_calldata, Address, EvmLoader, ExecutorBuilder},
-    pcs::kzg::{Gwc19, Kzg},
+    pcs::kzg::{Gwc19, KzgAs},
     system::halo2::{compile, transcript::evm::EvmTranscript, Config},
-    verifier::{self, PlonkVerifier},
+    verifier::{self, SnarkVerifier},
 };
 use std::rc::Rc;
 
-type Plonk = verifier::Plonk<Kzg<Bn256, Gwc19>>;
+type PlonkVerifier = verifier::plonk::PlonkVerifier<KzgAs<Bn256, Gwc19>>;
 
 #[derive(Clone, Copy)]
 struct StandardPlonkConfig {
@@ -205,21 +205,20 @@ fn gen_evm_verifier(
     vk: &VerifyingKey<G1Affine>,
     num_instance: Vec<usize>,
 ) -> Vec<u8> {
-    let svk = params.get_g()[0].into();
-    let dk = (params.g2(), params.s_g2()).into();
     let protocol = compile(
         params,
         vk,
         Config::kzg().with_num_instance(num_instance.clone()),
     );
+    let vk = (params.get_g()[0], params.g2(), params.s_g2()).into();
 
     let loader = EvmLoader::new::<Fq, Fr>();
     let protocol = protocol.loaded(&loader);
     let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(&loader);
 
     let instances = transcript.load_instances(num_instance);
-    let proof = Plonk::read_proof(&svk, &protocol, &instances, &mut transcript).unwrap();
-    Plonk::verify(&svk, &dk, &protocol, &instances, &proof).unwrap();
+    let proof = PlonkVerifier::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
+    PlonkVerifier::verify(&vk, &protocol, &instances, &proof).unwrap();
 
     evm::compile_yul(&loader.yul_code())
 }

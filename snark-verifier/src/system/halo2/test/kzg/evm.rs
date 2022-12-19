@@ -1,6 +1,6 @@
 use crate::{
     loader::native::NativeLoader,
-    pcs::kzg::{Bdfg21, Gwc19, Kzg, LimbsEncoding},
+    pcs::kzg::{Bdfg21, Gwc19, KzgAs, LimbsEncoding},
     system::halo2::{
         test::{
             kzg::{
@@ -11,7 +11,7 @@ use crate::{
         },
         transcript::evm::{ChallengeEvm, EvmTranscript},
     },
-    verifier::Plonk,
+    verifier::plonk::PlonkVerifier,
 };
 use halo2_curves::bn256::{Bn256, G1Affine};
 use halo2_proofs::poly::kzg::multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK};
@@ -30,13 +30,12 @@ macro_rules! halo2_kzg_evm_verify {
                 transcript::evm::EvmTranscript,
             },
             util::Itertools,
-            verifier::PlonkVerifier,
+            verifier::SnarkVerifier,
         };
 
         let loader = EvmLoader::new::<Fq, Fr>();
         let deployment_code = {
-            let svk = $params.get_g()[0].into();
-            let dk = ($params.g2(), $params.s_g2()).into();
+            let vk = ($params.get_g()[0].into(), $params.g2(), $params.s_g2()).into();
             let protocol = $protocol.loaded(&loader);
             let mut transcript = EvmTranscript::<_, Rc<EvmLoader>, _, _>::new(&loader);
             let instances = transcript.load_instances(
@@ -45,9 +44,9 @@ macro_rules! halo2_kzg_evm_verify {
                     .map(|instances| instances.len())
                     .collect_vec(),
             );
-            let proof = <$plonk_verifier>::read_proof(&svk, &protocol, &instances, &mut transcript)
-                .unwrap();
-            <$plonk_verifier>::verify(&svk, &dk, &protocol, &instances, &proof).unwrap();
+            let proof =
+                <$plonk_verifier>::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
+            <$plonk_verifier>::verify(&vk, &protocol, &instances, &proof).unwrap();
 
             compile_yul(&loader.yul_code())
         };
@@ -101,11 +100,11 @@ macro_rules! test {
         }
     };
     ($name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
-        test!(@ #[test], shplonk, $name, $k, $config, $create_circuit, ProverSHPLONK<_>, VerifierSHPLONK<_>, Plonk<Kzg<Bn256, Bdfg21>, LimbsEncoding<LIMBS, BITS>>);
-        test!(@ #[test], plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, Plonk<Kzg<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ #[test], shplonk, $name, $k, $config, $create_circuit, ProverSHPLONK<_>, VerifierSHPLONK<_>, PlonkVerifier<KzgAs<Bn256, Bdfg21>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ #[test], plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, PlonkVerifier<KzgAs<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
     };
     ($(#[$attr:meta],)* $name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
-        test!(@ #[test] $(,#[$attr])*, plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, Plonk<Kzg<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ #[test] $(,#[$attr])*, plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, PlonkVerifier<KzgAs<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
     };
 }
 

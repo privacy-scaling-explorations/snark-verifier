@@ -1,5 +1,5 @@
 use crate::{
-    loader::{LoadedScalar, Loader},
+    loader::{native::NativeLoader, LoadedScalar, Loader},
     util::{
         arithmetic::{CurveAffine, Domain, Field, Fraction, Rotation},
         Itertools,
@@ -14,6 +14,106 @@ use std::{
     iter::{self, Sum},
     ops::{Add, Mul, Neg, Sub},
 };
+
+#[derive(Clone, Debug)]
+pub struct PlonkProtocol<C, L = NativeLoader>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
+    // Common description
+    pub domain: Domain<C::Scalar>,
+    pub preprocessed: Vec<L::LoadedEcPoint>,
+    pub num_instance: Vec<usize>,
+    pub num_witness: Vec<usize>,
+    pub num_challenge: Vec<usize>,
+    pub evaluations: Vec<Query>,
+    pub queries: Vec<Query>,
+    pub quotient: QuotientPolynomial<C::Scalar>,
+    // Minor customization
+    pub transcript_initial_state: Option<L::LoadedScalar>,
+    pub instance_committing_key: Option<InstanceCommittingKey<C>>,
+    pub linearization: Option<LinearizationStrategy>,
+    pub accumulator_indices: Vec<Vec<(usize, usize)>>,
+}
+
+impl<C> PlonkProtocol<C>
+where
+    C: CurveAffine,
+{
+    pub fn loaded<L: Loader<C>>(&self, loader: &L) -> PlonkProtocol<C, L> {
+        let preprocessed = self
+            .preprocessed
+            .iter()
+            .map(|preprocessed| loader.ec_point_load_const(preprocessed))
+            .collect();
+        let transcript_initial_state = self
+            .transcript_initial_state
+            .as_ref()
+            .map(|transcript_initial_state| loader.load_const(transcript_initial_state));
+        PlonkProtocol {
+            domain: self.domain.clone(),
+            preprocessed,
+            num_instance: self.num_instance.clone(),
+            num_witness: self.num_witness.clone(),
+            num_challenge: self.num_challenge.clone(),
+            evaluations: self.evaluations.clone(),
+            queries: self.queries.clone(),
+            quotient: self.quotient.clone(),
+            transcript_initial_state,
+            instance_committing_key: self.instance_committing_key.clone(),
+            linearization: self.linearization,
+            accumulator_indices: self.accumulator_indices.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "loader_halo2")]
+mod halo2 {
+    use crate::{
+        loader::halo2::{EccInstructions, Halo2Loader},
+        util::arithmetic::CurveAffine,
+        verifier::plonk::PlonkProtocol,
+    };
+    use halo2_proofs::circuit;
+    use std::rc::Rc;
+
+    impl<C> PlonkProtocol<C>
+    where
+        C: CurveAffine,
+    {
+        pub fn loaded_preprocessed_as_witness<'a, EccChip: EccInstructions<'a, C>>(
+            &self,
+            loader: &Rc<Halo2Loader<'a, C, EccChip>>,
+        ) -> PlonkProtocol<C, Rc<Halo2Loader<'a, C, EccChip>>> {
+            let preprocessed = self
+                .preprocessed
+                .iter()
+                .map(|preprocessed| loader.assign_ec_point(circuit::Value::known(*preprocessed)))
+                .collect();
+            let transcript_initial_state =
+                self.transcript_initial_state
+                    .as_ref()
+                    .map(|transcript_initial_state| {
+                        loader.assign_scalar(circuit::Value::known(*transcript_initial_state))
+                    });
+            PlonkProtocol {
+                domain: self.domain.clone(),
+                preprocessed,
+                num_instance: self.num_instance.clone(),
+                num_witness: self.num_witness.clone(),
+                num_challenge: self.num_challenge.clone(),
+                evaluations: self.evaluations.clone(),
+                queries: self.queries.clone(),
+                quotient: self.quotient.clone(),
+                transcript_initial_state,
+                instance_committing_key: self.instance_committing_key.clone(),
+                linearization: self.linearization,
+                accumulator_indices: self.accumulator_indices.clone(),
+            }
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum CommonPolynomial {

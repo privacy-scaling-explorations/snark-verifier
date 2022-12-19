@@ -1,50 +1,55 @@
 use crate::{
     cost::{Cost, CostEstimation},
-    loader::{LoadedScalar, Loader},
-    pcs::{self, AccumulatorEncoding, MultiOpenScheme},
-    util::{
-        arithmetic::{CurveAffine, Field, Rotation},
-        msm::Msm,
-        protocol::{
-            CommonPolynomial::Lagrange, CommonPolynomialEvaluation, LinearizationStrategy, Query,
-        },
-        transcript::TranscriptRead,
-        Itertools,
+    loader::Loader,
+    pcs::{
+        AccumulationDecider, AccumulationScheme, AccumulatorEncoding, PolynomialCommitmentScheme,
+        Query,
     },
-    verifier::PlonkVerifier,
-    Error, Protocol,
+    util::{arithmetic::CurveAffine, transcript::TranscriptRead},
+    verifier::{plonk::protocol::CommonPolynomialEvaluation, SnarkVerifier},
+    Error,
 };
-use std::{collections::HashMap, iter, marker::PhantomData};
+use std::{iter, marker::PhantomData};
 
-pub struct Plonk<MOS, AE = ()>(PhantomData<(MOS, AE)>);
+mod proof;
+pub(crate) mod protocol;
 
-impl<C, L, MOS, AE> PlonkVerifier<C, L, MOS> for Plonk<MOS, AE>
+pub use proof::PlonkProof;
+pub use protocol::PlonkProtocol;
+
+pub struct PlonkSuccinctVerifier<AS, AE = PhantomData<AS>>(PhantomData<(AS, AE)>);
+
+impl<C, L, AS, AE> SnarkVerifier<C, L> for PlonkSuccinctVerifier<AS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
-    MOS: MultiOpenScheme<C, L>,
-    AE: AccumulatorEncoding<C, L, MOS>,
+    AS: AccumulationScheme<C, L>
+        + PolynomialCommitmentScheme<C, L, Output = <AS as AccumulationScheme<C, L>>::Accumulator>,
+    AE: AccumulatorEncoding<C, L, Accumulator = <AS as AccumulationScheme<C, L>>::Accumulator>,
 {
-    type Proof = PlonkProof<C, L, MOS>;
+    type VerifyingKey = <AS as PolynomialCommitmentScheme<C, L>>::VerifyingKey;
+    type Protocol = PlonkProtocol<C, L>;
+    type Proof = PlonkProof<C, L, AS, AE>;
+    type Output = Vec<AE::Accumulator>;
 
     fn read_proof<T>(
-        svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C, L>,
+        svk: &Self::VerifyingKey,
+        protocol: &Self::Protocol,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
     where
         T: TranscriptRead<C, L>,
     {
-        PlonkProof::read::<T, AE>(svk, protocol, instances, transcript)
+        PlonkProof::read::<T>(svk, protocol, instances, transcript)
     }
 
-    fn succinct_verify(
-        svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C, L>,
+    fn verify(
+        svk: &Self::VerifyingKey,
+        protocol: &Self::Protocol,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<Vec<MOS::Accumulator>, Error> {
+    ) -> Result<Self::Output, Error> {
         let common_poly_eval = {
             let mut common_poly_eval = CommonPolynomialEvaluation::new(
                 &protocol.domain,
@@ -62,7 +67,13 @@ where
         let commitments = proof.commitments(protocol, &common_poly_eval, &mut evaluations)?;
         let queries = proof.queries(protocol, evaluations);
 
-        let accumulator = MOS::succinct_verify(svk, &commitments, &proof.z, &queries, &proof.pcs)?;
+        let accumulator = <AS as PolynomialCommitmentScheme<C, L>>::verify(
+            svk,
+            &commitments,
+            &proof.z,
+            &queries,
+            &proof.pcs,
+        )?;
 
         let accumulators = iter::empty()
             .chain(Some(accumulator))
@@ -73,336 +84,56 @@ where
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PlonkProof<C, L, MOS>
-where
-    C: CurveAffine,
-    L: Loader<C>,
-    MOS: MultiOpenScheme<C, L>,
-{
-    pub committed_instances: Option<Vec<L::LoadedEcPoint>>,
-    pub witnesses: Vec<L::LoadedEcPoint>,
-    pub challenges: Vec<L::LoadedScalar>,
-    pub quotients: Vec<L::LoadedEcPoint>,
-    pub z: L::LoadedScalar,
-    pub evaluations: Vec<L::LoadedScalar>,
-    pub pcs: MOS::Proof,
-    pub old_accumulators: Vec<MOS::Accumulator>,
-}
+pub struct PlonkVerifier<AS, AE = PhantomData<AS>>(PhantomData<(AS, AE)>);
 
-impl<C, L, MOS> PlonkProof<C, L, MOS>
+impl<C, L, AS, AE> SnarkVerifier<C, L> for PlonkVerifier<AS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
-    MOS: MultiOpenScheme<C, L>,
+    AS: AccumulationDecider<C, L>
+        + PolynomialCommitmentScheme<C, L, Output = <AS as AccumulationScheme<C, L>>::Accumulator>,
+    AS::DecidingKey: AsRef<<AS as PolynomialCommitmentScheme<C, L>>::VerifyingKey>,
+    AE: AccumulatorEncoding<C, L, Accumulator = <AS as AccumulationScheme<C, L>>::Accumulator>,
 {
-    pub fn read<T, AE>(
-        svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C, L>,
+    type VerifyingKey = AS::DecidingKey;
+    type Protocol = PlonkProtocol<C, L>;
+    type Proof = PlonkProof<C, L, AS, AE>;
+    type Output = ();
+
+    fn read_proof<T>(
+        vk: &Self::VerifyingKey,
+        protocol: &Self::Protocol,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
-    ) -> Result<Self, Error>
+    ) -> Result<Self::Proof, Error>
     where
         T: TranscriptRead<C, L>,
-        AE: AccumulatorEncoding<C, L, MOS>,
     {
-        if let Some(transcript_initial_state) = &protocol.transcript_initial_state {
-            transcript.common_scalar(transcript_initial_state)?;
-        }
-
-        if protocol.num_instance
-            != instances
-                .iter()
-                .map(|instances| instances.len())
-                .collect_vec()
-        {
-            return Err(Error::InvalidInstances);
-        }
-
-        let committed_instances = if let Some(ick) = &protocol.instance_committing_key {
-            let loader = transcript.loader();
-            let bases = ick
-                .bases
-                .iter()
-                .map(|value| loader.ec_point_load_const(value))
-                .collect_vec();
-            let constant = ick
-                .constant
-                .as_ref()
-                .map(|value| loader.ec_point_load_const(value));
-
-            let committed_instances = instances
-                .iter()
-                .map(|instances| {
-                    instances
-                        .iter()
-                        .zip(bases.iter())
-                        .map(|(scalar, base)| Msm::<C, L>::base(base) * scalar)
-                        .chain(constant.as_ref().map(Msm::base))
-                        .sum::<Msm<_, _>>()
-                        .evaluate(None)
-                })
-                .collect_vec();
-            for committed_instance in committed_instances.iter() {
-                transcript.common_ec_point(committed_instance)?;
-            }
-
-            Some(committed_instances)
-        } else {
-            for instances in instances.iter() {
-                for instance in instances.iter() {
-                    transcript.common_scalar(instance)?;
-                }
-            }
-
-            None
-        };
-
-        let (witnesses, challenges) = {
-            let (witnesses, challenges) = protocol
-                .num_witness
-                .iter()
-                .zip(protocol.num_challenge.iter())
-                .map(|(&n, &m)| {
-                    Ok((
-                        transcript.read_n_ec_points(n)?,
-                        transcript.squeeze_n_challenges(m),
-                    ))
-                })
-                .collect::<Result<Vec<_>, Error>>()?
-                .into_iter()
-                .unzip::<_, _, Vec<_>, Vec<_>>();
-
-            (
-                witnesses.into_iter().flatten().collect_vec(),
-                challenges.into_iter().flatten().collect_vec(),
-            )
-        };
-
-        let quotients = transcript.read_n_ec_points(protocol.quotient.num_chunk())?;
-
-        let z = transcript.squeeze_challenge();
-        let evaluations = transcript.read_n_scalars(protocol.evaluations.len())?;
-
-        let pcs = MOS::read_proof(svk, &Self::empty_queries(protocol), transcript)?;
-
-        let old_accumulators = protocol
-            .accumulator_indices
-            .iter()
-            .map(|accumulator_indices| {
-                AE::from_repr(
-                    &accumulator_indices
-                        .iter()
-                        .map(|&(i, j)| &instances[i][j])
-                        .collect_vec(),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Self {
-            committed_instances,
-            witnesses,
-            challenges,
-            quotients,
-            z,
-            evaluations,
-            pcs,
-            old_accumulators,
-        })
+        PlonkProof::read::<T>(vk.as_ref(), protocol, instances, transcript)
     }
 
-    pub fn empty_queries(protocol: &Protocol<C, L>) -> Vec<pcs::Query<C::Scalar>> {
-        protocol
-            .queries
-            .iter()
-            .map(|query| pcs::Query {
-                poly: query.poly,
-                shift: protocol
-                    .domain
-                    .rotate_scalar(C::Scalar::one(), query.rotation),
-                eval: (),
-            })
-            .collect()
-    }
-
-    fn queries(
-        &self,
-        protocol: &Protocol<C, L>,
-        mut evaluations: HashMap<Query, L::LoadedScalar>,
-    ) -> Vec<pcs::Query<C::Scalar, L::LoadedScalar>> {
-        Self::empty_queries(protocol)
-            .into_iter()
-            .zip(
-                protocol
-                    .queries
-                    .iter()
-                    .map(|query| evaluations.remove(query).unwrap()),
-            )
-            .map(|(query, eval)| query.with_evaluation(eval))
-            .collect()
-    }
-
-    fn commitments<'a>(
-        &'a self,
-        protocol: &'a Protocol<C, L>,
-        common_poly_eval: &CommonPolynomialEvaluation<C, L>,
-        evaluations: &mut HashMap<Query, L::LoadedScalar>,
-    ) -> Result<Vec<Msm<C, L>>, Error> {
-        let loader = common_poly_eval.zn().loader();
-        let mut commitments = iter::empty()
-            .chain(protocol.preprocessed.iter().map(Msm::base))
-            .chain(
-                self.committed_instances
-                    .as_ref()
-                    .map(|committed_instances| {
-                        committed_instances.iter().map(Msm::base).collect_vec()
-                    })
-                    .unwrap_or_else(|| {
-                        iter::repeat_with(Default::default)
-                            .take(protocol.num_instance.len())
-                            .collect_vec()
-                    }),
-            )
-            .chain(self.witnesses.iter().map(Msm::base))
-            .collect_vec();
-
-        let numerator = protocol.quotient.numerator.evaluate(
-            &|scalar| Ok(Msm::constant(loader.load_const(&scalar))),
-            &|poly| Ok(Msm::constant(common_poly_eval.get(poly).clone())),
-            &|query| {
-                evaluations
-                    .get(&query)
-                    .cloned()
-                    .map(Msm::constant)
-                    .or_else(|| {
-                        (query.rotation == Rotation::cur())
-                            .then(|| commitments.get(query.poly).cloned())
-                            .flatten()
-                    })
-                    .ok_or(Error::InvalidQuery(query))
-            },
-            &|index| {
-                self.challenges
-                    .get(index)
-                    .cloned()
-                    .map(Msm::constant)
-                    .ok_or(Error::InvalidChallenge(index))
-            },
-            &|a| Ok(-a?),
-            &|a, b| Ok(a? + b?),
-            &|a, b| {
-                let (a, b) = (a?, b?);
-                match (a.size(), b.size()) {
-                    (0, _) => Ok(b * &a.try_into_constant().unwrap()),
-                    (_, 0) => Ok(a * &b.try_into_constant().unwrap()),
-                    (_, _) => Err(Error::InvalidLinearization),
-                }
-            },
-            &|a, scalar| Ok(a? * &loader.load_const(&scalar)),
-        )?;
-
-        let quotient_query = Query::new(
-            protocol.preprocessed.len() + protocol.num_instance.len() + self.witnesses.len(),
-            Rotation::cur(),
-        );
-        let quotient = common_poly_eval
-            .zn()
-            .pow_const(protocol.quotient.chunk_degree as u64)
-            .powers(self.quotients.len())
-            .into_iter()
-            .zip(self.quotients.iter().map(Msm::base))
-            .map(|(coeff, chunk)| chunk * &coeff)
-            .sum::<Msm<_, _>>();
-        match protocol.linearization {
-            Some(LinearizationStrategy::WithoutConstant) => {
-                let linearization_query = Query::new(quotient_query.poly + 1, Rotation::cur());
-                let (msm, constant) = numerator.split();
-                commitments.push(quotient);
-                commitments.push(msm);
-                evaluations.insert(
-                    quotient_query,
-                    (constant.unwrap_or_else(|| loader.load_zero())
-                        + evaluations.get(&linearization_query).unwrap())
-                        * common_poly_eval.zn_minus_one_inv(),
-                );
-            }
-            Some(LinearizationStrategy::MinusVanishingTimesQuotient) => {
-                let (msm, constant) =
-                    (numerator - quotient * common_poly_eval.zn_minus_one()).split();
-                commitments.push(msm);
-                evaluations.insert(
-                    quotient_query,
-                    constant.unwrap_or_else(|| loader.load_zero()),
-                );
-            }
-            None => {
-                commitments.push(quotient);
-                evaluations.insert(
-                    quotient_query,
-                    numerator
-                        .try_into_constant()
-                        .ok_or(Error::InvalidLinearization)?
-                        * common_poly_eval.zn_minus_one_inv(),
-                );
-            }
-        }
-
-        Ok(commitments)
-    }
-
-    fn evaluations(
-        &self,
-        protocol: &Protocol<C, L>,
+    fn verify(
+        vk: &Self::VerifyingKey,
+        protocol: &Self::Protocol,
         instances: &[Vec<L::LoadedScalar>],
-        common_poly_eval: &CommonPolynomialEvaluation<C, L>,
-    ) -> Result<HashMap<Query, L::LoadedScalar>, Error> {
-        let loader = common_poly_eval.zn().loader();
-        let instance_evals = protocol.instance_committing_key.is_none().then(|| {
-            let offset = protocol.preprocessed.len();
-            let queries = {
-                let range = offset..offset + protocol.num_instance.len();
-                protocol
-                    .quotient
-                    .numerator
-                    .used_query()
-                    .into_iter()
-                    .filter(move |query| range.contains(&query.poly))
-            };
-            queries
-                .map(move |query| {
-                    let instances = instances[query.poly - offset].iter();
-                    let l_i_minus_r = (-query.rotation.0..)
-                        .map(|i_minus_r| common_poly_eval.get(Lagrange(i_minus_r)));
-                    let eval = loader.sum_products(&instances.zip(l_i_minus_r).collect_vec());
-                    (query, eval)
-                })
-                .collect_vec()
-        });
-
-        let evals = iter::empty()
-            .chain(instance_evals.into_iter().flatten())
-            .chain(
-                protocol
-                    .evaluations
-                    .iter()
-                    .cloned()
-                    .zip(self.evaluations.iter().cloned()),
-            )
-            .collect();
-
-        Ok(evals)
+        proof: &Self::Proof,
+    ) -> Result<Self::Output, Error> {
+        let accumulators =
+            PlonkSuccinctVerifier::<AS, AE>::verify(vk.as_ref(), protocol, instances, proof)?;
+        AS::decide_all(vk, accumulators)
     }
 }
 
-impl<C, L, MOS, AE> CostEstimation<(C, L)> for Plonk<MOS, AE>
+impl<C, L, AS, AE> CostEstimation<(C, L)> for PlonkSuccinctVerifier<AS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
-    MOS: MultiOpenScheme<C, L> + CostEstimation<C, Input = Vec<pcs::Query<C::Scalar>>>,
+    AS: PolynomialCommitmentScheme<C, L> + CostEstimation<C, Input = Vec<Query<C::Scalar>>>,
+    AE: AccumulatorEncoding<C, L>,
 {
-    type Input = Protocol<C, L>;
+    type Input = PlonkProtocol<C, L>;
 
-    fn estimate_cost(protocol: &Protocol<C, L>) -> Cost {
+    fn estimate_cost(protocol: &PlonkProtocol<C, L>) -> Cost {
         let plonk_cost = {
             let num_accumulator = protocol.accumulator_indices.len();
             let num_instance = protocol.num_instance.iter().sum();
@@ -413,15 +144,15 @@ where
             Cost::new(num_instance, num_commitment, num_evaluation, num_msm)
         };
         let pcs_cost = {
-            let queries = PlonkProof::<C, L, MOS>::empty_queries(protocol);
-            MOS::estimate_cost(&queries)
+            let queries = PlonkProof::<C, L, AS, AE>::empty_queries(protocol);
+            AS::estimate_cost(&queries)
         };
         plonk_cost + pcs_cost
     }
 }
 
 fn langranges<C, L>(
-    protocol: &Protocol<C, L>,
+    protocol: &PlonkProtocol<C, L>,
     instances: &[Vec<L::LoadedScalar>],
 ) -> impl IntoIterator<Item = i32>
 where

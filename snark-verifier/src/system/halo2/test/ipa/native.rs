@@ -1,10 +1,10 @@
 use crate::{
-    pcs::ipa::{Bgh19, Ipa},
+    pcs::ipa::{Bgh19, IpaAs},
     system::halo2::test::ipa::{
         halo2_ipa_config, halo2_ipa_create_snark, halo2_ipa_native_verify, halo2_ipa_prepare,
     },
     system::halo2::test::StandardPlonk,
-    verifier::Plonk,
+    verifier::plonk::PlonkVerifier,
 };
 use halo2_curves::pasta::pallas;
 use halo2_proofs::{
@@ -47,7 +47,7 @@ macro_rules! test {
         }
     };
     ($name:ident, $k:expr, $config:expr, $create_cirucit:expr) => {
-        test!(@ $name, $k, $config, $create_cirucit, ProverIPA<pallas::Affine>, VerifierIPA<pallas::Affine>, Plonk::<Ipa<pallas::Affine, Bgh19>>);
+        test!(@ $name, $k, $config, $create_cirucit, ProverIPA<pallas::Affine>, VerifierIPA<pallas::Affine>, PlonkVerifier::<IpaAs<pallas::Affine, Bgh19>>);
     }
 }
 

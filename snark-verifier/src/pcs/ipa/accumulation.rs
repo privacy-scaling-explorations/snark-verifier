@@ -4,7 +4,7 @@ use crate::{
         ipa::{
             h_coeffs, h_eval, Ipa, IpaAccumulator, IpaProof, IpaProvingKey, IpaSuccinctVerifyingKey,
         },
-        AccumulationScheme, AccumulationSchemeProver, PolynomialCommitmentScheme,
+        AccumulationScheme, AccumulationSchemeProver,
     },
     util::{
         arithmetic::{Curve, CurveAffine, Field},
@@ -16,23 +16,24 @@ use crate::{
     Error,
 };
 use rand::Rng;
-use std::{array, iter, marker::PhantomData};
+use std::{array, fmt::Debug, iter, marker::PhantomData};
 
 #[derive(Clone, Debug)]
-pub struct IpaAs<PCS>(PhantomData<PCS>);
+pub struct IpaAs<C, MOS = ()>(PhantomData<(C, MOS)>);
 
-impl<C, L, PCS> AccumulationScheme<C, L, PCS> for IpaAs<PCS>
+impl<C, L, MOS> AccumulationScheme<C, L> for IpaAs<C, MOS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = IpaAccumulator<C, L>>,
+    MOS: Clone + Debug,
 {
+    type Accumulator = IpaAccumulator<C, L>;
     type VerifyingKey = IpaSuccinctVerifyingKey<C>;
-    type Proof = IpaAsProof<C, L, PCS>;
+    type Proof = IpaAsProof<C, L>;
 
     fn read_proof<T>(
         vk: &Self::VerifyingKey,
-        instances: &[PCS::Accumulator],
+        instances: &[Self::Accumulator],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
     where
@@ -43,9 +44,9 @@ where
 
     fn verify(
         vk: &Self::VerifyingKey,
-        instances: &[PCS::Accumulator],
+        instances: &[Self::Accumulator],
         proof: &Self::Proof,
-    ) -> Result<PCS::Accumulator, Error> {
+    ) -> Result<Self::Accumulator, Error> {
         let loader = proof.z.loader();
         let s = vk.s.as_ref().map(|s| loader.ec_point_load_const(s));
 
@@ -71,34 +72,31 @@ where
         }
         let v = loader.sum_products(&powers_of_alpha.iter().zip(h.iter()).collect_vec());
 
-        Ipa::<C, ()>::succinct_verify(vk, &c, &proof.z, &v, &proof.ipa)
+        Ipa::succinct_verify(vk, &c, &proof.z, &v, &proof.ipa)
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct IpaAsProof<C, L, PCS>
+pub struct IpaAsProof<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = IpaAccumulator<C, L>>,
 {
     a_b_u: Option<(L::LoadedScalar, L::LoadedScalar, L::LoadedEcPoint)>,
     omega: Option<L::LoadedScalar>,
     alpha: L::LoadedScalar,
     z: L::LoadedScalar,
     ipa: IpaProof<C, L>,
-    _marker: PhantomData<PCS>,
 }
 
-impl<C, L, PCS> IpaAsProof<C, L, PCS>
+impl<C, L> IpaAsProof<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = IpaAccumulator<C, L>>,
 {
     fn read<T>(
         vk: &IpaSuccinctVerifyingKey<C>,
-        instances: &[PCS::Accumulator],
+        instances: &[IpaAccumulator<C, L>],
         transcript: &mut T,
     ) -> Result<Self, Error>
     where
@@ -141,24 +139,23 @@ where
             alpha,
             z,
             ipa,
-            _marker: PhantomData,
         })
     }
 }
 
-impl<C, PCS> AccumulationSchemeProver<C, PCS> for IpaAs<PCS>
+impl<C, MOS> AccumulationSchemeProver<C> for IpaAs<C, MOS>
 where
     C: CurveAffine,
-    PCS: PolynomialCommitmentScheme<C, NativeLoader, Accumulator = IpaAccumulator<C, NativeLoader>>,
+    MOS: Clone + Debug,
 {
     type ProvingKey = IpaProvingKey<C>;
 
     fn create_proof<T, R>(
         pk: &Self::ProvingKey,
-        instances: &[PCS::Accumulator],
+        instances: &[IpaAccumulator<C, NativeLoader>],
         transcript: &mut T,
         mut rng: R,
-    ) -> Result<PCS::Accumulator, Error>
+    ) -> Result<IpaAccumulator<C, NativeLoader>, Error>
     where
         T: TranscriptWrite<C>,
         R: Rng,
@@ -216,7 +213,7 @@ where
             .map(|(power_of_alpha, h)| h * power_of_alpha)
             .sum::<Polynomial<_>>();
 
-        Ipa::<C, ()>::create_proof(pk, &h.to_vec(), &z, omega.as_ref(), transcript, &mut rng)
+        Ipa::create_proof(pk, &h.to_vec(), &z, omega.as_ref(), transcript, &mut rng)
     }
 }
 
@@ -225,7 +222,7 @@ mod test {
     use crate::{
         pcs::{
             ipa::{self, IpaProvingKey},
-            AccumulationScheme, AccumulationSchemeProver, Decider,
+            AccumulationDecider, AccumulationScheme, AccumulationSchemeProver,
         },
         util::{arithmetic::Field, msm::Msm, poly::Polynomial, Itertools},
     };
@@ -238,8 +235,8 @@ mod test {
 
     #[test]
     fn test_ipa_as() {
-        type Ipa = ipa::Ipa<pallas::Affine, ()>;
-        type IpaAs = ipa::IpaAs<Ipa>;
+        type Ipa = ipa::Ipa<pallas::Affine>;
+        type IpaAs = ipa::IpaAs<pallas::Affine>;
 
         let k = 10;
         let zk = true;
@@ -286,6 +283,6 @@ mod test {
         };
 
         let dk = pk.dk();
-        assert!(Ipa::decide(&dk, accumulator));
+        assert!(IpaAs::decide(&dk, accumulator).is_ok());
     }
 }

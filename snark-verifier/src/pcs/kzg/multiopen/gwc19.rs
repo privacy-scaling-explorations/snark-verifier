@@ -2,8 +2,8 @@ use crate::{
     cost::{Cost, CostEstimation},
     loader::{LoadedScalar, Loader},
     pcs::{
-        kzg::{Kzg, KzgAccumulator, KzgSuccinctVerifyingKey},
-        MultiOpenScheme, Query,
+        kzg::{KzgAccumulator, KzgAs, KzgSuccinctVerifyingKey},
+        PolynomialCommitmentScheme, Query,
     },
     util::{
         arithmetic::{CurveAffine, MultiMillerLoop, PrimeField},
@@ -17,16 +17,17 @@ use crate::{
 #[derive(Clone, Debug)]
 pub struct Gwc19;
 
-impl<M, L> MultiOpenScheme<M::G1Affine, L> for Kzg<M, Gwc19>
+impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
     L: Loader<M::G1Affine>,
 {
-    type SuccinctVerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
+    type VerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
     type Proof = Gwc19Proof<M::G1Affine, L>;
+    type Output = KzgAccumulator<M::G1Affine, L>;
 
     fn read_proof<T>(
-        _: &Self::SuccinctVerifyingKey,
+        _: &Self::VerifyingKey,
         queries: &[Query<M::Scalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
@@ -36,13 +37,13 @@ where
         Gwc19Proof::read(queries, transcript)
     }
 
-    fn succinct_verify(
-        svk: &Self::SuccinctVerifyingKey,
+    fn verify(
+        svk: &Self::VerifyingKey,
         commitments: &[Msm<M::G1Affine, L>],
         z: &L::LoadedScalar,
         queries: &[Query<M::Scalar, L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<Self::Accumulator, Error> {
+    ) -> Result<Self::Output, Error> {
         let sets = query_sets(queries);
         let powers_of_u = &proof.u.powers(sets.len());
         let f = {
@@ -152,7 +153,7 @@ where
     })
 }
 
-impl<M> CostEstimation<M::G1Affine> for Kzg<M, Gwc19>
+impl<M> CostEstimation<M::G1Affine> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
 {

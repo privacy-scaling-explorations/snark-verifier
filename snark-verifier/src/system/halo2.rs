@@ -1,12 +1,12 @@
 use crate::{
     util::{
         arithmetic::{root_of_unity, CurveAffine, Domain, FieldExt, Rotation},
-        protocol::{
-            CommonPolynomial, Expression, InstanceCommittingKey, Query, QuotientPolynomial,
-        },
         Itertools,
     },
-    Protocol,
+    verifier::plonk::protocol::{
+        CommonPolynomial, Expression, InstanceCommittingKey, PlonkProtocol, Query,
+        QuotientPolynomial,
+    },
 };
 use halo2_proofs::{
     plonk::{self, Any, ConstraintSystem, FirstPhase, SecondPhase, ThirdPhase, VerifyingKey},
@@ -84,7 +84,7 @@ pub fn compile<'a, C: CurveAffine, P: Params<'a, C>>(
     params: &P,
     vk: &VerifyingKey<C>,
     config: Config,
-) -> Protocol<C> {
+) -> PlonkProtocol<C> {
     assert_eq!(vk.get_domain().k(), params.k());
 
     let cs = vk.cs();
@@ -150,7 +150,7 @@ pub fn compile<'a, C: CurveAffine, P: Params<'a, C>>(
         .map(|accumulator_indices| polynomials.accumulator_indices(accumulator_indices))
         .unwrap_or_default();
 
-    Protocol {
+    PlonkProtocol {
         domain,
         preprocessed,
         num_instance: polynomials.num_instance(),

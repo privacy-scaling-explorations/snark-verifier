@@ -1,18 +1,18 @@
 use crate::{
     util::{arithmetic::CurveAffine, Itertools},
-    Protocol,
+    verifier::plonk::PlonkProtocol,
 };
 use halo2_proofs::circuit::Value;
 
 #[derive(Clone, Debug)]
 pub struct Snark<C: CurveAffine> {
-    pub protocol: Protocol<C>,
+    pub protocol: PlonkProtocol<C>,
     pub instances: Vec<Vec<C::Scalar>>,
     pub proof: Vec<u8>,
 }
 
 impl<C: CurveAffine> Snark<C> {
-    pub fn new(protocol: Protocol<C>, instances: Vec<Vec<C::Scalar>>, proof: Vec<u8>) -> Self {
+    pub fn new(protocol: PlonkProtocol<C>, instances: Vec<Vec<C::Scalar>>, proof: Vec<u8>) -> Self {
         assert_eq!(
             protocol.num_instance,
             instances
@@ -30,7 +30,7 @@ impl<C: CurveAffine> Snark<C> {
 
 #[derive(Clone, Debug)]
 pub struct SnarkWitness<C: CurveAffine> {
-    pub protocol: Protocol<C>,
+    pub protocol: PlonkProtocol<C>,
     pub instances: Vec<Vec<Value<C::Scalar>>>,
     pub proof: Value<Vec<u8>>,
 }
@@ -50,7 +50,7 @@ impl<C: CurveAffine> From<Snark<C>> for SnarkWitness<C> {
 }
 
 impl<C: CurveAffine> SnarkWitness<C> {
-    pub fn new_without_witness(protocol: Protocol<C>) -> Self {
+    pub fn new_without_witness(protocol: PlonkProtocol<C>) -> Self {
         let instances = protocol
             .num_instance
             .iter()

@@ -207,15 +207,13 @@ macro_rules! halo2_native_verify {
         $protocol:expr,
         $instances:expr,
         $transcript:expr,
-        $svk:expr,
-        $dk:expr
+        $vk:expr
     ) => {{
         use halo2_proofs::poly::commitment::ParamsProver;
-        use $crate::verifier::PlonkVerifier;
+        use $crate::verifier::SnarkVerifier;
 
-        let proof =
-            <$plonk_verifier>::read_proof($svk, $protocol, $instances, $transcript).unwrap();
-        assert!(<$plonk_verifier>::verify($svk, $dk, $protocol, $instances, &proof).unwrap())
+        let proof = <$plonk_verifier>::read_proof($vk, $protocol, $instances, $transcript).unwrap();
+        assert!(<$plonk_verifier>::verify($vk, $protocol, $instances, &proof).is_ok())
     }};
 }
 

@@ -1,51 +1,35 @@
 use crate::{
     loader::Loader,
-    pcs::{Decider, MultiOpenScheme},
     util::{arithmetic::CurveAffine, transcript::TranscriptRead},
-    Error, Protocol,
+    Error,
 };
 use std::fmt::Debug;
 
-mod plonk;
+pub mod plonk;
 
-pub use plonk::{Plonk, PlonkProof};
-
-pub trait PlonkVerifier<C, L, MOS>
+pub trait SnarkVerifier<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
-    MOS: MultiOpenScheme<C, L>,
 {
+    type VerifyingKey: Clone + Debug;
+    type Protocol: Clone + Debug;
     type Proof: Clone + Debug;
+    type Output: Clone + Debug;
 
     fn read_proof<T>(
-        svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C, L>,
+        vk: &Self::VerifyingKey,
+        protocol: &Self::Protocol,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
     where
         T: TranscriptRead<C, L>;
 
-    fn succinct_verify(
-        svk: &MOS::SuccinctVerifyingKey,
-        protocol: &Protocol<C, L>,
-        instances: &[Vec<L::LoadedScalar>],
-        proof: &Self::Proof,
-    ) -> Result<Vec<MOS::Accumulator>, Error>;
-
     fn verify(
-        svk: &MOS::SuccinctVerifyingKey,
-        dk: &MOS::DecidingKey,
-        protocol: &Protocol<C, L>,
+        vk: &Self::VerifyingKey,
+        protocol: &Self::Protocol,
         instances: &[Vec<L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<MOS::Output, Error>
-    where
-        MOS: Decider<C, L>,
-    {
-        let accumulators = Self::succinct_verify(svk, protocol, instances, proof)?;
-        let output = MOS::decide_all(dk, accumulators);
-        Ok(output)
-    }
+    ) -> Result<Self::Output, Error>;
 }

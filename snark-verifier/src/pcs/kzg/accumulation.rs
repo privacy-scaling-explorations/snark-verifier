@@ -1,47 +1,45 @@
 use crate::{
     loader::{native::NativeLoader, LoadedScalar, Loader},
-    pcs::{
-        kzg::KzgAccumulator, AccumulationScheme, AccumulationSchemeProver,
-        PolynomialCommitmentScheme,
-    },
+    pcs::{kzg::KzgAccumulator, AccumulationScheme, AccumulationSchemeProver},
     util::{
-        arithmetic::{Curve, CurveAffine, Field},
+        arithmetic::{Curve, CurveAffine, Field, MultiMillerLoop},
         msm::Msm,
         transcript::{TranscriptRead, TranscriptWrite},
     },
     Error,
 };
 use rand::Rng;
-use std::marker::PhantomData;
+use std::{fmt::Debug, marker::PhantomData};
 
 #[derive(Clone, Debug)]
-pub struct KzgAs<PCS>(PhantomData<PCS>);
+pub struct KzgAs<M, MOS = ()>(PhantomData<(M, MOS)>);
 
-impl<C, L, PCS> AccumulationScheme<C, L, PCS> for KzgAs<PCS>
+impl<M, L, MOS> AccumulationScheme<M::G1Affine, L> for KzgAs<M, MOS>
 where
-    C: CurveAffine,
-    L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = KzgAccumulator<C, L>>,
+    M: MultiMillerLoop,
+    L: Loader<M::G1Affine>,
+    MOS: Clone + Debug,
 {
+    type Accumulator = KzgAccumulator<M::G1Affine, L>;
     type VerifyingKey = KzgAsVerifyingKey;
-    type Proof = KzgAsProof<C, L, PCS>;
+    type Proof = KzgAsProof<M::G1Affine, L>;
 
     fn read_proof<T>(
         vk: &Self::VerifyingKey,
-        instances: &[PCS::Accumulator],
+        instances: &[Self::Accumulator],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
     where
-        T: TranscriptRead<C, L>,
+        T: TranscriptRead<M::G1Affine, L>,
     {
         KzgAsProof::read(vk, instances, transcript)
     }
 
     fn verify(
         _: &Self::VerifyingKey,
-        instances: &[PCS::Accumulator],
+        instances: &[Self::Accumulator],
         proof: &Self::Proof,
-    ) -> Result<PCS::Accumulator, Error> {
+    ) -> Result<Self::Accumulator, Error> {
         let (lhs, rhs) = instances
             .iter()
             .map(|accumulator| (&accumulator.lhs, &accumulator.rhs))
@@ -53,7 +51,7 @@ where
             bases
                 .into_iter()
                 .zip(powers_of_r.iter())
-                .map(|(base, r)| Msm::<C, L>::base(base) * r)
+                .map(|(base, r)| Msm::<M::G1Affine, L>::base(base) * r)
                 .sum::<Msm<_, _>>()
                 .evaluate(None)
         });
@@ -89,26 +87,23 @@ impl KzgAsVerifyingKey {
 }
 
 #[derive(Clone, Debug)]
-pub struct KzgAsProof<C, L, PCS>
+pub struct KzgAsProof<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = KzgAccumulator<C, L>>,
 {
     blind: Option<(L::LoadedEcPoint, L::LoadedEcPoint)>,
     r: L::LoadedScalar,
-    _marker: PhantomData<PCS>,
 }
 
-impl<C, L, PCS> KzgAsProof<C, L, PCS>
+impl<C, L> KzgAsProof<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L, Accumulator = KzgAccumulator<C, L>>,
 {
     fn read<T>(
         vk: &KzgAsVerifyingKey,
-        instances: &[PCS::Accumulator],
+        instances: &[KzgAccumulator<C, L>],
         transcript: &mut T,
     ) -> Result<Self, Error>
     where
@@ -128,29 +123,25 @@ where
 
         let r = transcript.squeeze_challenge();
 
-        Ok(Self {
-            blind,
-            r,
-            _marker: PhantomData,
-        })
+        Ok(Self { blind, r })
     }
 }
 
-impl<C, PCS> AccumulationSchemeProver<C, PCS> for KzgAs<PCS>
+impl<M, MOS> AccumulationSchemeProver<M::G1Affine> for KzgAs<M, MOS>
 where
-    C: CurveAffine,
-    PCS: PolynomialCommitmentScheme<C, NativeLoader, Accumulator = KzgAccumulator<C, NativeLoader>>,
+    M: MultiMillerLoop,
+    MOS: Clone + Debug,
 {
-    type ProvingKey = KzgAsProvingKey<C>;
+    type ProvingKey = KzgAsProvingKey<M::G1Affine>;
 
     fn create_proof<T, R>(
         pk: &Self::ProvingKey,
-        instances: &[PCS::Accumulator],
+        instances: &[KzgAccumulator<M::G1Affine, NativeLoader>],
         transcript: &mut T,
         rng: R,
-    ) -> Result<PCS::Accumulator, Error>
+    ) -> Result<KzgAccumulator<M::G1Affine, NativeLoader>, Error>
     where
-        T: TranscriptWrite<C>,
+        T: TranscriptWrite<M::G1Affine>,
         R: Rng,
     {
         assert!(!instances.is_empty());
@@ -163,7 +154,7 @@ where
         let blind = pk
             .zk()
             .then(|| {
-                let s = C::Scalar::random(rng);
+                let s = M::Scalar::random(rng);
                 let (g, s_g) = pk.0.unwrap();
                 let lhs = (s_g * s).to_affine();
                 let rhs = (g * s).to_affine();
@@ -186,7 +177,7 @@ where
         let [lhs, rhs] = [lhs, rhs].map(|msms| {
             msms.iter()
                 .zip(powers_of_r.iter())
-                .map(|(msm, power_of_r)| Msm::<C, NativeLoader>::base(msm) * power_of_r)
+                .map(|(msm, power_of_r)| Msm::<M::G1Affine, NativeLoader>::base(msm) * power_of_r)
                 .sum::<Msm<_, _>>()
                 .evaluate(None)
         });

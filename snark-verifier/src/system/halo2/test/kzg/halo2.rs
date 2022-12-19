@@ -6,7 +6,7 @@ use crate::{
     },
     pcs::{
         kzg::{
-            Bdfg21, Kzg, KzgAccumulator, KzgAs, KzgAsProvingKey, KzgAsVerifyingKey,
+            Bdfg21, KzgAccumulator, KzgAs, KzgAsProvingKey, KzgAsVerifyingKey,
             KzgSuccinctVerifyingKey, LimbsEncoding, LimbsEncodingInstructions,
         },
         AccumulationScheme, AccumulationSchemeProver,
@@ -25,7 +25,7 @@ use crate::{
         },
     },
     util::{arithmetic::fe_to_limbs, Itertools},
-    verifier::{self, PlonkVerifier},
+    verifier::{self, SnarkVerifier},
 };
 use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
 use halo2_proofs::{
@@ -59,12 +59,12 @@ type Halo2Loader<'a> = loader::halo2::Halo2Loader<'a, G1Affine, BaseFieldEccChip
 type PoseidonTranscript<L, S> =
     system::halo2::transcript::halo2::PoseidonTranscript<G1Affine, L, S, T, RATE, R_F, R_P>;
 
-type Pcs = Kzg<Bn256, Bdfg21>;
 type Svk = KzgSuccinctVerifyingKey<G1Affine>;
-type As = KzgAs<Pcs>;
+type As = KzgAs<Bn256, Bdfg21>;
 type AsPk = KzgAsProvingKey<G1Affine>;
 type AsVk = KzgAsVerifyingKey;
-type Plonk = verifier::Plonk<Pcs, LimbsEncoding<LIMBS, BITS>>;
+type PlonkSuccinctVerifier = verifier::plonk::PlonkSuccinctVerifier<As, LimbsEncoding<LIMBS, BITS>>;
+type PlonkVerifier = verifier::plonk::PlonkVerifier<As, LimbsEncoding<LIMBS, BITS>>;
 
 pub fn accumulate<'a>(
     svk: &Svk,
@@ -92,8 +92,10 @@ pub fn accumulate<'a>(
             let instances = assign_instances(&snark.instances);
             let mut transcript =
                 PoseidonTranscript::<Rc<Halo2Loader>, _>::new(loader, snark.proof());
-            let proof = Plonk::read_proof(svk, &protocol, &instances, &mut transcript).unwrap();
-            Plonk::succinct_verify(svk, &protocol, &instances, &proof).unwrap()
+            let proof =
+                PlonkSuccinctVerifier::read_proof(svk, &protocol, &instances, &mut transcript)
+                    .unwrap();
+            PlonkSuccinctVerifier::verify(svk, &protocol, &instances, &proof).unwrap()
         })
         .collect_vec();
 
@@ -133,10 +135,15 @@ impl Accumulation {
             .flat_map(|snark| {
                 let mut transcript =
                     PoseidonTranscript::<NativeLoader, _>::new(snark.proof.as_slice());
-                let proof =
-                    Plonk::read_proof(&svk, &snark.protocol, &snark.instances, &mut transcript)
-                        .unwrap();
-                Plonk::succinct_verify(&svk, &snark.protocol, &snark.instances, &proof).unwrap()
+                let proof = PlonkSuccinctVerifier::read_proof(
+                    &svk,
+                    &snark.protocol,
+                    &snark.instances,
+                    &mut transcript,
+                )
+                .unwrap();
+                PlonkSuccinctVerifier::verify(&svk, &snark.protocol, &snark.instances, &proof)
+                    .unwrap()
             })
             .collect_vec();
 
@@ -343,7 +350,7 @@ macro_rules! test {
                     &circuits
                 );
                 halo2_kzg_native_verify!(
-                    Plonk,
+                    PlonkVerifier,
                     params,
                     &snark.protocol,
                     &snark.instances,

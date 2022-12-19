@@ -109,8 +109,7 @@ macro_rules! halo2_kzg_native_verify {
             $protocol,
             $instances,
             $transcript,
-            &$params.get_g()[0].into(),
-            &($params.g2(), $params.s_g2()).into()
+            &($params.get_g()[0], $params.g2(), $params.s_g2()).into()
         )
     }};
 }

@@ -121,7 +121,7 @@ macro_rules! halo2_ipa_native_verify {
         $transcript:expr
     ) => {{
         use $crate::{
-            pcs::ipa::{Bgh19SuccinctVerifyingKey, IpaDecidingKey},
+            pcs::ipa::{IpaDecidingKey, IpaSuccinctVerifyingKey},
             system::halo2::test::{halo2_native_verify, ipa::w_u},
         };
 
@@ -132,8 +132,15 @@ macro_rules! halo2_ipa_native_verify {
             $protocol,
             $instances,
             $transcript,
-            &Bgh19SuccinctVerifyingKey::new($protocol.domain.clone(), $params.get_g()[0], w, u),
-            &IpaDecidingKey::new($params.get_g().to_vec())
+            &IpaDecidingKey::new(
+                IpaSuccinctVerifyingKey::new(
+                    $protocol.domain.clone(),
+                    $params.get_g()[0],
+                    u,
+                    Some(w)
+                ),
+                $params.get_g().to_vec()
+            )
         )
     }};
 }

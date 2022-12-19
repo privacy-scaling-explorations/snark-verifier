@@ -34,7 +34,7 @@ mod native {
         loader::native::NativeLoader,
         pcs::{
             kzg::{KzgAccumulator, LimbsEncoding},
-            AccumulatorEncoding, PolynomialCommitmentScheme,
+            AccumulatorEncoding,
         },
         util::{
             arithmetic::{fe_from_limbs, CurveAffine},
@@ -43,17 +43,14 @@ mod native {
         Error,
     };
 
-    impl<C, PCS, const LIMBS: usize, const BITS: usize> AccumulatorEncoding<C, NativeLoader, PCS>
+    impl<C, const LIMBS: usize, const BITS: usize> AccumulatorEncoding<C, NativeLoader>
         for LimbsEncoding<LIMBS, BITS>
     where
         C: CurveAffine,
-        PCS: PolynomialCommitmentScheme<
-            C,
-            NativeLoader,
-            Accumulator = KzgAccumulator<C, NativeLoader>,
-        >,
     {
-        fn from_repr(limbs: &[&C::Scalar]) -> Result<PCS::Accumulator, Error> {
+        type Accumulator = KzgAccumulator<C, NativeLoader>;
+
+        fn from_repr(limbs: &[&C::Scalar]) -> Result<Self::Accumulator, Error> {
             assert_eq!(limbs.len(), 4 * LIMBS);
 
             let [lhs_x, lhs_y, rhs_x, rhs_y]: [_; 4] = limbs
@@ -88,7 +85,7 @@ mod evm {
         loader::evm::{EvmLoader, Scalar},
         pcs::{
             kzg::{KzgAccumulator, LimbsEncoding},
-            AccumulatorEncoding, PolynomialCommitmentScheme,
+            AccumulatorEncoding,
         },
         util::{
             arithmetic::{CurveAffine, PrimeField},
@@ -98,18 +95,15 @@ mod evm {
     };
     use std::rc::Rc;
 
-    impl<C, PCS, const LIMBS: usize, const BITS: usize> AccumulatorEncoding<C, Rc<EvmLoader>, PCS>
+    impl<C, const LIMBS: usize, const BITS: usize> AccumulatorEncoding<C, Rc<EvmLoader>>
         for LimbsEncoding<LIMBS, BITS>
     where
         C: CurveAffine,
         C::Scalar: PrimeField<Repr = [u8; 0x20]>,
-        PCS: PolynomialCommitmentScheme<
-            C,
-            Rc<EvmLoader>,
-            Accumulator = KzgAccumulator<C, Rc<EvmLoader>>,
-        >,
     {
-        fn from_repr(limbs: &[&Scalar]) -> Result<PCS::Accumulator, Error> {
+        type Accumulator = KzgAccumulator<C, Rc<EvmLoader>>;
+
+        fn from_repr(limbs: &[&Scalar]) -> Result<Self::Accumulator, Error> {
             assert_eq!(limbs.len(), 4 * LIMBS);
 
             let loader = limbs[0].loader();
@@ -140,7 +134,7 @@ mod halo2 {
         loader::halo2::{EccInstructions, Halo2Loader, Scalar, Valuetools},
         pcs::{
             kzg::{KzgAccumulator, LimbsEncoding},
-            AccumulatorEncoding, PolynomialCommitmentScheme,
+            AccumulatorEncoding,
         },
         util::{
             arithmetic::{fe_from_limbs, CurveAffine},
@@ -186,18 +180,15 @@ mod halo2 {
         ) -> Result<Vec<Self::AssignedCell>, plonk::Error>;
     }
 
-    impl<'a, C, PCS, EccChip, const LIMBS: usize, const BITS: usize>
-        AccumulatorEncoding<C, Rc<Halo2Loader<'a, C, EccChip>>, PCS> for LimbsEncoding<LIMBS, BITS>
+    impl<'a, C, EccChip, const LIMBS: usize, const BITS: usize>
+        AccumulatorEncoding<C, Rc<Halo2Loader<'a, C, EccChip>>> for LimbsEncoding<LIMBS, BITS>
     where
         C: CurveAffine,
-        PCS: PolynomialCommitmentScheme<
-            C,
-            Rc<Halo2Loader<'a, C, EccChip>>,
-            Accumulator = KzgAccumulator<C, Rc<Halo2Loader<'a, C, EccChip>>>,
-        >,
         EccChip: LimbsEncodingInstructions<'a, C, LIMBS, BITS>,
     {
-        fn from_repr(limbs: &[&Scalar<'a, C, EccChip>]) -> Result<PCS::Accumulator, Error> {
+        type Accumulator = KzgAccumulator<C, Rc<Halo2Loader<'a, C, EccChip>>>;
+
+        fn from_repr(limbs: &[&Scalar<'a, C, EccChip>]) -> Result<Self::Accumulator, Error> {
             assert_eq!(limbs.len(), 4 * LIMBS);
 
             let loader = limbs[0].loader();

@@ -1,11 +1,11 @@
 use crate::{
     loader::{LoadedScalar, Loader, ScalarLoader},
     pcs::{
-        ipa::{Ipa, IpaProof, IpaSuccinctVerifyingKey, Round},
-        MultiOpenScheme, Query,
+        ipa::{Ipa, IpaAccumulator, IpaAs, IpaProof, IpaSuccinctVerifyingKey, Round},
+        PolynomialCommitmentScheme, Query,
     },
     util::{
-        arithmetic::{ilog2, CurveAffine, Domain, FieldExt, Fraction},
+        arithmetic::{ilog2, CurveAffine, FieldExt, Fraction},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -21,16 +21,17 @@ use std::{
 #[derive(Clone, Debug)]
 pub struct Bgh19;
 
-impl<C, L> MultiOpenScheme<C, L> for Ipa<C, Bgh19>
+impl<C, L> PolynomialCommitmentScheme<C, L> for IpaAs<C, Bgh19>
 where
     C: CurveAffine,
     L: Loader<C>,
 {
-    type SuccinctVerifyingKey = Bgh19SuccinctVerifyingKey<C>;
+    type VerifyingKey = IpaSuccinctVerifyingKey<C>;
     type Proof = Bgh19Proof<C, L>;
+    type Output = IpaAccumulator<C, L>;
 
     fn read_proof<T>(
-        svk: &Self::SuccinctVerifyingKey,
+        svk: &Self::VerifyingKey,
         queries: &[Query<C::Scalar>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
@@ -40,13 +41,13 @@ where
         Bgh19Proof::read(svk, queries, transcript)
     }
 
-    fn succinct_verify(
-        svk: &Self::SuccinctVerifyingKey,
+    fn verify(
+        svk: &Self::VerifyingKey,
         commitments: &[Msm<C, L>],
         x: &L::LoadedScalar,
         queries: &[Query<C::Scalar, L::LoadedScalar>],
         proof: &Self::Proof,
-    ) -> Result<Self::Accumulator, Error> {
+    ) -> Result<Self::Output, Error> {
         let loader = x.loader();
         let g = loader.ec_point_load_const(&svk.g);
 
@@ -87,22 +88,7 @@ where
         };
 
         // IPA
-        Ipa::<C, ()>::succinct_verify(&svk.ipa, &p, &proof.x_3, &loader.load_zero(), &proof.ipa)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Bgh19SuccinctVerifyingKey<C: CurveAffine> {
-    g: C,
-    ipa: IpaSuccinctVerifyingKey<C>,
-}
-
-impl<C: CurveAffine> Bgh19SuccinctVerifyingKey<C> {
-    pub fn new(domain: Domain<C::Scalar>, g: C, w: C, u: C) -> Self {
-        Self {
-            g,
-            ipa: IpaSuccinctVerifyingKey::new(domain, u, Some(w)),
-        }
+        Ipa::succinct_verify(svk, &p, &proof.x_3, &loader.load_zero(), &proof.ipa)
     }
 }
 
@@ -129,7 +115,7 @@ where
     L: Loader<C>,
 {
     fn read<T: TranscriptRead<C, L>>(
-        svk: &Bgh19SuccinctVerifyingKey<C>,
+        svk: &IpaSuccinctVerifyingKey<C>,
         queries: &[Query<C::Scalar>],
         transcript: &mut T,
     ) -> Result<Self, Error> {
@@ -151,7 +137,7 @@ where
                 transcript.squeeze_challenge(),
             ))
         })
-        .take(svk.ipa.domain.k)
+        .take(svk.domain.k)
         .collect::<Result<Vec<_>, _>>()?;
         let c = transcript.read_scalar()?;
         let blind = transcript.read_scalar()?;

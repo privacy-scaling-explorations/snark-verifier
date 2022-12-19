@@ -1,5 +1,5 @@
 use crate::{
-    pcs::kzg::{Bdfg21, Gwc19, Kzg, LimbsEncoding},
+    pcs::kzg::{Bdfg21, Gwc19, KzgAs, LimbsEncoding},
     system::halo2::test::{
         kzg::{
             halo2_kzg_config, halo2_kzg_create_snark, halo2_kzg_native_verify, halo2_kzg_prepare,
@@ -7,7 +7,7 @@ use crate::{
         },
         StandardPlonk,
     },
-    verifier::Plonk,
+    verifier::plonk::PlonkVerifier,
 };
 use halo2_curves::bn256::{Bn256, G1Affine};
 use halo2_proofs::{
@@ -49,8 +49,8 @@ macro_rules! test {
         }
     };
     ($name:ident, $k:expr, $config:expr, $create_cirucit:expr) => {
-        test!(@ shplonk, $name, $k, $config, $create_cirucit, ProverSHPLONK<_>, VerifierSHPLONK<_>, Plonk<Kzg<Bn256, Bdfg21>, LimbsEncoding<LIMBS, BITS>>);
-        test!(@ plonk, $name, $k, $config, $create_cirucit, ProverGWC<_>, VerifierGWC<_>, Plonk<Kzg<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ shplonk, $name, $k, $config, $create_cirucit, ProverSHPLONK<_>, VerifierSHPLONK<_>, PlonkVerifier<KzgAs<Bn256, Bdfg21>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ plonk, $name, $k, $config, $create_cirucit, ProverGWC<_>, VerifierGWC<_>, PlonkVerifier<KzgAs<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
     }
 }
 
