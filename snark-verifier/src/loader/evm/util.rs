@@ -95,7 +95,7 @@ pub fn estimate_gas(cost: Cost) -> usize {
 
     let intrinsic_cost = 21000;
     let calldata_cost = (proof_size as f64 * 15.25).ceil() as usize;
-    let ec_operation_cost = 113100 + (cost.num_msm - 2) * 6350;
+    let ec_operation_cost = (45100 + cost.num_pairing * 34000) + (cost.num_msm - 2) * 6350;
 
     intrinsic_cost + calldata_cost + ec_operation_cost
 }

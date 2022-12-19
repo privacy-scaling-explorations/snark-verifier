@@ -374,6 +374,10 @@ where
     type Input = Vec<Query<M::Scalar>>;
 
     fn estimate_cost(_: &Vec<Query<M::Scalar>>) -> Cost {
-        Cost::new(0, 2, 0, 2)
+        Cost {
+            num_commitment: 2,
+            num_msm: 2,
+            ..Default::default()
+        }
     }
 }

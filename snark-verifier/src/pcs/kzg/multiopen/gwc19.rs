@@ -161,6 +161,10 @@ where
 
     fn estimate_cost(queries: &Vec<Query<M::Scalar>>) -> Cost {
         let num_w = query_sets(queries).len();
-        Cost::new(0, num_w, 0, num_w)
+        Cost {
+            num_commitment: num_w,
+            num_msm: num_w,
+            ..Default::default()
+        }
     }
 }

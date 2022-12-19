@@ -23,13 +23,12 @@ impl<C, L, AS, AE> SnarkVerifier<C, L> for PlonkSuccinctVerifier<AS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
-    AS: AccumulationScheme<C, L>
-        + PolynomialCommitmentScheme<C, L, Output = <AS as AccumulationScheme<C, L>>::Accumulator>,
-    AE: AccumulatorEncoding<C, L, Accumulator = <AS as AccumulationScheme<C, L>>::Accumulator>,
+    AS: AccumulationScheme<C, L> + PolynomialCommitmentScheme<C, L, Output = AS::Accumulator>,
+    AE: AccumulatorEncoding<C, L, Accumulator = AS::Accumulator>,
 {
     type VerifyingKey = <AS as PolynomialCommitmentScheme<C, L>>::VerifyingKey;
     type Protocol = PlonkProtocol<C, L>;
-    type Proof = PlonkProof<C, L, AS, AE>;
+    type Proof = PlonkProof<C, L, AS>;
     type Output = Vec<AE::Accumulator>;
 
     fn read_proof<T>(
@@ -41,7 +40,7 @@ where
     where
         T: TranscriptRead<C, L>,
     {
-        PlonkProof::read::<T>(svk, protocol, instances, transcript)
+        PlonkProof::read::<T, AE>(svk, protocol, instances, transcript)
     }
 
     fn verify(
@@ -51,11 +50,8 @@ where
         proof: &Self::Proof,
     ) -> Result<Self::Output, Error> {
         let common_poly_eval = {
-            let mut common_poly_eval = CommonPolynomialEvaluation::new(
-                &protocol.domain,
-                langranges(protocol, instances),
-                &proof.z,
-            );
+            let mut common_poly_eval =
+                CommonPolynomialEvaluation::new(&protocol.domain, protocol.langranges(), &proof.z);
 
             L::batch_invert(common_poly_eval.denoms());
             common_poly_eval.evaluate();
@@ -90,14 +86,13 @@ impl<C, L, AS, AE> SnarkVerifier<C, L> for PlonkVerifier<AS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
-    AS: AccumulationDecider<C, L>
-        + PolynomialCommitmentScheme<C, L, Output = <AS as AccumulationScheme<C, L>>::Accumulator>,
+    AS: AccumulationDecider<C, L> + PolynomialCommitmentScheme<C, L, Output = AS::Accumulator>,
     AS::DecidingKey: AsRef<<AS as PolynomialCommitmentScheme<C, L>>::VerifyingKey>,
-    AE: AccumulatorEncoding<C, L, Accumulator = <AS as AccumulationScheme<C, L>>::Accumulator>,
+    AE: AccumulatorEncoding<C, L, Accumulator = AS::Accumulator>,
 {
     type VerifyingKey = AS::DecidingKey;
     type Protocol = PlonkProtocol<C, L>;
-    type Proof = PlonkProof<C, L, AS, AE>;
+    type Proof = PlonkProof<C, L, AS>;
     type Output = ();
 
     fn read_proof<T>(
@@ -109,7 +104,7 @@ where
     where
         T: TranscriptRead<C, L>,
     {
-        PlonkProof::read::<T>(vk.as_ref(), protocol, instances, transcript)
+        PlonkProof::read::<T, AE>(vk.as_ref(), protocol, instances, transcript)
     }
 
     fn verify(
@@ -128,8 +123,9 @@ impl<C, L, AS, AE> CostEstimation<(C, L)> for PlonkSuccinctVerifier<AS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
-    AS: PolynomialCommitmentScheme<C, L> + CostEstimation<C, Input = Vec<Query<C::Scalar>>>,
-    AE: AccumulatorEncoding<C, L>,
+    AS: AccumulationScheme<C, L>
+        + PolynomialCommitmentScheme<C, L, Output = AS::Accumulator>
+        + CostEstimation<C, Input = Vec<Query<C::Scalar>>>,
 {
     type Input = PlonkProtocol<C, L>;
 
@@ -141,55 +137,37 @@ where
                 protocol.num_witness.iter().sum::<usize>() + protocol.quotient.num_chunk();
             let num_evaluation = protocol.evaluations.len();
             let num_msm = protocol.preprocessed.len() + num_commitment + 1 + 2 * num_accumulator;
-            Cost::new(num_instance, num_commitment, num_evaluation, num_msm)
+            Cost {
+                num_instance,
+                num_commitment,
+                num_evaluation,
+                num_msm,
+                ..Default::default()
+            }
         };
         let pcs_cost = {
-            let queries = PlonkProof::<C, L, AS, AE>::empty_queries(protocol);
+            let queries = PlonkProof::<C, L, AS>::empty_queries(protocol);
             AS::estimate_cost(&queries)
         };
         plonk_cost + pcs_cost
     }
 }
 
-fn langranges<C, L>(
-    protocol: &PlonkProtocol<C, L>,
-    instances: &[Vec<L::LoadedScalar>],
-) -> impl IntoIterator<Item = i32>
+impl<C, L, AS, AE> CostEstimation<(C, L)> for PlonkVerifier<AS, AE>
 where
     C: CurveAffine,
     L: Loader<C>,
+    AS: AccumulationScheme<C, L>
+        + PolynomialCommitmentScheme<C, L, Output = AS::Accumulator>
+        + CostEstimation<C, Input = Vec<Query<C::Scalar>>>,
 {
-    let instance_eval_lagrange = protocol.instance_committing_key.is_none().then(|| {
-        let queries = {
-            let offset = protocol.preprocessed.len();
-            let range = offset..offset + protocol.num_instance.len();
-            protocol
-                .quotient
-                .numerator
-                .used_query()
-                .into_iter()
-                .filter(move |query| range.contains(&query.poly))
-        };
-        let (min_rotation, max_rotation) = queries.fold((0, 0), |(min, max), query| {
-            if query.rotation.0 < min {
-                (query.rotation.0, max)
-            } else if query.rotation.0 > max {
-                (min, query.rotation.0)
-            } else {
-                (min, max)
+    type Input = PlonkProtocol<C, L>;
+
+    fn estimate_cost(protocol: &PlonkProtocol<C, L>) -> Cost {
+        PlonkSuccinctVerifier::<AS, AE>::estimate_cost(protocol)
+            + Cost {
+                num_pairing: 2,
+                ..Default::default()
             }
-        });
-        let max_instance_len = instances
-            .iter()
-            .map(|instance| instance.len())
-            .max()
-            .unwrap_or_default();
-        -max_rotation..max_instance_len as i32 + min_rotation.abs()
-    });
-    protocol
-        .quotient
-        .numerator
-        .used_langrange()
-        .into_iter()
-        .chain(instance_eval_lagrange.into_iter().flatten())
+    }
 }

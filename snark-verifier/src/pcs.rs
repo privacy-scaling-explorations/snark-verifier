@@ -8,7 +8,7 @@ use crate::{
     Error,
 };
 use rand::Rng;
-use std::fmt::Debug;
+use std::{fmt::Debug, marker::PhantomData};
 
 pub mod ipa;
 pub mod kzg;
@@ -122,7 +122,7 @@ where
     fn from_repr(repr: &[&L::LoadedScalar]) -> Result<Self::Accumulator, Error>;
 }
 
-impl<C, L, PCS> AccumulatorEncoding<C, L> for std::marker::PhantomData<PCS>
+impl<C, L, PCS> AccumulatorEncoding<C, L> for PhantomData<PCS>
 where
     C: CurveAffine,
     L: Loader<C>,

@@ -37,6 +37,41 @@ where
     pub accumulator_indices: Vec<Vec<(usize, usize)>>,
 }
 
+impl<C, L> PlonkProtocol<C, L>
+where
+    C: CurveAffine,
+    L: Loader<C>,
+{
+    pub(super) fn langranges(&self) -> impl IntoIterator<Item = i32> {
+        let instance_eval_lagrange = self.instance_committing_key.is_none().then(|| {
+            let queries = {
+                let offset = self.preprocessed.len();
+                let range = offset..offset + self.num_instance.len();
+                self.quotient
+                    .numerator
+                    .used_query()
+                    .into_iter()
+                    .filter(move |query| range.contains(&query.poly))
+            };
+            let (min_rotation, max_rotation) = queries.fold((0, 0), |(min, max), query| {
+                if query.rotation.0 < min {
+                    (query.rotation.0, max)
+                } else if query.rotation.0 > max {
+                    (min, query.rotation.0)
+                } else {
+                    (min, max)
+                }
+            });
+            let max_instance_len = self.num_instance.iter().max().copied().unwrap_or_default();
+            -max_rotation..max_instance_len as i32 + min_rotation.abs()
+        });
+        self.quotient
+            .numerator
+            .used_langrange()
+            .into_iter()
+            .chain(instance_eval_lagrange.into_iter().flatten())
+    }
+}
 impl<C> PlonkProtocol<C>
 where
     C: CurveAffine,

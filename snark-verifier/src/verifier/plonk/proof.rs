@@ -1,6 +1,6 @@
 use crate::{
     loader::{LoadedScalar, Loader},
-    pcs::{self, AccumulatorEncoding, PolynomialCommitmentScheme},
+    pcs::{self, AccumulationScheme, AccumulatorEncoding, PolynomialCommitmentScheme},
     util::{
         arithmetic::{CurveAffine, Field, Rotation},
         msm::Msm,
@@ -16,12 +16,11 @@ use crate::{
 use std::{collections::HashMap, iter};
 
 #[derive(Clone, Debug)]
-pub struct PlonkProof<C, L, PCS, AE>
+pub struct PlonkProof<C, L, AS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L>,
-    AE: AccumulatorEncoding<C, L>,
+    AS: AccumulationScheme<C, L> + PolynomialCommitmentScheme<C, L, Output = AS::Accumulator>,
 {
     pub committed_instances: Option<Vec<L::LoadedEcPoint>>,
     pub witnesses: Vec<L::LoadedEcPoint>,
@@ -29,25 +28,25 @@ where
     pub quotients: Vec<L::LoadedEcPoint>,
     pub z: L::LoadedScalar,
     pub evaluations: Vec<L::LoadedScalar>,
-    pub pcs: PCS::Proof,
-    pub old_accumulators: Vec<AE::Accumulator>,
+    pub pcs: <AS as PolynomialCommitmentScheme<C, L>>::Proof,
+    pub old_accumulators: Vec<AS::Accumulator>,
 }
 
-impl<C, L, PCS, AE> PlonkProof<C, L, PCS, AE>
+impl<C, L, AS> PlonkProof<C, L, AS>
 where
     C: CurveAffine,
     L: Loader<C>,
-    PCS: PolynomialCommitmentScheme<C, L>,
-    AE: AccumulatorEncoding<C, L>,
+    AS: AccumulationScheme<C, L> + PolynomialCommitmentScheme<C, L, Output = AS::Accumulator>,
 {
-    pub fn read<T>(
-        svk: &PCS::VerifyingKey,
+    pub fn read<T, AE>(
+        svk: &<AS as PolynomialCommitmentScheme<C, L>>::VerifyingKey,
         protocol: &PlonkProtocol<C, L>,
         instances: &[Vec<L::LoadedScalar>],
         transcript: &mut T,
     ) -> Result<Self, Error>
     where
         T: TranscriptRead<C, L>,
+        AE: AccumulatorEncoding<C, L, Accumulator = AS::Accumulator>,
     {
         if let Some(transcript_initial_state) = &protocol.transcript_initial_state {
             transcript.common_scalar(transcript_initial_state)?;
@@ -127,7 +126,11 @@ where
         let z = transcript.squeeze_challenge();
         let evaluations = transcript.read_n_scalars(protocol.evaluations.len())?;
 
-        let pcs = PCS::read_proof(svk, &Self::empty_queries(protocol), transcript)?;
+        let pcs = <AS as PolynomialCommitmentScheme<C, L>>::read_proof(
+            svk,
+            &Self::empty_queries(protocol),
+            transcript,
+        )?;
 
         let old_accumulators = protocol
             .accumulator_indices

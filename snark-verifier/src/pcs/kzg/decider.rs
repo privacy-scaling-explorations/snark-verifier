@@ -1,7 +1,5 @@
-use crate::util::arithmetic::MultiMillerLoop;
+use crate::{pcs::kzg::KzgSuccinctVerifyingKey, util::arithmetic::MultiMillerLoop};
 use std::marker::PhantomData;
-
-use super::KzgSuccinctVerifyingKey;
 
 #[derive(Debug, Clone, Copy)]
 pub struct KzgDecidingKey<M: MultiMillerLoop> {
