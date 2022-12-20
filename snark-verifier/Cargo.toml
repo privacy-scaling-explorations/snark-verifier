@@ -1,5 +1,5 @@
 [package]
-name = "snark_verifier"
+name = "snark-verifier"
 version = "0.1.0"
 edition = "2021"
 
