@@ -149,7 +149,8 @@ impl EvmLoader {
         self.scalar(Value::Memory(ptr))
     }
 
-    /// Calldata load an elliptic curve point and validate it's on curve.
+    /// Calldata load an elliptic curve point and validate it's on affine plane.
+    /// Note that identity will cause the verification to fail.
     pub fn calldataload_ec_point(self: &Rc<Self>, offset: usize) -> EcPoint {
         let x_ptr = self.allocate(0x40);
         let y_ptr = x_ptr + 0x20;
