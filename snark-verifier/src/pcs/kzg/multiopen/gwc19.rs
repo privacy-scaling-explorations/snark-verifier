@@ -14,6 +14,9 @@ use crate::{
     Error,
 };
 
+/// Verifier of multi-open KZG. It is for the GWC implementation
+/// in [`halo2_proofs`].
+/// Notations are following https://eprint.iacr.org/2019/953.pdf.
 #[derive(Clone, Debug)]
 pub struct Gwc19;
 
@@ -77,6 +80,7 @@ where
     }
 }
 
+/// Structured proof of [`Gwc19`].
 #[derive(Clone, Debug)]
 pub struct Gwc19Proof<C, L>
 where

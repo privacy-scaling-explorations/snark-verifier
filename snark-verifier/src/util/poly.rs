@@ -1,3 +1,5 @@
+//! Polynomial.
+
 use crate::util::{arithmetic::Field, parallelize};
 use rand::Rng;
 use std::{
@@ -9,39 +11,47 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
+/// Univariate polynomial.
 pub struct Polynomial<F>(Vec<F>);
 
 impl<F> Polynomial<F> {
+    /// Initialize an univariate polynomial.
     pub fn new(inner: Vec<F>) -> Self {
         Self(inner)
     }
 
+    /// Returns `true` if the `Polynomial` contains no elements.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Returns the length of the `Polynomial`.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns an iterator of the `Polynomial`.
     pub fn iter(&self) -> impl Iterator<Item = &F> {
         self.0.iter()
     }
 
+    /// Returns a mutable iterator of the `Polynomial`.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut F> {
         self.0.iter_mut()
     }
 
+    /// Into vector of coefficients.
     pub fn to_vec(self) -> Vec<F> {
         self.0
     }
 }
 
 impl<F: Field> Polynomial<F> {
-    pub fn rand<R: Rng>(n: usize, mut rng: R) -> Self {
+    pub(crate) fn rand<R: Rng>(n: usize, mut rng: R) -> Self {
         Self::new(iter::repeat_with(|| F::random(&mut rng)).take(n).collect())
     }
 
+    /// Returns evaluation at given `x`.
     pub fn evaluate(&self, x: F) -> F {
         let evaluate_serial = |coeffs: &[F]| {
             coeffs

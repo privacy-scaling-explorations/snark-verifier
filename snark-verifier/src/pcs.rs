@@ -1,3 +1,5 @@
+//! Verfieirs for polynomial commitment schemes.
+
 use crate::{
     loader::{native::NativeLoader, Loader},
     util::{
@@ -13,14 +15,29 @@ use std::{fmt::Debug, marker::PhantomData};
 pub mod ipa;
 pub mod kzg;
 
+/// Query to a oracle.
+/// It assumes all queries are based on the same point, but with some `shift`.
 #[derive(Clone, Debug)]
 pub struct Query<F: PrimeField, T = ()> {
+    /// Index of polynomial to query
     pub poly: usize,
+    /// Shift of the query point.
     pub shift: F,
+    /// Evaluation read from transcript.
     pub eval: T,
 }
 
 impl<F: PrimeField> Query<F> {
+    /// Initialize [`Query`] without evaluation.
+    pub fn new(poly: usize, shift: F) -> Self {
+        Self {
+            poly,
+            shift,
+            eval: (),
+        }
+    }
+
+    /// Returns [`Query`] with evaluation.
     pub fn with_evaluation<T>(self, eval: T) -> Query<F, T> {
         Query {
             poly: self.poly,
@@ -30,15 +47,20 @@ impl<F: PrimeField> Query<F> {
     }
 }
 
+/// Polynomial commitment scheme verifier.
 pub trait PolynomialCommitmentScheme<C, L>: Clone + Debug
 where
     C: CurveAffine,
     L: Loader<C>,
 {
+    /// Verifying key.
     type VerifyingKey: Clone + Debug;
+    /// Structured proof read from transcript.
     type Proof: Clone + Debug;
+    /// Output of verification.
     type Output: Clone + Debug;
 
+    /// Read [`PolynomialCommitmentScheme::Proof`] from transcript.
     fn read_proof<T>(
         vk: &Self::VerifyingKey,
         queries: &[Query<C::Scalar>],
@@ -47,6 +69,7 @@ where
     where
         T: TranscriptRead<C, L>;
 
+    /// Verify [`PolynomialCommitmentScheme::Proof`] and output [`PolynomialCommitmentScheme::Output`].
     fn verify(
         vk: &Self::VerifyingKey,
         commitments: &[Msm<C, L>],
@@ -56,15 +79,20 @@ where
     ) -> Result<Self::Output, Error>;
 }
 
+/// Accumulation scheme verifier.
 pub trait AccumulationScheme<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
 {
+    /// Accumulator to be accumulated.
     type Accumulator: Clone + Debug;
+    /// Verifying key.
     type VerifyingKey: Clone + Debug;
+    /// Structured proof read from transcript.
     type Proof: Clone + Debug;
 
+    /// Read a [`AccumulationScheme::Proof`] from transcript.
     fn read_proof<T>(
         vk: &Self::VerifyingKey,
         instances: &[Self::Accumulator],
@@ -73,6 +101,9 @@ where
     where
         T: TranscriptRead<C, L>;
 
+    /// Verify old [`AccumulationScheme::Accumulator`]s are accumulated properly
+    /// into a new one with the [`AccumulationScheme::Proof`], and returns the
+    /// new one as output.
     fn verify(
         vk: &Self::VerifyingKey,
         instances: &[Self::Accumulator],
@@ -80,27 +111,36 @@ where
     ) -> Result<Self::Accumulator, Error>;
 }
 
+/// Accumulation scheme decider.
 pub trait AccumulationDecider<C, L>: AccumulationScheme<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
 {
+    /// Deciding key.
     type DecidingKey: Clone + Debug;
 
+    /// Decide if a [`AccumulationScheme::Accumulator`] is valid.
     fn decide(dk: &Self::DecidingKey, accumulator: Self::Accumulator) -> Result<(), Error>;
 
+    /// Decide if all [`AccumulationScheme::Accumulator`]s are valid.
     fn decide_all(
         dk: &Self::DecidingKey,
         accumulators: Vec<Self::Accumulator>,
     ) -> Result<(), Error>;
 }
 
+/// Accumulation scheme prover.
 pub trait AccumulationSchemeProver<C>: AccumulationScheme<C, NativeLoader>
 where
     C: CurveAffine,
 {
+    /// Proving key.
     type ProvingKey: Clone + Debug;
 
+    /// Create a proof that argues old [`AccumulationScheme::Accumulator`]s are
+    /// properly accumulated into the new one, and returns the new one as
+    /// output.
     fn create_proof<T, R>(
         pk: &Self::ProvingKey,
         instances: &[Self::Accumulator],
@@ -112,13 +152,17 @@ where
         R: Rng;
 }
 
+/// Accumulator encoding.
 pub trait AccumulatorEncoding<C, L>: Clone + Debug
 where
     C: CurveAffine,
     L: Loader<C>,
 {
+    /// Accumulator to be encoded.
     type Accumulator: Clone + Debug;
 
+    /// Decode an [`AccumulatorEncoding::Accumulator`] from serveral
+    /// [`Loader::LoadedScalar`]s.
     fn from_repr(repr: &[&L::LoadedScalar]) -> Result<Self::Accumulator, Error>;
 }
 

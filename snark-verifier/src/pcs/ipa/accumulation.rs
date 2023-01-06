@@ -18,6 +18,7 @@ use crate::{
 use rand::Rng;
 use std::{array, fmt::Debug, iter, marker::PhantomData};
 
+/// Inner product argument accumulation scheme.
 #[derive(Clone, Debug)]
 pub struct IpaAs<C, MOS = ()>(PhantomData<(C, MOS)>);
 
@@ -76,6 +77,7 @@ where
     }
 }
 
+/// Inner product argument accumulation scheme proof.
 #[derive(Clone, Debug)]
 pub struct IpaAsProof<C, L>
 where

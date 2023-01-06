@@ -1,5 +1,6 @@
 use crate::{pcs::ipa::IpaSuccinctVerifyingKey, util::arithmetic::CurveAffine};
 
+/// Inner product argument deciding key.
 #[derive(Clone, Debug)]
 pub struct IpaDecidingKey<C: CurveAffine> {
     svk: IpaSuccinctVerifyingKey<C>,
@@ -7,6 +8,7 @@ pub struct IpaDecidingKey<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> IpaDecidingKey<C> {
+    /// Initialize an [`IpaDecidingKey`].
     pub fn new(svk: IpaSuccinctVerifyingKey<C>, g: Vec<C>) -> Self {
         Self { svk, g }
     }

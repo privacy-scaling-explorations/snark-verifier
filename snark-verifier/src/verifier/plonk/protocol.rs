@@ -15,25 +15,37 @@ use std::{
     ops::{Add, Mul, Neg, Sub},
 };
 
+/// Protocol specifying configuration of a PLONK.
 #[derive(Clone, Debug)]
 pub struct PlonkProtocol<C, L = NativeLoader>
 where
     C: CurveAffine,
     L: Loader<C>,
 {
-    // Common description
+    /// Working domain.
     pub domain: Domain<C::Scalar>,
+    /// Commitments of preprocessed polynomials.
     pub preprocessed: Vec<L::LoadedEcPoint>,
+    /// Number of instances in each instance polynomial.
     pub num_instance: Vec<usize>,
+    /// Number of witness polynomials in each phase.
     pub num_witness: Vec<usize>,
+    /// Number of challenges to squeeze from transcript after each phase.
     pub num_challenge: Vec<usize>,
+    /// Evaluations to read from transcript.
     pub evaluations: Vec<Query>,
+    /// [`crate::pcs::PolynomialCommitmentScheme`] queries to verify.
     pub queries: Vec<Query>,
+    /// Structure of quotient polynomial.
     pub quotient: QuotientPolynomial<C::Scalar>,
-    // Minor customization
+    /// Prover and verifier common initial state to write to transcript if any.
     pub transcript_initial_state: Option<L::LoadedScalar>,
+    /// Instance polynomials commiting key if any.
     pub instance_committing_key: Option<InstanceCommittingKey<C>>,
+    /// Linearization strategy.
     pub linearization: Option<LinearizationStrategy>,
+    /// Indices (instance polynomial index, row) of encoded
+    /// [`crate::pcs::AccumulationScheme::Accumulator`]s.
     pub accumulator_indices: Vec<Vec<(usize, usize)>>,
 }
 
@@ -76,6 +88,8 @@ impl<C> PlonkProtocol<C>
 where
     C: CurveAffine,
 {
+    /// Loaded `PlonkProtocol` with `preprocessed` and
+    /// `transcript_initial_state` loaded as constant.
     pub fn loaded<L: Loader<C>>(&self, loader: &L) -> PlonkProtocol<C, L> {
         let preprocessed = self
             .preprocessed
@@ -117,6 +131,9 @@ mod halo2 {
     where
         C: CurveAffine,
     {
+        /// Loaded `PlonkProtocol` with `preprocessed` and
+        /// `transcript_initial_state` loaded as witness, which is useful when
+        /// doing recursion.
         pub fn loaded_preprocessed_as_witness<'a, EccChip: EccInstructions<'a, C>>(
             &self,
             loader: &Rc<Halo2Loader<'a, C, EccChip>>,

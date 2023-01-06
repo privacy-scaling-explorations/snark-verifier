@@ -1,3 +1,6 @@
+//! Abstraction of field element and elliptic curve point for generic verifier
+//! implementation.
+
 use crate::{
     util::{
         arithmetic::{CurveAffine, FieldOps, PrimeField},
@@ -15,25 +18,34 @@ pub mod evm;
 #[cfg(feature = "loader_halo2")]
 pub mod halo2;
 
+/// Loaded elliptic curve point.
 pub trait LoadedEcPoint<C: CurveAffine>: Clone + Debug + PartialEq {
+    /// [`Loader`].
     type Loader: Loader<C, LoadedEcPoint = Self>;
 
+    /// Returns [`Loader`].
     fn loader(&self) -> &Self::Loader;
 }
 
+/// Loaded field element.
 pub trait LoadedScalar<F: PrimeField>: Clone + Debug + PartialEq + FieldOps {
+    /// [`Loader`].
     type Loader: ScalarLoader<F, LoadedScalar = Self>;
 
+    /// Returns [`Loader`].
     fn loader(&self) -> &Self::Loader;
 
+    /// Returns square.
     fn square(&self) -> Self {
         self.clone() * self
     }
 
+    /// Returns inverse if any.
     fn invert(&self) -> Option<Self> {
         FieldOps::invert(self)
     }
 
+    /// Returns power to exponent.
     fn pow_const(&self, mut exp: u64) -> Self {
         assert!(exp > 0);
 
@@ -55,6 +67,7 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + PartialEq + FieldOps {
         acc
     }
 
+    /// Returns powers up to exponent `n-1`.
     fn powers(&self, n: usize) -> Vec<Self> {
         iter::once(self.loader().load_one())
             .chain(
@@ -65,19 +78,25 @@ pub trait LoadedScalar<F: PrimeField>: Clone + Debug + PartialEq + FieldOps {
     }
 }
 
+/// Elliptic curve point loader.
 pub trait EcPointLoader<C: CurveAffine> {
+    /// [`LoadedEcPoint`].
     type LoadedEcPoint: LoadedEcPoint<C, Loader = Self>;
 
+    /// Load a constant elliptic curve point.
     fn ec_point_load_const(&self, value: &C) -> Self::LoadedEcPoint;
 
+    /// Load `identity` as constant.
     fn ec_point_load_zero(&self) -> Self::LoadedEcPoint {
         self.ec_point_load_const(&C::identity())
     }
 
+    /// Load `generator` as constant.
     fn ec_point_load_one(&self) -> Self::LoadedEcPoint {
         self.ec_point_load_const(&C::generator())
     }
 
+    /// Assert lhs and rhs elliptic curve points are equal.
     fn ec_point_assert_eq(
         &self,
         annotation: &str,
@@ -85,6 +104,7 @@ pub trait EcPointLoader<C: CurveAffine> {
         rhs: &Self::LoadedEcPoint,
     ) -> Result<(), Error>;
 
+    /// Perform multi-scalar multiplication.
     fn multi_scalar_multiplication(
         pairs: &[(&Self::LoadedScalar, &Self::LoadedEcPoint)],
     ) -> Self::LoadedEcPoint
@@ -92,19 +112,25 @@ pub trait EcPointLoader<C: CurveAffine> {
         Self: ScalarLoader<C::ScalarExt>;
 }
 
+/// Field element loader.
 pub trait ScalarLoader<F: PrimeField> {
+    /// [`LoadedScalar`].
     type LoadedScalar: LoadedScalar<F, Loader = Self>;
 
+    /// Load a constant field element.
     fn load_const(&self, value: &F) -> Self::LoadedScalar;
 
+    /// Load `zero` as constant.
     fn load_zero(&self) -> Self::LoadedScalar {
         self.load_const(&F::zero())
     }
 
+    /// Load `one` as constant.
     fn load_one(&self) -> Self::LoadedScalar {
         self.load_const(&F::one())
     }
 
+    /// Assert lhs and rhs field elements are equal.
     fn assert_eq(
         &self,
         annotation: &str,
@@ -112,6 +138,7 @@ pub trait ScalarLoader<F: PrimeField> {
         rhs: &Self::LoadedScalar,
     ) -> Result<(), Error>;
 
+    /// Sum field elements with coefficients and constant.
     fn sum_with_coeff_and_const(
         &self,
         values: &[(F, &Self::LoadedScalar)],
@@ -140,6 +167,7 @@ pub trait ScalarLoader<F: PrimeField> {
             .into_owned()
     }
 
+    /// Sum product of field elements with coefficients and constant.
     fn sum_products_with_coeff_and_const(
         &self,
         values: &[(F, &Self::LoadedScalar, &Self::LoadedScalar)],
@@ -167,10 +195,12 @@ pub trait ScalarLoader<F: PrimeField> {
             .unwrap()
     }
 
+    /// Sum field elements with coefficients.
     fn sum_with_coeff(&self, values: &[(F, &Self::LoadedScalar)]) -> Self::LoadedScalar {
         self.sum_with_coeff_and_const(values, F::zero())
     }
 
+    /// Sum field elements and constant.
     fn sum_with_const(&self, values: &[&Self::LoadedScalar], constant: F) -> Self::LoadedScalar {
         self.sum_with_coeff_and_const(
             &values.iter().map(|&value| (F::one(), value)).collect_vec(),
@@ -178,10 +208,12 @@ pub trait ScalarLoader<F: PrimeField> {
         )
     }
 
+    /// Sum field elements.
     fn sum(&self, values: &[&Self::LoadedScalar]) -> Self::LoadedScalar {
         self.sum_with_const(values, F::zero())
     }
 
+    /// Sum product of field elements with coefficients.
     fn sum_products_with_coeff(
         &self,
         values: &[(F, &Self::LoadedScalar, &Self::LoadedScalar)],
@@ -189,6 +221,7 @@ pub trait ScalarLoader<F: PrimeField> {
         self.sum_products_with_coeff_and_const(values, F::zero())
     }
 
+    /// Sum product of field elements and constant.
     fn sum_products_with_const(
         &self,
         values: &[(&Self::LoadedScalar, &Self::LoadedScalar)],
@@ -203,6 +236,7 @@ pub trait ScalarLoader<F: PrimeField> {
         )
     }
 
+    /// Sum product of field elements.
     fn sum_products(
         &self,
         values: &[(&Self::LoadedScalar, &Self::LoadedScalar)],
@@ -210,12 +244,14 @@ pub trait ScalarLoader<F: PrimeField> {
         self.sum_products_with_const(values, F::zero())
     }
 
+    /// Product of field elements.
     fn product(&self, values: &[&Self::LoadedScalar]) -> Self::LoadedScalar {
         values
             .iter()
             .fold(self.load_one(), |acc, value| acc * *value)
     }
 
+    /// Batch invert field elements.
     fn batch_invert<'a>(values: impl IntoIterator<Item = &'a mut Self::LoadedScalar>)
     where
         Self::LoadedScalar: 'a,
@@ -226,10 +262,13 @@ pub trait ScalarLoader<F: PrimeField> {
     }
 }
 
+/// [`EcPointLoader`] and [`ScalarLoader`] with some helper methods.
 pub trait Loader<C: CurveAffine>:
     EcPointLoader<C> + ScalarLoader<C::ScalarExt> + Clone + Debug
 {
-    fn start_cost_metering(&self, _: &str) {}
+    /// Start cost metering with an `identifier`.
+    fn start_cost_metering(&self, _identifier: &str) {}
 
+    /// End lastest started cost metering.
     fn end_cost_metering(&self) {}
 }

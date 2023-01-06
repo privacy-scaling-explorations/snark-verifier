@@ -1,13 +1,16 @@
 use crate::{loader::Loader, util::arithmetic::CurveAffine};
 use std::fmt::Debug;
 
+/// KZG accumulator, containing lhs G1 and rhs G1 of pairing.
 #[derive(Clone, Debug)]
 pub struct KzgAccumulator<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
 {
+    /// lhs G1 of pairing.
     pub lhs: L::LoadedEcPoint,
+    /// rhs G1 of pairing.
     pub rhs: L::LoadedEcPoint,
 }
 
@@ -16,6 +19,7 @@ where
     C: CurveAffine,
     L: Loader<C>,
 {
+    /// Initialize a [`KzgAccumulator`].
     pub fn new(lhs: L::LoadedEcPoint, rhs: L::LoadedEcPoint) -> Self {
         Self { lhs, rhs }
     }
@@ -164,15 +168,18 @@ mod halo2 {
         x.zip(y).map(|(x, y)| C::from_xy(x, y).unwrap())
     }
 
+    /// Instructions to encode/decode a elliptic curve point into/from limbs.
     pub trait LimbsEncodingInstructions<'a, C: CurveAffine, const LIMBS: usize, const BITS: usize>:
         EccInstructions<'a, C>
     {
+        /// Decode and assign an elliptic curve point from limbs.
         fn assign_ec_point_from_limbs(
             &self,
             ctx: &mut Self::Context,
             limbs: &[impl Deref<Target = Self::AssignedScalar>],
         ) -> Result<Self::AssignedEcPoint, plonk::Error>;
 
+        /// Encode an elliptic curve point into limbs.
         fn assign_ec_point_to_limbs(
             &self,
             ctx: &mut Self::Context,

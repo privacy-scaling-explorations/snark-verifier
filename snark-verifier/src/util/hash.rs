@@ -1,3 +1,5 @@
+//! Hash algorithms.
+
 mod poseidon;
 
 pub use crate::util::hash::poseidon::Poseidon;

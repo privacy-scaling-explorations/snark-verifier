@@ -6,7 +6,7 @@ use crate::{
         PolynomialCommitmentScheme, Query,
     },
     util::{
-        arithmetic::{ilog2, CurveAffine, FieldExt, Fraction, MultiMillerLoop},
+        arithmetic::{CurveAffine, FieldExt, Fraction, MultiMillerLoop},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -18,6 +18,9 @@ use std::{
     marker::PhantomData,
 };
 
+/// Verifier of multi-open KZG. It is for the SHPLONK implementation
+/// in [`halo2_proofs`].
+/// Notations are following https://eprint.iacr.org/2020/081.
 #[derive(Clone, Debug)]
 pub struct Bdfg21;
 
@@ -76,6 +79,7 @@ where
     }
 }
 
+/// Structured proof of [`Bdfg21`].
 #[derive(Clone, Debug)]
 pub struct Bdfg21Proof<C, L>
 where
@@ -175,9 +179,12 @@ fn query_set_coeffs<'a, F: FieldExt, T: LoadedScalar<F>>(
         .sorted()
         .dedup();
 
-    let size = 2.max(
-        ilog2((sets.iter().map(|set| set.shifts.len()).max().unwrap() - 1).next_power_of_two()) + 1,
-    );
+    let size = sets
+        .iter()
+        .map(|set| set.shifts.len())
+        .chain(Some(2))
+        .max()
+        .unwrap();
     let powers_of_z = z.powers(size);
     let z_prime_minus_z_shift_i = BTreeMap::from_iter(superset.map(|shift| {
         (
@@ -290,23 +297,15 @@ where
             .collect_vec();
 
         let z = &powers_of_z[1];
-        let z_pow_k_minus_one = {
-            let k_minus_one = shifts.len() - 1;
-            powers_of_z
-                .iter()
-                .enumerate()
-                .skip(1)
-                .filter_map(|(i, power_of_z)| (k_minus_one & (1 << i) == 1).then(|| power_of_z))
-                .fold(loader.load_one(), |acc, value| acc * value)
-        };
+        let z_pow_k_minus_one = &powers_of_z[shifts.len() - 1];
 
         let barycentric_weights = shifts
             .iter()
             .zip(normalized_ell_primes.iter())
             .map(|(shift, normalized_ell_prime)| {
                 loader.sum_products_with_coeff(&[
-                    (*normalized_ell_prime, &z_pow_k_minus_one, z_prime),
-                    (-(*normalized_ell_prime * shift), &z_pow_k_minus_one, z),
+                    (*normalized_ell_prime, z_pow_k_minus_one, z_prime),
+                    (-(*normalized_ell_prime * shift), z_pow_k_minus_one, z),
                 ])
             })
             .map(Fraction::one_over)
