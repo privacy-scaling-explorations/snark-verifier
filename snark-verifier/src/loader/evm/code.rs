@@ -59,6 +59,7 @@ impl YulCode {
                             let y_square_eq_x_cube_plus_3:bool := eq(x_cube_plus_3, y_square)
                             valid := and(y_square_eq_x_cube_plus_3, valid)
                         }}
+                        if not(valid) {{ revert(0, 0) }}
                     }}
                     {}
                 }}
