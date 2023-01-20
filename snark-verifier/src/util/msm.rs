@@ -304,7 +304,7 @@ fn multi_scalar_multiplication_serial<C: CurveAffine>(
 }
 
 /// Multi-scalar multiplication algorithm copied from
-/// https://github.com/zcash/halo2/blob/main/halo2_proofs/src/arithmetic.rs.
+/// <https://github.com/zcash/halo2/blob/main/halo2_proofs/src/arithmetic.rs>.
 pub fn multi_scalar_multiplication<C: CurveAffine>(scalars: &[C::Scalar], bases: &[C]) -> C::Curve {
     assert_eq!(scalars.len(), bases.len());
 

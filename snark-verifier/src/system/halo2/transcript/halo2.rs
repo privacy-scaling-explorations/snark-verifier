@@ -61,7 +61,7 @@ where
     R: Read,
     EccChip: NativeEncoding<'a, C>,
 {
-    /// Initialize [`EvmTranscript`] given [`Rc<Halo2Loader>`].
+    /// Initialize [`PoseidonTranscript`] given [`Rc<Halo2Loader>`].
     pub fn new(loader: &Rc<Halo2Loader<'a, C, EccChip>>, stream: Value<R>) -> Self {
         let buf = Poseidon::new(loader, R_F, R_P);
         Self {
@@ -157,7 +157,7 @@ where
 impl<C: CurveAffine, S, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize>
     PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>
 {
-    /// Initialize [`EvmTranscript`] given readable or writeable stream for
+    /// Initialize [`PoseidonTranscript`] given readable or writeable stream for
     /// verifying or proving with [`NativeLoader`].
     pub fn new(stream: S) -> Self {
         Self {

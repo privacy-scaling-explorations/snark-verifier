@@ -1,4 +1,5 @@
-//! Copied and modified from https://github.com/foundry-rs/foundry/blob/master/evm/src/executor/mod.rs
+//! Copied and modified from
+//! <https://github.com/foundry-rs/foundry/blob/master/evm/src/executor/mod.rs>
 
 use crate::loader::evm::{Address, H256, U256};
 use bytes::Bytes;
@@ -725,7 +726,7 @@ impl ExecutorBuilder {
         self
     }
 
-    /// Initialize an [`Executor`].
+    /// Initialize an `Executor`.
     pub fn build(self) -> Executor {
         Executor::new(self.debugger, self.gas_limit.unwrap_or(U256::MAX))
     }

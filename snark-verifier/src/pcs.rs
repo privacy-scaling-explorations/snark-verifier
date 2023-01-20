@@ -166,7 +166,7 @@ where
     type Accumulator: Clone + Debug;
 
     /// Decode an [`AccumulatorEncoding::Accumulator`] from serveral
-    /// [`Loader::LoadedScalar`]s.
+    /// [`crate::loader::ScalarLoader::LoadedScalar`]s.
     fn from_repr(repr: &[&L::LoadedScalar]) -> Result<Self::Accumulator, Error>;
 }
 

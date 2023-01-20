@@ -1,5 +1,5 @@
 //! Inner product argument polynomial commitment scheme and accumulation scheme.
-//! The notations are following https://eprint.iacr.org/2020/499.pdf.
+//! The notations are following <https://eprint.iacr.org/2020/499.pdf>.
 
 use crate::{
     loader::{native::NativeLoader, LoadedScalar, Loader, ScalarLoader},
@@ -311,7 +311,7 @@ where
         }
     }
 
-    /// Read [`AccumulationScheme::Proof`] from transcript.
+    /// Read [`crate::pcs::AccumulationScheme::Proof`] from transcript.
     pub fn read<T>(svk: &IpaSuccinctVerifyingKey<C>, transcript: &mut T) -> Result<Self, Error>
     where
         T: TranscriptRead<C, L>,
