@@ -49,8 +49,8 @@ impl MemoryChunk {
 }
 
 /// Convert a [`PrimeField`] into a [`U256`].
-/// Assuming fields implements traits in crate `ff` always have little-endian
-/// representation.
+/// Assuming fields that implement traits in crate `ff` always have
+/// little-endian representation.
 pub fn fe_to_u256<F>(f: F) -> U256
 where
     F: PrimeField<Repr = [u8; 32]>,

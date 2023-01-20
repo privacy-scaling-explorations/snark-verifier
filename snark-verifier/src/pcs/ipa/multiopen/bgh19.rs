@@ -19,7 +19,7 @@ use std::{
 };
 
 /// Verifier of multi-open inner product argument. It is for the implementation
-/// in [`halo2_proofs`].
+/// in [`halo2_proofs`], which is previously https://eprint.iacr.org/2019/1021.
 #[derive(Clone, Debug)]
 pub struct Bgh19;
 

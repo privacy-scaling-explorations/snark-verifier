@@ -269,6 +269,6 @@ pub trait Loader<C: CurveAffine>:
     /// Start cost metering with an `identifier`.
     fn start_cost_metering(&self, _identifier: &str) {}
 
-    /// End lastest started cost metering.
+    /// End latest started cost metering.
     fn end_cost_metering(&self) {}
 }

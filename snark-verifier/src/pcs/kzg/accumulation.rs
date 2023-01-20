@@ -11,9 +11,10 @@ use crate::{
 use rand::Rng;
 use std::{fmt::Debug, marker::PhantomData};
 
-/// KZG accumulation scheme.
+/// KZG accumulation scheme. The second generic `MOS` stands for different kind
+/// of multi-open scheme.
 #[derive(Clone, Debug)]
-pub struct KzgAs<M, MOS = ()>(PhantomData<(M, MOS)>);
+pub struct KzgAs<M, MOS>(PhantomData<(M, MOS)>);
 
 impl<M, L, MOS> AccumulationScheme<M::G1Affine, L> for KzgAs<M, MOS>
 where

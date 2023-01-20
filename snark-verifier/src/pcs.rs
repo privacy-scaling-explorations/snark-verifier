@@ -15,7 +15,7 @@ use std::{fmt::Debug, marker::PhantomData};
 pub mod ipa;
 pub mod kzg;
 
-/// Query to a oracle.
+/// Query to an oracle.
 /// It assumes all queries are based on the same point, but with some `shift`.
 #[derive(Clone, Debug)]
 pub struct Query<F: PrimeField, T = ()> {
@@ -112,12 +112,16 @@ where
 }
 
 /// Accumulation scheme decider.
+/// When accumulation is going to end, the decider will perform the check if the
+/// final accumulator is valid or not, where the check is usually much more
+/// expensive than accumulation verification.
 pub trait AccumulationDecider<C, L>: AccumulationScheme<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
 {
-    /// Deciding key.
+    /// Deciding key. The key for decider for perform the final accumulator
+    /// check.
     type DecidingKey: Clone + Debug;
 
     /// Decide if a [`AccumulationScheme::Accumulator`] is valid.
@@ -138,8 +142,8 @@ where
     /// Proving key.
     type ProvingKey: Clone + Debug;
 
-    /// Create a proof that argues old [`AccumulationScheme::Accumulator`]s are
-    /// properly accumulated into the new one, and returns the new one as
+    /// Create a proof that argues if old [`AccumulationScheme::Accumulator`]s
+    /// are properly accumulated into the new one, and returns the new one as
     /// output.
     fn create_proof<T, R>(
         pk: &Self::ProvingKey,

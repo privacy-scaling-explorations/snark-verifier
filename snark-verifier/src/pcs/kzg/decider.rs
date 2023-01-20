@@ -5,7 +5,9 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone, Copy)]
 pub struct KzgDecidingKey<M: MultiMillerLoop> {
     svk: KzgSuccinctVerifyingKey<M::G1Affine>,
+    /// Generator on G2.
     g2: M::G2Affine,
+    /// Generator to the trusted-setup secret on G2.
     s_g2: M::G2Affine,
     _marker: PhantomData<M>,
 }

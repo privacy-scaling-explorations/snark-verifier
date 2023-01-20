@@ -434,7 +434,7 @@ mod test {
     #[test]
     fn test_ipa() {
         type Ipa = ipa::Ipa<pallas::Affine>;
-        type IpaAs = ipa::IpaAs<pallas::Affine>;
+        type IpaAs = ipa::IpaAs<pallas::Affine, ()>;
 
         let k = 10;
         let mut rng = OsRng;

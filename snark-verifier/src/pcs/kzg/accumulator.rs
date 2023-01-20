@@ -8,9 +8,9 @@ where
     C: CurveAffine,
     L: Loader<C>,
 {
-    /// lhs G1 of pairing.
+    /// Left-hand side G1 of pairing.
     pub lhs: L::LoadedEcPoint,
-    /// rhs G1 of pairing.
+    /// Right-hand side G1 of pairing.
     pub rhs: L::LoadedEcPoint,
 }
 

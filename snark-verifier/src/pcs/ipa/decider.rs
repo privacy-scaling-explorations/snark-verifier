@@ -4,6 +4,7 @@ use crate::{pcs::ipa::IpaSuccinctVerifyingKey, util::arithmetic::CurveAffine};
 #[derive(Clone, Debug)]
 pub struct IpaDecidingKey<C: CurveAffine> {
     svk: IpaSuccinctVerifyingKey<C>,
+    /// Committing key.
     g: Vec<C>,
 }
 
