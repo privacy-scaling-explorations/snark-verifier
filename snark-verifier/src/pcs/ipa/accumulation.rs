@@ -18,8 +18,10 @@ use crate::{
 use rand::Rng;
 use std::{array, fmt::Debug, iter, marker::PhantomData};
 
+/// Inner product argument accumulation scheme. The second generic `MOS` stands
+/// for different kind of multi-open scheme.
 #[derive(Clone, Debug)]
-pub struct IpaAs<C, MOS = ()>(PhantomData<(C, MOS)>);
+pub struct IpaAs<C, MOS>(PhantomData<(C, MOS)>);
 
 impl<C, L, MOS> AccumulationScheme<C, L> for IpaAs<C, MOS>
 where
@@ -76,6 +78,7 @@ where
     }
 }
 
+/// Inner product argument accumulation scheme proof.
 #[derive(Clone, Debug)]
 pub struct IpaAsProof<C, L>
 where
@@ -236,7 +239,7 @@ mod test {
     #[test]
     fn test_ipa_as() {
         type Ipa = ipa::Ipa<pallas::Affine>;
-        type IpaAs = ipa::IpaAs<pallas::Affine>;
+        type IpaAs = ipa::IpaAs<pallas::Affine, ()>;
 
         let k = 10;
         let zk = true;

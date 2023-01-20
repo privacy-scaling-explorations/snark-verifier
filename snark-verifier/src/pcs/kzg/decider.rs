@@ -1,15 +1,19 @@
 use crate::{pcs::kzg::KzgSuccinctVerifyingKey, util::arithmetic::MultiMillerLoop};
 use std::marker::PhantomData;
 
+/// KZG deciding key.
 #[derive(Debug, Clone, Copy)]
 pub struct KzgDecidingKey<M: MultiMillerLoop> {
     svk: KzgSuccinctVerifyingKey<M::G1Affine>,
+    /// Generator on G2.
     g2: M::G2Affine,
+    /// Generator to the trusted-setup secret on G2.
     s_g2: M::G2Affine,
     _marker: PhantomData<M>,
 }
 
 impl<M: MultiMillerLoop> KzgDecidingKey<M> {
+    /// Initialize a [`KzgDecidingKey`]
     pub fn new(
         svk: impl Into<KzgSuccinctVerifyingKey<M::G1Affine>>,
         g2: M::G2Affine,

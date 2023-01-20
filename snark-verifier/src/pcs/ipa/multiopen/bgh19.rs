@@ -5,7 +5,7 @@ use crate::{
         PolynomialCommitmentScheme, Query,
     },
     util::{
-        arithmetic::{ilog2, CurveAffine, FieldExt, Fraction},
+        arithmetic::{CurveAffine, FieldExt, Fraction},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -18,6 +18,9 @@ use std::{
     marker::PhantomData,
 };
 
+/// Verifier of multi-open inner product argument. It is for the implementation
+/// in [`halo2_proofs`], which is previously <https://eprint.iacr.org/2019/1021>
+/// .
 #[derive(Clone, Debug)]
 pub struct Bgh19;
 
@@ -92,6 +95,7 @@ where
     }
 }
 
+/// Structured proof of [`Bgh19`].
 #[derive(Clone, Debug)]
 pub struct Bgh19Proof<C, L>
 where
@@ -222,9 +226,12 @@ where
         .sorted()
         .dedup();
 
-    let size = 2.max(
-        ilog2((sets.iter().map(|set| set.shifts.len()).max().unwrap() - 1).next_power_of_two()) + 1,
-    );
+    let size = sets
+        .iter()
+        .map(|set| set.shifts.len())
+        .chain(Some(2))
+        .max()
+        .unwrap();
     let powers_of_x = x.powers(size);
     let x_3_minus_x_shift_i = BTreeMap::from_iter(
         superset.map(|shift| (shift, x_3.clone() - x.clone() * loader.load_const(&shift))),
@@ -323,26 +330,15 @@ where
             .collect_vec();
 
         let x = &powers_of_x[1].clone();
-        let x_pow_k_minus_one = {
-            let k_minus_one = shifts.len() - 1;
-            powers_of_x
-                .iter()
-                .enumerate()
-                .skip(1)
-                .filter_map(|(i, power_of_x)| {
-                    (k_minus_one & (1 << i) == 1).then(|| power_of_x.clone())
-                })
-                .reduce(|acc, value| acc * value)
-                .unwrap_or_else(|| loader.load_one())
-        };
+        let x_pow_k_minus_one = &powers_of_x[shifts.len() - 1];
 
         let barycentric_weights = shifts
             .iter()
             .zip(normalized_ell_primes.iter())
             .map(|(shift, normalized_ell_prime)| {
                 loader.sum_products_with_coeff(&[
-                    (*normalized_ell_prime, &x_pow_k_minus_one, x_3),
-                    (-(*normalized_ell_prime * shift), &x_pow_k_minus_one, x),
+                    (*normalized_ell_prime, x_pow_k_minus_one, x_3),
+                    (-(*normalized_ell_prime * shift), x_pow_k_minus_one, x),
                 ])
             })
             .map(Fraction::one_over)

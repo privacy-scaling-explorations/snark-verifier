@@ -1,4 +1,8 @@
+//! Verifier strategy
+
 pub mod ipa {
+    //! IPA verifier strategy
+
     use crate::util::arithmetic::CurveAffine;
     use halo2_proofs::{
         plonk::Error,
@@ -14,6 +18,8 @@ pub mod ipa {
         },
     };
 
+    /// Strategy that handles single proof and decide immediately, but also
+    /// returns `g` if the proof is valid.
     #[derive(Clone, Debug)]
     pub struct SingleStrategy<'a, C: CurveAffine> {
         msm: MSMIPA<'a, C>,

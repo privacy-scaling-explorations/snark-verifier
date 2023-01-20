@@ -5,6 +5,7 @@ use crate::{
 use poseidon::{self, SparseMDSMatrix, Spec};
 use std::{iter, marker::PhantomData, mem};
 
+#[derive(Debug)]
 struct State<F: FieldExt, L, const T: usize, const RATE: usize> {
     inner: [L; T],
     _marker: PhantomData<F>,
@@ -106,6 +107,8 @@ impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> State<F
     }
 }
 
+/// Poseidon hasher with configurable `RATE`.
+#[derive(Debug)]
 pub struct Poseidon<F: FieldExt, L, const T: usize, const RATE: usize> {
     spec: Spec<F, T, RATE>,
     state: State<F, L, T, RATE>,
@@ -113,6 +116,7 @@ pub struct Poseidon<F: FieldExt, L, const T: usize, const RATE: usize> {
 }
 
 impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> Poseidon<F, L, T, RATE> {
+    /// Initialize a poseidon hasher.
     pub fn new(loader: &L::Loader, r_f: usize, r_p: usize) -> Self {
         Self {
             spec: Spec::new(r_f, r_p),
@@ -125,10 +129,13 @@ impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> Poseido
         }
     }
 
+    /// Store given `elements` into buffer.
     pub fn update(&mut self, elements: &[L]) {
         self.buf.extend_from_slice(elements);
     }
 
+    /// Consume buffer and perform permutation, then output second element of
+    /// state.
     pub fn squeeze(&mut self) -> L {
         let buf = mem::take(&mut self.buf);
         let exact = buf.len() % RATE == 0;

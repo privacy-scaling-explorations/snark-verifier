@@ -1,3 +1,5 @@
+//! Multi-scalar multiplication algorithm.
+
 use crate::{
     loader::{LoadedEcPoint, Loader},
     util::{
@@ -14,6 +16,7 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
+/// Contains unevaluated multi-scalar multiplication.
 pub struct Msm<'a, C: CurveAffine, L: Loader<C>> {
     constant: Option<L::LoadedScalar>,
     scalars: Vec<L::LoadedScalar>,
@@ -39,6 +42,7 @@ where
     C: CurveAffine,
     L: Loader<C>,
 {
+    /// Initialize with a constant.
     pub fn constant(constant: L::LoadedScalar) -> Self {
         Msm {
             constant: Some(constant),
@@ -46,6 +50,7 @@ where
         }
     }
 
+    /// Initialize with a base.
     pub fn base<'b: 'a>(base: &'b L::LoadedEcPoint) -> Self {
         let one = base.loader().load_one();
         Msm {
@@ -68,6 +73,11 @@ where
         self.bases.is_empty().then(|| self.constant.unwrap())
     }
 
+    /// Evaluate multi-scalar multiplication.
+    ///
+    /// # Panic
+    ///
+    /// If given `gen` is `None` but there `constant` has some value.
     pub fn evaluate(self, gen: Option<C>) -> L::LoadedEcPoint {
         let gen = gen.map(|gen| {
             self.bases
@@ -87,7 +97,7 @@ where
         L::multi_scalar_multiplication(&pairs)
     }
 
-    pub fn scale(&mut self, factor: &L::LoadedScalar) {
+    fn scale(&mut self, factor: &L::LoadedScalar) {
         if let Some(constant) = self.constant.as_mut() {
             *constant *= factor;
         }
@@ -96,7 +106,7 @@ where
         }
     }
 
-    pub fn push<'b: 'a>(&mut self, scalar: L::LoadedScalar, base: &'b L::LoadedEcPoint) {
+    fn push<'b: 'a>(&mut self, scalar: L::LoadedScalar, base: &'b L::LoadedEcPoint) {
         if let Some(pos) = self.bases.iter().position(|exist| exist.eq(&base)) {
             self.scalars[pos] += &scalar;
         } else {
@@ -105,7 +115,7 @@ where
         }
     }
 
-    pub fn extend<'b: 'a>(&mut self, mut other: Msm<'b, C, L>) {
+    fn extend<'b: 'a>(&mut self, mut other: Msm<'b, C, L>) {
         match (self.constant.as_mut(), other.constant.as_ref()) {
             (Some(lhs), Some(rhs)) => *lhs += rhs,
             (None, Some(_)) => self.constant = other.constant.take(),
@@ -293,7 +303,8 @@ fn multi_scalar_multiplication_serial<C: CurveAffine>(
     }
 }
 
-// Copy from https://github.com/zcash/halo2/blob/main/halo2_proofs/src/arithmetic.rs
+/// Multi-scalar multiplication algorithm copied from
+/// <https://github.com/zcash/halo2/blob/main/halo2_proofs/src/arithmetic.rs>.
 pub fn multi_scalar_multiplication<C: CurveAffine>(scalars: &[C::Scalar], bases: &[C]) -> C::Curve {
     assert_eq!(scalars.len(), bases.len());
 

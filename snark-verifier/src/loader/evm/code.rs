@@ -45,19 +45,12 @@ impl YulCode {
                             valid := and(x_lt_p, y_lt_p)
                         }}
                         {{
-                            let x_is_zero:bool := eq(x, 0)
-                            let y_is_zero:bool := eq(y, 0)
-                            let x_or_y_is_zero:bool := or(x_is_zero, y_is_zero)
-                            let x_and_y_is_not_zero:bool := not(x_or_y_is_zero)
-                            valid := and(x_and_y_is_not_zero, valid)
-                        }}
-                        {{
                             let y_square := mulmod(y, y, {base_modulus})
                             let x_square := mulmod(x, x, {base_modulus})
                             let x_cube := mulmod(x_square, x, {base_modulus})
                             let x_cube_plus_3 := addmod(x_cube, 3, {base_modulus})
-                            let y_square_eq_x_cube_plus_3:bool := eq(x_cube_plus_3, y_square)
-                            valid := and(y_square_eq_x_cube_plus_3, valid)
+                            let is_affine:bool := eq(x_cube_plus_3, y_square)
+                            valid := and(valid, is_affine)
                         }}
                     }}
                     {}

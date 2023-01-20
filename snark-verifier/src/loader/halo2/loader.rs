@@ -17,6 +17,7 @@ use std::{
     rc::Rc,
 };
 
+/// `Loader` implementation for generating verifier in [`halo2_proofs`] circuit.
 #[derive(Debug)]
 pub struct Halo2Loader<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> {
     ecc_chip: RefCell<EccChip>,
@@ -29,6 +30,8 @@ pub struct Halo2Loader<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> {
 }
 
 impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, EccChip> {
+    /// Initialize a [`Halo2Loader`] with given [`EccInstructions`] and
+    /// [`EccInstructions::Context`].
     pub fn new(ecc_chip: EccChip, ctx: EccChip::Context) -> Rc<Self> {
         Rc::new(Self {
             ecc_chip: RefCell::new(ecc_chip),
@@ -41,22 +44,27 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
         })
     }
 
+    /// Into [`EccInstructions::Context`].
     pub fn into_ctx(self) -> EccChip::Context {
         self.ctx.into_inner()
     }
 
+    /// Returns reference of [`EccInstructions`].
     pub fn ecc_chip(&self) -> Ref<EccChip> {
         self.ecc_chip.borrow()
     }
 
+    /// Returns reference of [`EccInstructions::ScalarChip`].
     pub fn scalar_chip(&self) -> Ref<EccChip::ScalarChip> {
         Ref::map(self.ecc_chip(), |ecc_chip| ecc_chip.scalar_chip())
     }
 
+    /// Returns reference of [`EccInstructions::Context`].
     pub fn ctx(&self) -> Ref<EccChip::Context> {
         self.ctx.borrow()
     }
 
+    /// Returns mutable reference of [`EccInstructions::Context`].
     pub fn ctx_mut(&self) -> RefMut<'_, EccChip::Context> {
         self.ctx.borrow_mut()
     }
@@ -67,6 +75,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
             .unwrap()
     }
 
+    /// Assign a field element witness.
     pub fn assign_scalar(
         self: &Rc<Self>,
         scalar: circuit::Value<C::Scalar>,
@@ -78,6 +87,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
         self.scalar_from_assigned(assigned)
     }
 
+    /// Returns [`Scalar`] with assigned field element.
     pub fn scalar_from_assigned(
         self: &Rc<Self>,
         assigned: EccChip::AssignedScalar,
@@ -104,6 +114,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
             .unwrap()
     }
 
+    /// Assign an elliptic curve point witness.
     pub fn assign_ec_point(
         self: &Rc<Self>,
         ec_point: circuit::Value<C>,
@@ -115,6 +126,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Halo2Loader<'a, C, Ecc
         self.ec_point_from_assigned(assigned)
     }
 
+    /// Returns [`EcPoint`] with assigned elliptic curve point.
     pub fn ec_point_from_assigned(
         self: &Rc<Self>,
         assigned: EccChip::AssignedEcPoint,
@@ -307,6 +319,7 @@ impl<T, L> Value<T, L> {
     }
 }
 
+/// Field element
 #[derive(Clone)]
 pub struct Scalar<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> {
     loader: Rc<Halo2Loader<'a, C, EccChip>>,
@@ -315,10 +328,12 @@ pub struct Scalar<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> {
 }
 
 impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Scalar<'a, C, EccChip> {
+    /// Returns reference of [`Rc<Halo2Loader>`]
     pub fn loader(&self) -> &Rc<Halo2Loader<'a, C, EccChip>> {
         &self.loader
     }
 
+    /// Returns reference of [`EccInstructions::AssignedScalar`].
     pub fn assigned(&self) -> Ref<EccChip::AssignedScalar> {
         if let Some(constant) = self.maybe_const() {
             *self.value.borrow_mut() = Value::Assigned(self.loader.assign_const_scalar(constant))
@@ -469,6 +484,7 @@ impl<'a, 'b, C: CurveAffine, EccChip: EccInstructions<'a, C>> MulAssign<&'b Self
     }
 }
 
+/// Elliptic curve point
 #[derive(Clone)]
 pub struct EcPoint<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> {
     loader: Rc<Halo2Loader<'a, C, EccChip>>,
@@ -477,6 +493,7 @@ pub struct EcPoint<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> {
 }
 
 impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> EcPoint<'a, C, EccChip> {
+    /// Into [`EccInstructions::AssignedEcPoint`].
     pub fn into_assigned(self) -> EccChip::AssignedEcPoint {
         match self.value.into_inner() {
             Value::Constant(constant) => self.loader.assign_const_ec_point(constant),
@@ -484,6 +501,7 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> EcPoint<'a, C, EccChip
         }
     }
 
+    /// Returns reference of [`EccInstructions::AssignedEcPoint`].
     pub fn assigned(&self) -> Ref<EccChip::AssignedEcPoint> {
         if let Some(constant) = self.maybe_const() {
             *self.value.borrow_mut() = Value::Assigned(self.loader.assign_const_ec_point(constant))

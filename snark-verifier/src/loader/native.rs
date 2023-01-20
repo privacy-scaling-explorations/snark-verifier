@@ -1,3 +1,5 @@
+//! `Loader` implementation in native rust.
+
 use crate::{
     loader::{EcPointLoader, LoadedEcPoint, LoadedScalar, Loader, ScalarLoader},
     util::arithmetic::{Curve, CurveAffine, FieldOps, PrimeField},
@@ -7,9 +9,12 @@ use lazy_static::lazy_static;
 use std::fmt::Debug;
 
 lazy_static! {
+    /// NativeLoader instance for [`LoadedEcPoint::loader`] and
+    /// [`LoadedScalar::loader`] referencing.
     pub static ref LOADER: NativeLoader = NativeLoader;
 }
 
+/// `Loader` implementation in native rust.
 #[derive(Clone, Debug)]
 pub struct NativeLoader;
 

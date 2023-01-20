@@ -15,6 +15,8 @@ use crate::{
 };
 use std::{collections::HashMap, iter};
 
+/// Proof of PLONK with [`PolynomialCommitmentScheme`] that has
+/// [`AccumulationScheme`].
 #[derive(Clone, Debug)]
 pub struct PlonkProof<C, L, AS>
 where
@@ -22,13 +24,21 @@ where
     L: Loader<C>,
     AS: AccumulationScheme<C, L> + PolynomialCommitmentScheme<C, L, Output = AS::Accumulator>,
 {
+    /// Computed commitments of instance polynomials.
     pub committed_instances: Option<Vec<L::LoadedEcPoint>>,
+    /// Commitments of witness polynomials read from transcript.
     pub witnesses: Vec<L::LoadedEcPoint>,
+    /// Challenges squeezed from transcript.
     pub challenges: Vec<L::LoadedScalar>,
+    /// Quotient commitments read from transcript.
     pub quotients: Vec<L::LoadedEcPoint>,
+    /// Query point squeezed from transcript.
     pub z: L::LoadedScalar,
+    /// Evaluations read from transcript.
     pub evaluations: Vec<L::LoadedScalar>,
+    /// Proof of [`PolynomialCommitmentScheme`].
     pub pcs: <AS as PolynomialCommitmentScheme<C, L>>::Proof,
+    /// Old [`AccumulationScheme::Accumulator`]s read from instnaces.
     pub old_accumulators: Vec<AS::Accumulator>,
 }
 
@@ -38,6 +48,7 @@ where
     L: Loader<C>,
     AS: AccumulationScheme<C, L> + PolynomialCommitmentScheme<C, L, Output = AS::Accumulator>,
 {
+    /// Reads each part from transcript as [`PlonkProof`].
     pub fn read<T, AE>(
         svk: &<AS as PolynomialCommitmentScheme<C, L>>::VerifyingKey,
         protocol: &PlonkProtocol<C, L>,
@@ -157,16 +168,15 @@ where
         })
     }
 
-    pub fn empty_queries(protocol: &PlonkProtocol<C, L>) -> Vec<pcs::Query<C::Scalar>> {
+    pub(super) fn empty_queries(protocol: &PlonkProtocol<C, L>) -> Vec<pcs::Query<C::Scalar>> {
         protocol
             .queries
             .iter()
-            .map(|query| pcs::Query {
-                poly: query.poly,
-                shift: protocol
+            .map(|query| {
+                let shift = protocol
                     .domain
-                    .rotate_scalar(C::Scalar::one(), query.rotation),
-                eval: (),
+                    .rotate_scalar(C::Scalar::one(), query.rotation);
+                pcs::Query::new(query.poly, shift)
             })
             .collect()
     }

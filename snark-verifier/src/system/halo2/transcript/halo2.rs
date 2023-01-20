@@ -1,3 +1,5 @@
+//! Transcript for verifier in [`halo2_proofs`] circuit.
+
 use crate::{
     loader::{
         halo2::{EcPoint, EccInstructions, Halo2Loader, Scalar},
@@ -23,6 +25,7 @@ pub trait NativeEncoding<'a, C>: EccInstructions<'a, C>
 where
     C: CurveAffine,
 {
+    /// Encode an elliptic curve point into field elements.
     fn encode(
         &self,
         ctx: &mut Self::Context,
@@ -30,6 +33,10 @@ where
     ) -> Result<Vec<Self::AssignedScalar>, Error>;
 }
 
+/// Transcript for verifier in [`halo2_proofs`] circuit using poseidon hasher.
+/// Currently It assumes the elliptic curve scalar field is same as native
+/// field.
+#[derive(Debug)]
 pub struct PoseidonTranscript<
     C,
     L,
@@ -54,6 +61,7 @@ where
     R: Read,
     EccChip: NativeEncoding<'a, C>,
 {
+    /// Initialize [`PoseidonTranscript`] given [`Rc<Halo2Loader>`].
     pub fn new(loader: &Rc<Halo2Loader<'a, C, EccChip>>, stream: Value<R>) -> Self {
         let buf = Poseidon::new(loader, R_F, R_P);
         Self {
@@ -99,7 +107,7 @@ where
             .map_err(|_| {
                 Error::Transcript(
                     io::ErrorKind::Other,
-                    "Failed to encode elliptic curve point into native field elements".to_string(),
+                    "Invalid elliptic curve point".to_string(),
                 )
             })?;
         self.buf.update(&encoded);
@@ -149,6 +157,8 @@ where
 impl<C: CurveAffine, S, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize>
     PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>
 {
+    /// Initialize [`PoseidonTranscript`] given readable or writeable stream for
+    /// verifying or proving with [`NativeLoader`].
     pub fn new(stream: S) -> Self {
         Self {
             loader: NativeLoader,
@@ -236,10 +246,12 @@ where
     C: CurveAffine,
     W: Write,
 {
+    /// Returns mutable `stream`.
     pub fn stream_mut(&mut self) -> &mut W {
         &mut self.stream
     }
 
+    /// Finalize transcript and returns `stream`.
     pub fn finalize(self) -> W {
         self.stream
     }
@@ -274,6 +286,10 @@ where
     }
 }
 
+/// [`EncodedChallenge`] implemented for verifier in [`halo2_proofs`] circuit.
+/// Currently It assumes the elliptic curve scalar field is same as native
+/// field.
+#[derive(Debug)]
 pub struct ChallengeScalar<C: CurveAffine>(C::Scalar);
 
 impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {

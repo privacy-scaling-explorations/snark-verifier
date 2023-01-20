@@ -1,3 +1,5 @@
+//! Transcripts implemented with both `halo2_proofs::transcript` and
+//! `crate::util::transcript`.
 use crate::{
     loader::native::{self, NativeLoader},
     util::{

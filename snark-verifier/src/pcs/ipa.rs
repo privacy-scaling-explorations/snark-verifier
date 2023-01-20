@@ -1,3 +1,6 @@
+//! Inner product argument polynomial commitment scheme and accumulation scheme.
+//! The notations are following <https://eprint.iacr.org/2020/499.pdf>.
+
 use crate::{
     loader::{native::NativeLoader, LoadedScalar, Loader, ScalarLoader},
     util::{
@@ -25,6 +28,7 @@ pub use accumulator::IpaAccumulator;
 pub use decider::IpaDecidingKey;
 pub use multiopen::{Bgh19, Bgh19Proof};
 
+/// Inner product argument polynomial commitment scheme.
 #[derive(Clone, Debug)]
 pub struct Ipa<C>(PhantomData<C>);
 
@@ -32,6 +36,7 @@ impl<C> Ipa<C>
 where
     C: CurveAffine,
 {
+    /// Create an inner product argument.
     pub fn create_proof<T, R>(
         pk: &IpaProvingKey<C>,
         p: &[C::Scalar],
@@ -117,6 +122,7 @@ where
         Ok(IpaAccumulator::new(xi, bases[0]))
     }
 
+    /// Read [`IpaProof`] from transcript.
     pub fn read_proof<T, L: Loader<C>>(
         svk: &IpaSuccinctVerifyingKey<C>,
         transcript: &mut T,
@@ -127,6 +133,7 @@ where
         IpaProof::read(svk, transcript)
     }
 
+    /// Perform the succinct check of the proof and returns [`IpaAccumulator`].
     pub fn succinct_verify<L: Loader<C>>(
         svk: &IpaSuccinctVerifyingKey<C>,
         commitment: &Msm<C, L>,
@@ -176,31 +183,41 @@ where
     }
 }
 
+/// Inner product argument proving key.
 #[derive(Clone, Debug)]
 pub struct IpaProvingKey<C: CurveAffine> {
+    /// Working domain.
     pub domain: Domain<C::Scalar>,
+    /// $\mathbb{G}$
     pub g: Vec<C>,
+    /// $H$
     pub h: C,
+    /// $S$
     pub s: Option<C>,
 }
 
 impl<C: CurveAffine> IpaProvingKey<C> {
+    /// Initialize an [`IpaProvingKey`].
     pub fn new(domain: Domain<C::Scalar>, g: Vec<C>, h: C, s: Option<C>) -> Self {
         Self { domain, g, h, s }
     }
 
+    /// Returns if it supports zero-knowledge.
     pub fn zk(&self) -> bool {
         self.s.is_some()
     }
 
+    /// Returns [`IpaSuccinctVerifyingKey`].
     pub fn svk(&self) -> IpaSuccinctVerifyingKey<C> {
         IpaSuccinctVerifyingKey::new(self.domain.clone(), self.g[0], self.h, self.s)
     }
 
+    /// Returns [`IpaDecidingKey`].
     pub fn dk(&self) -> IpaDecidingKey<C> {
         IpaDecidingKey::new(self.svk(), self.g.clone())
     }
 
+    /// Commit a polynomial into with a randomizer if any.
     pub fn commit(&self, poly: &Polynomial<C::Scalar>, omega: Option<C::Scalar>) -> C {
         let mut c = multi_scalar_multiplication(&poly[..], &self.g);
         match (self.s, omega) {
@@ -214,7 +231,7 @@ impl<C: CurveAffine> IpaProvingKey<C> {
 
 impl<C: CurveAffine> IpaProvingKey<C> {
     #[cfg(test)]
-    pub fn rand<R: Rng>(k: usize, zk: bool, mut rng: R) -> Self {
+    pub(crate) fn rand<R: Rng>(k: usize, zk: bool, mut rng: R) -> Self {
         use crate::util::arithmetic::{root_of_unity, Group};
 
         let domain = Domain::new(k, root_of_unity(k));
@@ -231,24 +248,32 @@ impl<C: CurveAffine> IpaProvingKey<C> {
     }
 }
 
+/// Inner product argument succinct verifying key.
 #[derive(Clone, Debug)]
 pub struct IpaSuccinctVerifyingKey<C: CurveAffine> {
+    /// Working domain.
     pub domain: Domain<C::Scalar>,
+    /// $G_0$
     pub g: C,
+    /// $H$
     pub h: C,
+    /// $S$
     pub s: Option<C>,
 }
 
 impl<C: CurveAffine> IpaSuccinctVerifyingKey<C> {
+    /// Initialize an [`IpaSuccinctVerifyingKey`].
     pub fn new(domain: Domain<C::Scalar>, g: C, h: C, s: Option<C>) -> Self {
         Self { domain, g, h, s }
     }
 
+    /// Returns if it supports zero-knowledge.
     pub fn zk(&self) -> bool {
         self.s.is_some()
     }
 }
 
+/// Inner product argument
 #[derive(Clone, Debug)]
 pub struct IpaProof<C, L>
 where
@@ -268,7 +293,7 @@ where
     C: CurveAffine,
     L: Loader<C>,
 {
-    pub fn new(
+    fn new(
         c_bar_alpha: Option<(L::LoadedEcPoint, L::LoadedScalar)>,
         omega_prime: Option<L::LoadedScalar>,
         xi_0: L::LoadedScalar,
@@ -286,6 +311,7 @@ where
         }
     }
 
+    /// Read [`crate::pcs::AccumulationScheme::Proof`] from transcript.
     pub fn read<T>(svk: &IpaSuccinctVerifyingKey<C>, transcript: &mut T) -> Result<Self, Error>
     where
         T: TranscriptRead<C, L>,
@@ -321,10 +347,12 @@ where
         })
     }
 
+    /// Returns $\{\xi_0, \xi_1, ...\}$.
     pub fn xi(&self) -> Vec<L::LoadedScalar> {
         self.rounds.iter().map(|round| round.xi.clone()).collect()
     }
 
+    /// Returns $\{\xi_0^{-1}, \xi_1^{-1}, ...\}$.
     pub fn xi_inv(&self) -> Vec<L::LoadedScalar> {
         let mut xi_inv = self.xi().into_iter().map(Fraction::one_over).collect_vec();
         L::batch_invert(xi_inv.iter_mut().filter_map(Fraction::denom_mut));
@@ -337,7 +365,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct Round<C, L>
+struct Round<C, L>
 where
     C: CurveAffine,
     L: Loader<C>,
@@ -352,12 +380,12 @@ where
     C: CurveAffine,
     L: Loader<C>,
 {
-    pub fn new(l: L::LoadedEcPoint, r: L::LoadedEcPoint, xi: L::LoadedScalar) -> Self {
+    fn new(l: L::LoadedEcPoint, r: L::LoadedEcPoint, xi: L::LoadedScalar) -> Self {
         Self { l, r, xi }
     }
 }
 
-pub fn h_eval<F: PrimeField, T: LoadedScalar<F>>(xi: &[T], z: &T) -> T {
+fn h_eval<F: PrimeField, T: LoadedScalar<F>>(xi: &[T], z: &T) -> T {
     let loader = z.loader();
     let one = loader.load_one();
     loader.product(
@@ -370,7 +398,7 @@ pub fn h_eval<F: PrimeField, T: LoadedScalar<F>>(xi: &[T], z: &T) -> T {
     )
 }
 
-pub fn h_coeffs<F: Field>(xi: &[F], scalar: F) -> Vec<F> {
+fn h_coeffs<F: Field>(xi: &[F], scalar: F) -> Vec<F> {
     assert!(!xi.is_empty());
 
     let mut coeffs = vec![F::zero(); 1 << xi.len()];
@@ -406,7 +434,7 @@ mod test {
     #[test]
     fn test_ipa() {
         type Ipa = ipa::Ipa<pallas::Affine>;
-        type IpaAs = ipa::IpaAs<pallas::Affine>;
+        type IpaAs = ipa::IpaAs<pallas::Affine, ()>;
 
         let k = 10;
         let mut rng = OsRng;

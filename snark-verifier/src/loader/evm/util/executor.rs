@@ -1,4 +1,5 @@
-//! Copied and modified from https://github.com/foundry-rs/foundry/blob/master/evm/src/executor/mod.rs
+//! Copied and modified from
+//! <https://github.com/foundry-rs/foundry/blob/master/evm/src/executor/mod.rs>
 
 use crate::loader::evm::{Address, H256, U256};
 use bytes::Bytes;
@@ -416,7 +417,6 @@ impl<DB: Database> Inspector<DB> for Debugger {
     }
 }
 
-#[macro_export]
 macro_rules! call_inspectors {
     ($id:ident, [ $($inspector:expr),+ ], $call:block) => {
         $({
@@ -669,16 +669,28 @@ impl<DB: Database> Inspector<DB> for InspectorStack {
     }
 }
 
+/// Call result.
+#[derive(Debug)]
 pub struct RawCallResult {
+    /// Exit reason
     pub exit_reason: Return,
+    /// If the call is reverted or not.
     pub reverted: bool,
+    /// Returndata
     pub result: Bytes,
+    /// Gas used
     pub gas_used: u64,
+    /// Gas refunded
     pub gas_refunded: u64,
+    /// Logs emitted during the call
     pub logs: Vec<Log>,
+    /// Debug information if any
     pub debug: Option<DebugArena>,
+    /// State changes if any
     pub state_changeset: Option<HashMap<Address, Account>>,
+    /// Environment
     pub env: Env,
+    /// Output
     pub out: TransactOut,
 }
 
@@ -694,6 +706,7 @@ pub struct DeployResult {
     pub env: Env,
 }
 
+/// Executor builder.
 #[derive(Debug, Default)]
 pub struct ExecutorBuilder {
     debugger: bool,
@@ -701,16 +714,19 @@ pub struct ExecutorBuilder {
 }
 
 impl ExecutorBuilder {
+    /// Set `debugger`.
     pub fn set_debugger(mut self, enable: bool) -> Self {
         self.debugger = enable;
         self
     }
 
+    /// Set `gas_limit`.
     pub fn with_gas_limit(mut self, gas_limit: U256) -> Self {
         self.gas_limit = Some(gas_limit);
         self
     }
 
+    /// Initialize an `Executor`.
     pub fn build(self) -> Executor {
         Executor::new(self.debugger, self.gas_limit.unwrap_or(U256::MAX))
     }

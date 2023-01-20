@@ -11,8 +11,10 @@ use crate::{
 use rand::Rng;
 use std::{fmt::Debug, marker::PhantomData};
 
+/// KZG accumulation scheme. The second generic `MOS` stands for different kind
+/// of multi-open scheme.
 #[derive(Clone, Debug)]
-pub struct KzgAs<M, MOS = ()>(PhantomData<(M, MOS)>);
+pub struct KzgAs<M, MOS>(PhantomData<(M, MOS)>);
 
 impl<M, L, MOS> AccumulationScheme<M::G1Affine, L> for KzgAs<M, MOS>
 where
@@ -60,32 +62,39 @@ where
     }
 }
 
+/// KZG accumulation scheme proving key.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KzgAsProvingKey<C>(pub Option<(C, C)>);
 
 impl<C: Clone> KzgAsProvingKey<C> {
+    /// Initialize a [`KzgAsProvingKey`].
     pub fn new(g: Option<(C, C)>) -> Self {
         Self(g)
     }
 
+    /// Returns if it supports zero-knowledge or not.
     pub fn zk(&self) -> bool {
         self.0.is_some()
     }
 
+    /// Returns [`KzgAsVerifyingKey`].
     pub fn vk(&self) -> KzgAsVerifyingKey {
         KzgAsVerifyingKey(self.zk())
     }
 }
 
+/// KZG accumulation scheme verifying key.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KzgAsVerifyingKey(bool);
 
 impl KzgAsVerifyingKey {
+    /// Returns if it supports zero-knowledge or not.
     pub fn zk(&self) -> bool {
         self.0
     }
 }
 
+/// KZG accumulation scheme proof.
 #[derive(Clone, Debug)]
 pub struct KzgAsProof<C, L>
 where
