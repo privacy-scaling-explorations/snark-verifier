@@ -2,6 +2,7 @@ use crate::{
     system::halo2::test::{read_or_create_srs, MainGateWithRange},
     util::arithmetic::{fe_to_limbs, CurveAffine, MultiMillerLoop},
 };
+use halo2_curves::serde::SerdeObject;
 use halo2_proofs::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
@@ -23,7 +24,11 @@ pub fn setup<M: MultiMillerLoop>(k: u32) -> ParamsKZG<M> {
 }
 
 pub fn main_gate_with_range_with_mock_kzg_accumulator<M: MultiMillerLoop>(
-) -> MainGateWithRange<M::Scalar> {
+) -> MainGateWithRange<M::Scalar>
+where
+    M::G1Affine: SerdeObject,
+    M::G2Affine: SerdeObject,
+{
     let srs = read_or_create_srs(TESTDATA_DIR, 1, setup::<M>);
     let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());
     MainGateWithRange::new(
