@@ -189,6 +189,7 @@ struct Polynomials<'a, F: FieldExt> {
     zk: bool,
     query_instance: bool,
     num_proof: usize,
+    degree: usize,
     num_fixed: usize,
     num_permutation_fixed: usize,
     num_instance: Vec<usize>,
@@ -245,6 +246,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             zk,
             query_instance,
             num_proof,
+            degree,
             num_fixed: cs.num_fixed_columns(),
             num_permutation_fixed: cs.permutation().get_columns().len(),
             num_instance,
@@ -733,6 +735,7 @@ impl<'a, F: FieldExt> Polynomials<'a, F> {
             .collect_vec();
         let numerator = Expression::DistributePowers(constraints, self.alpha().into());
         QuotientPolynomial {
+            num_chunk: self.degree - 1,
             chunk_degree: 1,
             numerator,
         }
