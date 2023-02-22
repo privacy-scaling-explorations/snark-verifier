@@ -5,7 +5,6 @@ use crate::{
         Itertools,
     },
 };
-use num_integer::Integer;
 use num_traits::One;
 use std::{
     cmp::max,
@@ -264,15 +263,15 @@ where
 #[derive(Clone, Debug)]
 pub struct QuotientPolynomial<F: Clone> {
     pub chunk_degree: usize,
+    // Note that `num_chunk` might be larger than necessary, due to the degree
+    // calculation of the constraint system (e.g. halo2 has minimum degree 3).
+    pub num_chunk: usize,
     pub numerator: Expression<F>,
 }
 
 impl<F: Clone> QuotientPolynomial<F> {
     pub fn num_chunk(&self) -> usize {
-        Integer::div_ceil(
-            &(self.numerator.degree().checked_sub(1).unwrap_or_default()),
-            &self.chunk_degree,
-        )
+        self.num_chunk
     }
 }
 
