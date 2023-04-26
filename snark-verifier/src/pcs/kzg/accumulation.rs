@@ -2,7 +2,7 @@ use crate::{
     loader::{native::NativeLoader, LoadedScalar, Loader},
     pcs::{kzg::KzgAccumulator, AccumulationScheme, AccumulationSchemeProver},
     util::{
-        arithmetic::{Curve, CurveAffine, Field, MultiMillerLoop},
+        arithmetic::{Curve, CurveAffine, Field, MultiMillerLoop, PrimeField},
         msm::Msm,
         transcript::{TranscriptRead, TranscriptWrite},
     },
@@ -19,6 +19,7 @@ pub struct KzgAs<M, MOS>(PhantomData<(M, MOS)>);
 impl<M, L, MOS> AccumulationScheme<M::G1Affine, L> for KzgAs<M, MOS>
 where
     M: MultiMillerLoop,
+    M::Scalar: PrimeField,
     L: Loader<M::G1Affine>,
     MOS: Clone + Debug,
 {
@@ -139,6 +140,7 @@ where
 impl<M, MOS> AccumulationSchemeProver<M::G1Affine> for KzgAs<M, MOS>
 where
     M: MultiMillerLoop,
+    M::Scalar: PrimeField,
     MOS: Clone + Debug,
 {
     type ProvingKey = KzgAsProvingKey<M::G1Affine>;

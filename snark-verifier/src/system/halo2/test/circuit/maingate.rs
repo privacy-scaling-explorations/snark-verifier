@@ -1,4 +1,4 @@
-use crate::util::arithmetic::{CurveAffine, FieldExt};
+use crate::util::arithmetic::{CurveAffine, PrimeField};
 use halo2_proofs::{
     circuit::{floor_planner::V1, Layouter, Value},
     plonk::{Circuit, ConstraintSystem, Error},
@@ -19,7 +19,7 @@ pub struct MainGateWithRangeConfig {
 }
 
 impl MainGateWithRangeConfig {
-    pub fn configure<F: FieldExt>(
+    pub fn configure<F: PrimeField>(
         meta: &mut ConstraintSystem<F>,
         composition_bits: Vec<usize>,
         overflow_bits: Vec<usize>,
@@ -33,11 +33,11 @@ impl MainGateWithRangeConfig {
         }
     }
 
-    pub fn main_gate<F: FieldExt>(&self) -> MainGate<F> {
+    pub fn main_gate<F: PrimeField>(&self) -> MainGate<F> {
         MainGate::new(self.main_gate_config.clone())
     }
 
-    pub fn range_chip<F: FieldExt>(&self) -> RangeChip<F> {
+    pub fn range_chip<F: PrimeField>(&self) -> RangeChip<F> {
         RangeChip::new(self.range_config.clone())
     }
 
@@ -54,7 +54,7 @@ impl MainGateWithRangeConfig {
 #[derive(Clone, Default)]
 pub struct MainGateWithRange<F>(Vec<F>);
 
-impl<F: FieldExt> MainGateWithRange<F> {
+impl<F: PrimeField> MainGateWithRange<F> {
     pub fn new(inner: Vec<F>) -> Self {
         Self(inner)
     }
@@ -68,12 +68,12 @@ impl<F: FieldExt> MainGateWithRange<F> {
     }
 }
 
-impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
+impl<F: PrimeField> Circuit<F> for MainGateWithRange<F> {
     type Config = MainGateWithRangeConfig;
     type FloorPlanner = V1;
 
     fn without_witnesses(&self) -> Self {
-        Self(vec![F::zero()])
+        Self(vec![F::ZERO])
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -97,7 +97,7 @@ impl<F: FieldExt> Circuit<F> for MainGateWithRange<F> {
                 range_chip.decompose(&mut ctx, Value::known(F::from(u32::MAX as u64)), 8, 39)?;
                 let a = range_chip.assign(&mut ctx, Value::known(self.0[0]), 8, 68)?;
                 let b = main_gate.sub_sub_with_constant(&mut ctx, &a, &a, &a, F::from(2))?;
-                let cond = main_gate.assign_bit(&mut ctx, Value::known(F::one()))?;
+                let cond = main_gate.assign_bit(&mut ctx, Value::known(F::ONE))?;
                 main_gate.select(&mut ctx, &a, &b, &cond)?;
 
                 Ok(a)

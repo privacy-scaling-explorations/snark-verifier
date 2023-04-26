@@ -34,7 +34,7 @@ type PlonkSuccinctVerifier = verifier::plonk::PlonkSuccinctVerifier<As, LimbsEnc
 type PlonkVerifier = verifier::plonk::PlonkVerifier<As, LimbsEncoding<LIMBS, BITS>>;
 
 mod application {
-    use halo2_curves::bn256::Fr;
+    use halo2_curves::{bn256::Fr, ff::Field};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
         plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Fixed, Instance},
@@ -136,7 +136,7 @@ mod application {
                 || "",
                 |mut region| {
                     region.assign_advice(|| "", config.a, 0, || Value::known(self.0))?;
-                    region.assign_fixed(|| "", config.q_a, 0, || Value::known(-Fr::one()))?;
+                    region.assign_fixed(|| "", config.q_a, 0, || Value::known(-Fr::ONE))?;
 
                     region.assign_advice(|| "", config.a, 1, || Value::known(-Fr::from(5)))?;
                     for (idx, column) in (1..).zip([
@@ -149,7 +149,7 @@ mod application {
                         region.assign_fixed(|| "", column, 1, || Value::known(Fr::from(idx)))?;
                     }
 
-                    let a = region.assign_advice(|| "", config.a, 2, || Value::known(Fr::one()))?;
+                    let a = region.assign_advice(|| "", config.a, 2, || Value::known(Fr::ONE))?;
                     a.copy_advice(|| "", &mut region, config.b, 3)?;
                     a.copy_advice(|| "", &mut region, config.c, 4)?;
 
@@ -185,7 +185,7 @@ mod aggregation {
             AccumulationScheme, AccumulationSchemeProver,
         },
         system,
-        util::arithmetic::{fe_to_limbs, FieldExt},
+        util::arithmetic::{fe_to_limbs, PrimeField},
         verifier::{plonk::PlonkProtocol, SnarkVerifier},
     };
     use std::rc::Rc;
@@ -309,7 +309,7 @@ mod aggregation {
     }
 
     impl AggregationConfig {
-        pub fn configure<F: FieldExt>(
+        pub fn configure<F: PrimeField>(
             meta: &mut ConstraintSystem<F>,
             composition_bits: Vec<usize>,
             overflow_bits: Vec<usize>,

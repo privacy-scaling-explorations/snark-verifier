@@ -1,4 +1,7 @@
-use halo2_curves::bn256::{Bn256, Fq, Fr, G1Affine};
+use halo2_curves::{
+    bn256::{Bn256, Fq, Fr, G1Affine},
+    ff::Field,
+};
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
     dev::MockProver,
@@ -122,7 +125,7 @@ impl Circuit<Fr> for StandardPlonk {
             || "",
             |mut region| {
                 region.assign_advice(|| "", config.a, 0, || Value::known(self.0))?;
-                region.assign_fixed(|| "", config.q_a, 0, || Value::known(-Fr::one()))?;
+                region.assign_fixed(|| "", config.q_a, 0, || Value::known(-Fr::ONE))?;
 
                 region.assign_advice(|| "", config.a, 1, || Value::known(-Fr::from(5)))?;
                 for (idx, column) in (1..).zip([
@@ -135,7 +138,7 @@ impl Circuit<Fr> for StandardPlonk {
                     region.assign_fixed(|| "", column, 1, || Value::known(Fr::from(idx)))?;
                 }
 
-                let a = region.assign_advice(|| "", config.a, 2, || Value::known(Fr::one()))?;
+                let a = region.assign_advice(|| "", config.a, 2, || Value::known(Fr::ONE))?;
                 a.copy_advice(|| "", &mut region, config.b, 3)?;
                 a.copy_advice(|| "", &mut region, config.c, 4)?;
 

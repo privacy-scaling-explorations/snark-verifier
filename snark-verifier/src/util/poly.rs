@@ -57,7 +57,7 @@ impl<F: Field> Polynomial<F> {
             coeffs
                 .iter()
                 .rev()
-                .fold(F::zero(), |acc, coeff| acc * x + coeff)
+                .fold(F::ZERO, |acc, coeff| acc * x + coeff)
         };
 
         #[cfg(feature = "parallel")]
@@ -71,7 +71,7 @@ impl<F: Field> Polynomial<F> {
             }
 
             let chunk_size = Integer::div_ceil(&self.len(), &num_threads);
-            let mut results = vec![F::zero(); num_threads];
+            let mut results = vec![F::ZERO; num_threads];
             parallelize_iter(
                 results
                     .iter_mut()
@@ -79,7 +79,7 @@ impl<F: Field> Polynomial<F> {
                     .zip(powers(x.pow_vartime(&[chunk_size as u64, 0, 0, 0]))),
                 |((result, coeffs), scalar)| *result = evaluate_serial(coeffs) * scalar,
             );
-            results.iter().fold(F::zero(), |acc, result| acc + result)
+            results.iter().fold(F::ZERO, |acc, result| acc + result)
         }
         #[cfg(not(feature = "parallel"))]
         evaluate_serial(&self.0)
@@ -134,10 +134,10 @@ impl<F: Field> Mul<F> for Polynomial<F> {
     type Output = Polynomial<F>;
 
     fn mul(mut self, rhs: F) -> Polynomial<F> {
-        if rhs == F::zero() {
-            return Polynomial::new(vec![F::zero(); self.len()]);
+        if rhs == F::ZERO {
+            return Polynomial::new(vec![F::ZERO; self.len()]);
         }
-        if rhs == F::one() {
+        if rhs == F::ONE {
             return self;
         }
         parallelize(&mut self.0, |(lhs, _)| {

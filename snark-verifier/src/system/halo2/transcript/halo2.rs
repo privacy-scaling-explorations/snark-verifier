@@ -7,7 +7,7 @@ use crate::{
         Loader, ScalarLoader,
     },
     util::{
-        arithmetic::{fe_to_fe, CurveAffine, PrimeField},
+        arithmetic::{fe_to_fe, CurveAffine, FromUniformBytes, PrimeField},
         hash::Poseidon,
         transcript::{Transcript, TranscriptRead, TranscriptWrite},
         Itertools,
@@ -58,6 +58,7 @@ impl<'a, C, R, EccChip, const T: usize, const RATE: usize, const R_F: usize, con
     PoseidonTranscript<C, Rc<Halo2Loader<'a, C, EccChip>>, Value<R>, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     R: Read,
     EccChip: NativeEncoding<'a, C>,
 {
@@ -77,6 +78,7 @@ impl<'a, C, R, EccChip, const T: usize, const RATE: usize, const R_F: usize, con
     for PoseidonTranscript<C, Rc<Halo2Loader<'a, C, EccChip>>, Value<R>, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     R: Read,
     EccChip: NativeEncoding<'a, C>,
 {
@@ -120,6 +122,7 @@ impl<'a, C, R, EccChip, const T: usize, const RATE: usize, const R_F: usize, con
     for PoseidonTranscript<C, Rc<Halo2Loader<'a, C, EccChip>>, Value<R>, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     R: Read,
     EccChip: NativeEncoding<'a, C>,
 {
@@ -156,6 +159,8 @@ where
 
 impl<C: CurveAffine, S, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize>
     PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>
+where
+    C::Scalar: FromUniformBytes<64>,
 {
     /// Initialize [`PoseidonTranscript`] given readable or writeable stream for
     /// verifying or proving with [`NativeLoader`].
@@ -170,6 +175,8 @@ impl<C: CurveAffine, S, const T: usize, const RATE: usize, const R_F: usize, con
 
 impl<C: CurveAffine, S, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize>
     Transcript<C, NativeLoader> for PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>
+where
+    C::Scalar: FromUniformBytes<64>,
 {
     fn loader(&self) -> &NativeLoader {
         &native::LOADER
@@ -207,6 +214,7 @@ impl<C, R, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize
     TranscriptRead<C, NativeLoader> for PoseidonTranscript<C, NativeLoader, R, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     R: Read,
 {
     fn read_scalar(&mut self) -> Result<C::Scalar, Error> {
@@ -261,6 +269,7 @@ impl<C, W, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize
     for PoseidonTranscript<C, NativeLoader, W, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     W: Write,
 {
     fn write_scalar(&mut self, scalar: C::Scalar) -> Result<(), Error> {
@@ -307,6 +316,8 @@ impl<C: CurveAffine> EncodedChallenge<C> for ChallengeScalar<C> {
 impl<C: CurveAffine, S, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize>
     halo2_proofs::transcript::Transcript<C, ChallengeScalar<C>>
     for PoseidonTranscript<C, NativeLoader, S, T, RATE, R_F, R_P>
+where
+    C::Scalar: FromUniformBytes<64>,
 {
     fn squeeze_challenge(&mut self) -> ChallengeScalar<C> {
         ChallengeScalar::new(&Transcript::squeeze_challenge(self))
@@ -334,6 +345,7 @@ impl<C, R, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize
     for PoseidonTranscript<C, NativeLoader, R, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     R: Read,
 {
     fn read_point(&mut self) -> io::Result<C> {
@@ -358,6 +370,7 @@ impl<C, R, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize
     for PoseidonTranscript<C, NativeLoader, R, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     R: Read,
 {
     fn init(reader: R) -> Self {
@@ -370,6 +383,7 @@ impl<C, W, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize
     for PoseidonTranscript<C, NativeLoader, W, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     W: Write,
 {
     fn write_point(&mut self, ec_point: C) -> io::Result<()> {
@@ -392,6 +406,7 @@ impl<C, W, const T: usize, const RATE: usize, const R_F: usize, const R_P: usize
     for PoseidonTranscript<C, NativeLoader, W, T, RATE, R_F, R_P>
 where
     C: CurveAffine,
+    C::Scalar: FromUniformBytes<64>,
     W: Write,
 {
     fn init(writer: W) -> Self {

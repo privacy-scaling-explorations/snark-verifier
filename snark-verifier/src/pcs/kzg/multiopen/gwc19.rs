@@ -23,6 +23,7 @@ pub struct Gwc19;
 impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
+    M::Scalar: PrimeField,
     L: Loader<M::G1Affine>,
 {
     type VerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
@@ -160,6 +161,7 @@ where
 impl<M> CostEstimation<M::G1Affine> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
+    M::Scalar: PrimeField,
 {
     type Input = Vec<Query<M::Scalar>>;
 

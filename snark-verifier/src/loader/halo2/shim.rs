@@ -1,4 +1,4 @@
-use crate::util::arithmetic::{CurveAffine, FieldExt};
+use crate::util::arithmetic::{CurveAffine, PrimeField};
 use halo2_proofs::{
     circuit::{Cell, Value},
     plonk::Error,
@@ -15,7 +15,7 @@ pub trait Context: Debug {
 }
 
 /// Instructions to handle field element operations.
-pub trait IntegerInstructions<'a, F: FieldExt>: Clone + Debug {
+pub trait IntegerInstructions<'a, F: PrimeField>: Clone + Debug {
     /// Context.
     type Context: Context;
     /// Assigned cell.
@@ -41,8 +41,8 @@ pub trait IntegerInstructions<'a, F: FieldExt>: Clone + Debug {
     fn sum_with_coeff_and_const(
         &self,
         ctx: &mut Self::Context,
-        values: &[(F::Scalar, impl Deref<Target = Self::AssignedInteger>)],
-        constant: F::Scalar,
+        values: &[(F, impl Deref<Target = Self::AssignedInteger>)],
+        constant: F,
     ) -> Result<Self::AssignedInteger, Error>;
 
     /// Sum product of integers with coefficients and constant.
@@ -50,11 +50,11 @@ pub trait IntegerInstructions<'a, F: FieldExt>: Clone + Debug {
         &self,
         ctx: &mut Self::Context,
         values: &[(
-            F::Scalar,
+            F,
             impl Deref<Target = Self::AssignedInteger>,
             impl Deref<Target = Self::AssignedInteger>,
         )],
-        constant: F::Scalar,
+        constant: F,
     ) -> Result<Self::AssignedInteger, Error>;
 
     /// Returns `lhs - rhs`.
@@ -162,7 +162,7 @@ mod halo2_wrong {
     use crate::{
         loader::halo2::{Context, EccInstructions, IntegerInstructions},
         util::{
-            arithmetic::{CurveAffine, FieldExt, Group},
+            arithmetic::{CurveAffine, Group, PrimeField},
             Itertools,
         },
     };
@@ -181,7 +181,7 @@ mod halo2_wrong {
     use rand::rngs::OsRng;
     use std::{iter, ops::Deref};
 
-    impl<'a, F: FieldExt> Context for RegionCtx<'a, F> {
+    impl<'a, F: PrimeField> Context for RegionCtx<'a, F> {
         fn constrain_equal(&mut self, lhs: Cell, rhs: Cell) -> Result<(), Error> {
             self.constrain_equal(lhs, rhs)
         }
@@ -191,7 +191,7 @@ mod halo2_wrong {
         }
     }
 
-    impl<'a, F: FieldExt> IntegerInstructions<'a, F> for MainGate<F> {
+    impl<'a, F: PrimeField> IntegerInstructions<'a, F> for MainGate<F> {
         type Context = RegionCtx<'a, F>;
         type AssignedCell = AssignedCell<F, F>;
         type AssignedInteger = AssignedCell<F, F>;
@@ -268,7 +268,7 @@ mod halo2_wrong {
                         ctx,
                         [Term::assigned_to_mul(lhs), Term::assigned_to_mul(rhs)],
                         constant,
-                        CombinationOptionCommon::CombineToNextScaleMul(-F::one(), *scalar).into(),
+                        CombinationOptionCommon::CombineToNextScaleMul(-F::ONE, *scalar).into(),
                     )?;
                     let acc =
                         Value::known(*scalar) * lhs.value() * rhs.value() + Value::known(constant);
@@ -283,11 +283,11 @@ mod halo2_wrong {
                                         Term::assigned_to_mul(rhs),
                                         Term::Zero,
                                         Term::Zero,
-                                        Term::Unassigned(acc, F::one()),
+                                        Term::Unassigned(acc, F::ONE),
                                     ],
-                                    F::zero(),
+                                    F::ZERO,
                                     CombinationOptionCommon::CombineToNextScaleMul(
-                                        -F::one(),
+                                        -F::ONE,
                                         *scalar,
                                     )
                                     .into(),
@@ -303,9 +303,9 @@ mod halo2_wrong {
                             Term::Zero,
                             Term::Zero,
                             Term::Zero,
-                            Term::Unassigned(output, F::zero()),
+                            Term::Unassigned(output, F::ZERO),
                         ],
-                        F::zero(),
+                        F::ZERO,
                         CombinationOptionCommon::OneLinerAdd.into(),
                     )
                     .map(|mut outputs| outputs.swap_remove(4))
@@ -327,7 +327,7 @@ mod halo2_wrong {
             ctx: &mut Self::Context,
             value: &Self::AssignedInteger,
         ) -> Result<Self::AssignedInteger, Error> {
-            MainGateInstructions::neg_with_constant(self, ctx, value, F::zero())
+            MainGateInstructions::neg_with_constant(self, ctx, value, F::ZERO)
         }
 
         fn invert(

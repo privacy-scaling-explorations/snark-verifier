@@ -1,17 +1,20 @@
 use crate::{
     loader::{LoadedScalar, ScalarLoader},
-    util::{arithmetic::FieldExt, Itertools},
+    util::{
+        arithmetic::{FromUniformBytes, PrimeField},
+        Itertools,
+    },
 };
 use poseidon::{self, SparseMDSMatrix, Spec};
 use std::{iter, marker::PhantomData, mem};
 
 #[derive(Debug)]
-struct State<F: FieldExt, L, const T: usize, const RATE: usize> {
+struct State<F: PrimeField, L, const T: usize, const RATE: usize> {
     inner: [L; T],
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> State<F, L, T, RATE> {
+impl<F: PrimeField, L: LoadedScalar<F>, const T: usize, const RATE: usize> State<F, L, T, RATE> {
     fn new(inner: [L; T]) -> Self {
         Self {
             inner,
@@ -62,7 +65,7 @@ impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> State<F
                 *state = state.loader().sum_with_const(
                     &[state],
                     if idx == 0 {
-                        F::one() + constant
+                        F::ONE + constant
                     } else {
                         *constant
                     },
@@ -98,7 +101,7 @@ impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> State<F
                 .zip(self.inner.iter().skip(1))
                 .map(|(coeff, state)| {
                     self.loader()
-                        .sum_with_coeff(&[(*coeff, &self.inner[0]), (F::one(), state)])
+                        .sum_with_coeff(&[(*coeff, &self.inner[0]), (F::ONE, state)])
                 }),
         )
         .collect_vec()
@@ -109,13 +112,15 @@ impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> State<F
 
 /// Poseidon hasher with configurable `RATE`.
 #[derive(Debug)]
-pub struct Poseidon<F: FieldExt, L, const T: usize, const RATE: usize> {
+pub struct Poseidon<F: PrimeField, L, const T: usize, const RATE: usize> {
     spec: Spec<F, T, RATE>,
     state: State<F, L, T, RATE>,
     buf: Vec<L>,
 }
 
-impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> Poseidon<F, L, T, RATE> {
+impl<F: FromUniformBytes<64>, L: LoadedScalar<F>, const T: usize, const RATE: usize>
+    Poseidon<F, L, T, RATE>
+{
     /// Initialize a poseidon hasher.
     pub fn new(loader: &L::Loader, r_f: usize, r_p: usize) -> Self {
         Self {
@@ -179,7 +184,7 @@ impl<F: FieldExt, L: LoadedScalar<F>, const T: usize, const RATE: usize> Poseido
             self.state.sbox_full(constants);
             self.state.apply_mds(&mds);
         }
-        self.state.sbox_full(&[F::zero(); T]);
+        self.state.sbox_full(&[F::ZERO; T]);
         self.state.apply_mds(&mds);
     }
 }

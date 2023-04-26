@@ -48,7 +48,7 @@ mod native {
             AccumulationDecider,
         },
         util::{
-            arithmetic::{Group, MillerLoopResult, MultiMillerLoop},
+            arithmetic::{Group, MillerLoopResult, MultiMillerLoop, PrimeField},
             Itertools,
         },
         Error,
@@ -58,6 +58,7 @@ mod native {
     impl<M, MOS> AccumulationDecider<M::G1Affine, NativeLoader> for KzgAs<M, MOS>
     where
         M: MultiMillerLoop,
+        M::Scalar: PrimeField,
         MOS: Clone + Debug,
     {
         type DecidingKey = KzgDecidingKey<M>;
