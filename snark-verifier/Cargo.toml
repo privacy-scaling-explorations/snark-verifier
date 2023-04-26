@@ -46,10 +46,15 @@ default = ["loader_evm", "loader_halo2", "system_halo2"]
 
 parallel = ["dep:rayon"]
 
+# loaders
 loader_evm = ["dep:bytes", "dep:sha3", "dep:primitive-types", "dep:rlp", "dep:revm"]
 loader_halo2 = ["dep:halo2_proofs", "dep:halo2_wrong_ecc", "dep:poseidon"]
 
+# systems
 system_halo2 = ["dep:halo2_proofs"]
+
+# features of halo2
+halo2_circuit_params = ["halo2_proofs?/circuit-params", "halo2_wrong_ecc?/circuit-params"]
 
 [[example]]
 name = "evm-verifier"

@@ -117,6 +117,8 @@ mod application {
     impl Circuit<Fr> for StandardPlonk {
         type Config = StandardPlonkConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "halo2_circuit_params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self::default()
@@ -410,6 +412,8 @@ mod aggregation {
     impl Circuit<Fr> for AggregationCircuit {
         type Config = AggregationConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        #[cfg(feature = "halo2_circuit_params")]
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             Self {

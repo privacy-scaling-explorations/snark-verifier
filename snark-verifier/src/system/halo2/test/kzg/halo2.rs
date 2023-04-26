@@ -254,6 +254,8 @@ impl Accumulation {
 impl Circuit<Fr> for Accumulation {
     type Config = MainGateWithRangeConfig;
     type FloorPlanner = V1;
+    #[cfg(feature = "halo2_circuit_params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self {

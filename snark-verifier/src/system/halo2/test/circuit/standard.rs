@@ -76,6 +76,8 @@ impl<F: PrimeField> StandardPlonk<F> {
 impl<F: PrimeField> Circuit<F> for StandardPlonk<F> {
     type Config = StandardPlonkConfig;
     type FloorPlanner = V1;
+    #[cfg(feature = "halo2_circuit_params")]
+    type Params = ();
 
     fn without_witnesses(&self) -> Self {
         Self::default()
