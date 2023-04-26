@@ -208,7 +208,7 @@ where
         let numer = zn_minus_one.clone() * &n_inv;
         let omegas = langranges
             .iter()
-            .map(|&i| loader.load_const(&domain.rotate_scalar(C::Scalar::one(), Rotation(i))))
+            .map(|&i| loader.load_const(&domain.rotate_scalar(C::Scalar::ONE, Rotation(i))))
             .collect_vec();
         let lagrange_evals = omegas
             .iter()
@@ -485,7 +485,7 @@ impl<F: Clone + Default> Sum for Expression<F> {
 
 impl<F: Field> One for Expression<F> {
     fn one() -> Self {
-        Expression::Constant(F::one())
+        Expression::Constant(F::ONE)
     }
 }
 

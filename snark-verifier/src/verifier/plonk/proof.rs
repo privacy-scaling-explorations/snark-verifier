@@ -175,7 +175,7 @@ where
             .map(|query| {
                 let shift = protocol
                     .domain
-                    .rotate_scalar(C::Scalar::one(), query.rotation);
+                    .rotate_scalar(C::Scalar::ONE, query.rotation);
                 pcs::Query::new(query.poly, shift)
             })
             .collect()

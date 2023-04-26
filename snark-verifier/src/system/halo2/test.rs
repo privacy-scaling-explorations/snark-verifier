@@ -1,4 +1,4 @@
-use crate::util::arithmetic::CurveAffine;
+use crate::util::arithmetic::{CurveAffine, FromUniformBytes, WithSmallOrderMulGroup};
 use halo2_proofs::{
     dev::MockProver,
     plonk::{create_proof, verify_proof, Circuit, ProvingKey},
@@ -47,6 +47,7 @@ pub fn create_proof_checked<'a, S, C, P, V, VS, TW, TR, EC, R>(
 ) -> Vec<u8>
 where
     S: CommitmentScheme,
+    S::Scalar: WithSmallOrderMulGroup<3> + FromUniformBytes<64> + Ord,
     S::ParamsVerifier: 'a,
     C: Circuit<S::Scalar>,
     P: Prover<'a, S>,

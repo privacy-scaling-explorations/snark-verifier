@@ -74,7 +74,7 @@ pub fn modulus<F>() -> U256
 where
     F: PrimeField<Repr = [u8; 32]>,
 {
-    U256::from_little_endian((-F::one()).to_repr().as_ref()) + 1
+    U256::from_little_endian((-F::ONE).to_repr().as_ref()) + 1
 }
 
 /// Encode instances and proof into calldata.
