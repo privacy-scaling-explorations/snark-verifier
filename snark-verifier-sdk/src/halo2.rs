@@ -246,7 +246,13 @@ where
 
     let instances = circuit.instances();
     #[cfg(feature = "derive_serde")]
-    let proof = gen_proof::<ConcreteCircuit, P, V>(params, pk, circuit, instances.clone(), None);
+    let proof = gen_proof::<ConcreteCircuit, P, V>(
+        params,
+        pk,
+        circuit,
+        instances.clone(),
+        None::<(&str, &str)>,
+    );
     // If we can't serialize the entire snark, at least serialize the proof
     #[cfg(not(feature = "derive_serde"))]
     let proof = {
