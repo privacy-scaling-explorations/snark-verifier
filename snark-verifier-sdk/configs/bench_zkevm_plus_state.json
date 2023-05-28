@@ -1,0 +1,7 @@
+{
+  "degree": 24,
+  "num_advice": 5,
+  "num_lookup_advice": 1,
+  "num_fixed": 1,
+  "lookup_bits": 22
+}

@@ -1,4 +1,5 @@
 [workspace]
 members = [
     "snark-verifier",
+    "snark-verifier-sdk"
 ]

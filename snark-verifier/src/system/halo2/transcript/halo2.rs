@@ -15,6 +15,7 @@ use crate::{
     Error,
 };
 use halo2_proofs::{circuit::Value, transcript::EncodedChallenge};
+use poseidon::Spec;
 use std::{
     io::{self, Read, Write},
     rc::Rc,
@@ -65,6 +66,20 @@ where
     /// Initialize [`PoseidonTranscript`] given [`Rc<Halo2Loader>`].
     pub fn new(loader: &Rc<Halo2Loader<'a, C, EccChip>>, stream: Value<R>) -> Self {
         let buf = Poseidon::new(loader, R_F, R_P);
+        Self {
+            loader: loader.clone(),
+            stream,
+            buf,
+        }
+    }
+
+    /// Initialize [`PoseidonTranscript`] from a precomputed spec of round constants and MDS matrix because computing the constants is expensive.
+    pub fn from_spec(
+        loader: &Rc<Halo2Loader<'a, C, EccChip>>,
+        stream: Value<R>,
+        spec: Spec<C::Scalar, T, RATE>,
+    ) -> Self {
+        let buf = Poseidon::from_spec(loader, spec);
         Self {
             loader: loader.clone(),
             stream,
@@ -169,6 +184,16 @@ where
             loader: NativeLoader,
             stream,
             buf: Poseidon::new(&NativeLoader, R_F, R_P),
+        }
+    }
+
+    /// Initialize [`PoseidonTranscript`] from a precomputed spec of round constants and MDS matrix because computing the constants is expensive.
+    pub fn from_spec(stream: S, spec: Spec<C::Scalar, T, RATE>) -> Self {
+        let buf = Poseidon::from_spec(&NativeLoader, spec);
+        Self {
+            loader: NativeLoader,
+            stream,
+            buf,
         }
     }
 }

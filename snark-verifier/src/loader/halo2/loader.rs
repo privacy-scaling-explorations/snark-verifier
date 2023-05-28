@@ -341,6 +341,15 @@ impl<'a, C: CurveAffine, EccChip: EccInstructions<'a, C>> Scalar<'a, C, EccChip>
         Ref::map(self.value.borrow(), Value::assigned)
     }
 
+    /// If scalar already assigned, returns itself as [`EccInstructions::AssignedScalar`]. Otherwise,
+    /// scalar is constant, so loader assigned the constant scalar and returns the assigned scalar.
+    pub fn into_assigned(self) -> EccChip::AssignedScalar {
+        match self.value.into_inner() {
+            Value::Constant(constant) => self.loader.assign_const_scalar(constant),
+            Value::Assigned(assigned) => assigned,
+        }
+    }
+
     fn value(&self) -> Ref<Value<C::Scalar, EccChip::AssignedScalar>> {
         self.value.borrow()
     }
