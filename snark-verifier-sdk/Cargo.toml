@@ -36,9 +36,6 @@ paste = "1.0.7"
 pprof = { version = "0.11", features = ["criterion", "flamegraph"] }
 criterion = "0.4"
 criterion-macro = "0.4"
-# loader_evm
-crossterm = { version = "0.25" }
-tui = { version = "0.19", default-features = false, features = ["crossterm"] }
 
 [features]
 default = ["loader_halo2", "loader_evm", "derive_serde", "display"]
@@ -47,7 +44,7 @@ loader_evm = ["snark-verifier/loader_evm", "dep:ethereum-types"]
 loader_halo2 = ["snark-verifier/system_halo2", "snark-verifier/loader_halo2", "dep:halo2_wrong_ecc", "dep:poseidon"]
 parallel = ["snark-verifier/parallel"]
 derive_serde = ["snark-verifier/derive_serde", "halo2curves/derive_serde"]
-halo2_circuit_params = ["snark-verifier/halo2_circuit_params"]
+# halo2_circuit_params = ["snark-verifier/halo2_circuit_params"]
 
 [[bench]]
 name = "standard_plonk"

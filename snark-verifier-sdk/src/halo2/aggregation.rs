@@ -139,24 +139,6 @@ where
     (previous_instances, accumulator)
 }
 
-/// Same as `FlexGateConfigParams` except we assume a single Phase and default 'Vertical' strategy.
-/// Also adds `lookup_bits` field.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AggregationConfigParams {
-    pub degree: u32,
-    pub num_advice: usize,
-    pub num_lookup_advice: usize,
-    pub num_fixed: usize,
-    pub lookup_bits: usize,
-}
-
-impl AggregationConfigParams {
-    pub fn from_path(path: impl AsRef<Path>) -> Self {
-        serde_json::from_reader(File::open(path).expect("Aggregation config path does not exist"))
-            .unwrap()
-    }
-}
-
 /// `AS` should be the [`AccumulationScheme`] and [`PolynomialCommitmentScheme`] used to create `snarks`.
 /// Many things will fail if `AS` does not match how `snarks` were actually created.
 ///
@@ -450,9 +432,5 @@ where
 
     fn accumulator_indices() -> Option<Vec<(usize, usize)>> {
         Some((0..4 * LIMBS).map(|idx| (0, idx)).collect())
-    }
-
-    fn selectors(_config: &Self::Config) -> Vec<Selector> {
-        todo!()
     }
 }
