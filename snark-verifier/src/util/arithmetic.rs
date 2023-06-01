@@ -91,6 +91,7 @@ pub fn root_of_unity<F: PrimeField>(k: usize) -> F {
 
 /// Rotation on a group.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Rotation(pub i32);
 
 impl Rotation {
@@ -118,6 +119,7 @@ impl From<i32> for Rotation {
 
 /// 2-adicity multiplicative domain
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Domain<F: PrimeField> {
     /// Log size of the domain.
     pub k: usize,

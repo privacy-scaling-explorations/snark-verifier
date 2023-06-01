@@ -16,13 +16,28 @@ use std::{
 
 /// Protocol specifying configuration of a PLONK.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlonkProtocol<C, L = NativeLoader>
 where
     C: CurveAffine,
     L: Loader<C>,
 {
+    #[cfg_attr(
+        feature = "derive_serde",
+        serde(bound(
+            serialize = "C::Scalar: serde::Serialize",
+            deserialize = "C::Scalar: serde::Deserialize<'de>"
+        ))
+    )]
     /// Working domain.
     pub domain: Domain<C::Scalar>,
+    #[cfg_attr(
+        feature = "derive_serde",
+        serde(bound(
+            serialize = "L::LoadedEcPoint: serde::Serialize",
+            deserialize = "L::LoadedEcPoint: serde::Deserialize<'de>"
+        ))
+    )]
     /// Commitments of preprocessed polynomials.
     pub preprocessed: Vec<L::LoadedEcPoint>,
     /// Number of instances in each instance polynomial.
@@ -37,6 +52,13 @@ where
     pub queries: Vec<Query>,
     /// Structure of quotient polynomial.
     pub quotient: QuotientPolynomial<C::Scalar>,
+    #[cfg_attr(
+        feature = "derive_serde",
+        serde(bound(
+            serialize = "L::LoadedScalar: serde::Serialize",
+            deserialize = "L::LoadedScalar: serde::Deserialize<'de>"
+        ))
+    )]
     /// Prover and verifier common initial state to write to transcript if any.
     pub transcript_initial_state: Option<L::LoadedScalar>,
     /// Instance polynomials commiting key if any.
@@ -167,6 +189,7 @@ mod halo2 {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum CommonPolynomial {
     Identity,
     Lagrange(i32),
@@ -261,6 +284,7 @@ where
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct QuotientPolynomial<F: Clone> {
     pub chunk_degree: usize,
     // Note that `num_chunk` might be larger than necessary, due to the degree
@@ -276,6 +300,7 @@ impl<F: Clone> QuotientPolynomial<F> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Query {
     pub poly: usize,
     pub rotation: Rotation,
@@ -291,6 +316,7 @@ impl Query {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Expression<F> {
     Constant(F),
     CommonPolynomial(CommonPolynomial),
@@ -501,6 +527,7 @@ fn merge_left_right<T: Ord>(a: Option<BTreeSet<T>>, b: Option<BTreeSet<T>>) -> O
 }
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum LinearizationStrategy {
     /// Older linearization strategy of GWC19, which has linearization
     /// polynomial that doesn't evaluate to 0, and requires prover to send extra
@@ -513,6 +540,7 @@ pub enum LinearizationStrategy {
 }
 
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "derive_serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct InstanceCommittingKey<C> {
     pub bases: Vec<C>,
     pub constant: Option<C>,

@@ -134,6 +134,19 @@ impl<F: FromUniformBytes<64>, L: LoadedScalar<F>, const T: usize, const RATE: us
         }
     }
 
+    /// Same as `new`, but uses the given `spec` instead of creating a new one.
+    pub fn from_spec(loader: &L::Loader, spec: Spec<F, T, RATE>) -> Self {
+        Self {
+            spec,
+            state: State::new(
+                poseidon::State::default()
+                    .words()
+                    .map(|state| loader.load_const(&state)),
+            ),
+            buf: Vec::new(),
+        }
+    }
+
     /// Store given `elements` into buffer.
     pub fn update(&mut self, elements: &[L]) {
         self.buf.extend_from_slice(elements);
