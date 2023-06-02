@@ -76,7 +76,7 @@ impl<F: Field> Polynomial<F> {
                 results
                     .iter_mut()
                     .zip(self.0.chunks(chunk_size))
-                    .zip(powers(x.pow_vartime(&[chunk_size as u64, 0, 0, 0]))),
+                    .zip(powers(x.pow_vartime([chunk_size as u64]))),
                 |((result, coeffs), scalar)| *result = evaluate_serial(coeffs) * scalar,
             );
             results.iter().fold(F::ZERO, |acc, result| acc + result)

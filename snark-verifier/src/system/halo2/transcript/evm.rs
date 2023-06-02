@@ -189,7 +189,7 @@ where
             .collect_vec();
         let hash: [u8; 32] = Keccak256::digest(data).into();
         self.buf = hash.to_vec();
-        u256_to_fe(U256::from_big_endian(hash.as_slice()))
+        u256_to_fe(U256::from_be_bytes(hash))
     }
 
     fn common_ec_point(&mut self, ec_point: &C) -> Result<(), Error> {
@@ -294,7 +294,7 @@ where
     type Input = [u8; 32];
 
     fn new(challenge_input: &[u8; 32]) -> Self {
-        ChallengeEvm(u256_to_fe(U256::from_big_endian(challenge_input)))
+        ChallengeEvm(u256_to_fe(U256::from_be_bytes(*challenge_input)))
     }
 
     fn get_scalar(&self) -> C::Scalar {

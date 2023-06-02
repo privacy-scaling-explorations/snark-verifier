@@ -8,11 +8,10 @@ use std::{
     process::{Command, Stdio},
 };
 
-pub use primitive_types::{H160 as Address, H256, U256, U512};
+pub use executor::deploy_and_call;
+pub use revm::primitives::ruint::aliases::{B160 as Address, B256, U256, U512};
 
 pub(crate) mod executor;
-
-pub use executor::ExecutorBuilder;
 
 /// Memory chunk in EVM.
 #[derive(Debug)]
@@ -55,7 +54,7 @@ pub fn fe_to_u256<F>(f: F) -> U256
 where
     F: PrimeField<Repr = [u8; 32]>,
 {
-    U256::from_little_endian(f.to_repr().as_ref())
+    U256::from_le_bytes(f.to_repr())
 }
 
 /// Convert a [`U256`] into a [`PrimeField`].
@@ -64,9 +63,7 @@ where
     F: PrimeField<Repr = [u8; 32]>,
 {
     let value = value % modulus::<F>();
-    let mut repr = F::Repr::default();
-    value.to_little_endian(repr.as_mut());
-    F::from_repr(repr).unwrap()
+    F::from_repr(value.to_le_bytes::<32>()).unwrap()
 }
 
 /// Returns modulus of [`PrimeField`] as [`U256`].
@@ -74,7 +71,7 @@ pub fn modulus<F>() -> U256
 where
     F: PrimeField<Repr = [u8; 32]>,
 {
-    U256::from_little_endian((-F::ONE).to_repr().as_ref()) + 1
+    U256::from_le_bytes((-F::ONE).to_repr()) + U256::from(1)
 }
 
 /// Encode instances and proof into calldata.

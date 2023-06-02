@@ -167,8 +167,8 @@ fn query_sets<F: PrimeField + Ord, T: Clone>(queries: &[Query<F, T>]) -> Vec<Que
     )
 }
 
-fn query_set_coeffs<'a, F: PrimeField + Ord, T: LoadedScalar<F>>(
-    sets: &[QuerySet<'a, F, T>],
+fn query_set_coeffs<F: PrimeField + Ord, T: LoadedScalar<F>>(
+    sets: &[QuerySet<F, T>],
     z: &T,
     z_prime: &T,
 ) -> Vec<QuerySetCoeff<F, T>> {
