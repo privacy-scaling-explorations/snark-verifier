@@ -153,8 +153,8 @@ impl<F: PrimeField> Domain<F> {
     pub fn rotate_scalar(&self, scalar: F, rotation: Rotation) -> F {
         match rotation.0.cmp(&0) {
             Ordering::Equal => scalar,
-            Ordering::Greater => scalar * self.gen.pow_vartime(&[rotation.0 as u64]),
-            Ordering::Less => scalar * self.gen_inv.pow_vartime(&[(-rotation.0) as u64]),
+            Ordering::Greater => scalar * self.gen.pow_vartime([rotation.0 as u64]),
+            Ordering::Less => scalar * self.gen_inv.pow_vartime([(-rotation.0) as u64]),
         }
     }
 }

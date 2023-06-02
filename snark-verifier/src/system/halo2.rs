@@ -639,9 +639,9 @@ impl<'a, F: PrimeField> Polynomials<'a, F> {
                                 .iter()
                                 .zip(
                                     iter::successors(
-                                        Some(F::DELTA.pow_vartime(&[(i
-                                            * self.permutation_chunk_size)
-                                            as u64])),
+                                        Some(F::DELTA.pow_vartime([
+                                            (i * self.permutation_chunk_size) as u64,
+                                        ])),
                                         |delta| Some(F::DELTA * delta),
                                     )
                                     .map(Expression::Constant),

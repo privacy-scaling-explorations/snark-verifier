@@ -24,7 +24,7 @@ macro_rules! halo2_kzg_evm_verify {
         use halo2_proofs::poly::commitment::ParamsProver;
         use std::rc::Rc;
         use $crate::{
-            loader::evm::{compile_yul, encode_calldata, execute, EvmLoader},
+            loader::evm::{compile_yul, deploy_and_call, encode_calldata, EvmLoader},
             system::halo2::{
                 test::kzg::{BITS, LIMBS},
                 transcript::evm::EvmTranscript,
@@ -51,13 +51,15 @@ macro_rules! halo2_kzg_evm_verify {
             compile_yul(&loader.yul_code())
         };
 
-        let (accept, total_cost, costs) =
-            execute(deployment_code, encode_calldata($instances, &$proof));
+        let calldata = encode_calldata($instances, &$proof);
+        let gas_cost = deploy_and_call(deployment_code.clone(), calldata.clone()).unwrap();
+        println!("Total gas cost: {}", gas_cost);
 
-        loader.print_gas_metering(costs);
-        println!("Total gas cost: {}", total_cost);
-
-        assert!(accept);
+        let mut calldata = calldata;
+        calldata[0] = calldata[0].wrapping_add(1);
+        assert!(deploy_and_call(deployment_code, calldata)
+            .unwrap_err()
+            .starts_with("Contract call transaction reverts"))
     }};
 }
 

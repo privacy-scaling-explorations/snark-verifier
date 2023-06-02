@@ -127,10 +127,10 @@ mod evm {
                 let x = coordinates.x().to_repr();
                 let y = coordinates.y().to_repr();
                 (
-                    U256::from_little_endian(&x.as_ref()[32..]),
-                    U256::from_little_endian(&x.as_ref()[..32]),
-                    U256::from_little_endian(&y.as_ref()[32..]),
-                    U256::from_little_endian(&y.as_ref()[..32]),
+                    U256::try_from_le_slice(&x.as_ref()[32..]).unwrap(),
+                    U256::try_from_le_slice(&x.as_ref()[..32]).unwrap(),
+                    U256::try_from_le_slice(&y.as_ref()[32..]).unwrap(),
+                    U256::try_from_le_slice(&y.as_ref()[..32]).unwrap(),
                 )
             });
             loader.pairing(&lhs, g2, &rhs, minus_s_g2);

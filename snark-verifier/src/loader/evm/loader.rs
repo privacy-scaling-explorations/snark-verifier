@@ -56,14 +56,10 @@ pub struct EvmLoader {
     code: RefCell<YulCode>,
     ptr: RefCell<usize>,
     cache: RefCell<HashMap<String, usize>>,
-    #[cfg(test)]
-    gas_metering_ids: RefCell<Vec<String>>,
 }
 
 fn hex_encode_u256(value: &U256) -> String {
-    let mut bytes = [0; 32];
-    value.to_big_endian(&mut bytes);
-    format!("0x{}", hex::encode(bytes))
+    format!("0x{}", hex::encode(value.to_be_bytes::<32>()))
 }
 
 impl EvmLoader {
@@ -83,8 +79,6 @@ impl EvmLoader {
             code: RefCell::new(code),
             ptr: Default::default(),
             cache: Default::default(),
-            #[cfg(test)]
-            gas_metering_ids: RefCell::new(Vec::new()),
         })
     }
 
@@ -326,11 +320,11 @@ impl EvmLoader {
     fn invert(self: &Rc<Self>, scalar: &Scalar) -> Scalar {
         let rd_ptr = self.allocate(0x20);
         let [cd_ptr, ..] = [
-            &self.scalar(Value::Constant(0x20.into())),
-            &self.scalar(Value::Constant(0x20.into())),
-            &self.scalar(Value::Constant(0x20.into())),
+            &self.scalar(Value::Constant(U256::from(0x20))),
+            &self.scalar(Value::Constant(U256::from(0x20))),
+            &self.scalar(Value::Constant(U256::from(0x20))),
             scalar,
-            &self.scalar(Value::Constant(self.scalar_modulus - 2)),
+            &self.scalar(Value::Constant(self.scalar_modulus - U256::from(2))),
             &self.scalar(Value::Constant(self.scalar_modulus)),
         ]
         .map(|value| self.dup_scalar(value).ptr());
@@ -401,8 +395,8 @@ impl EvmLoader {
 
     fn add(self: &Rc<Self>, lhs: &Scalar, rhs: &Scalar) -> Scalar {
         if let (Value::Constant(lhs), Value::Constant(rhs)) = (&lhs.value, &rhs.value) {
-            let out = (U512::from(lhs) + U512::from(rhs)) % U512::from(self.scalar_modulus);
-            return self.scalar(Value::Constant(out.try_into().unwrap()));
+            let out = (U512::from(*lhs) + U512::from(*rhs)) % U512::from(self.scalar_modulus);
+            return self.scalar(Value::Constant(U256::from(out)));
         }
 
         self.scalar(Value::Sum(
@@ -424,8 +418,8 @@ impl EvmLoader {
 
     fn mul(self: &Rc<Self>, lhs: &Scalar, rhs: &Scalar) -> Scalar {
         if let (Value::Constant(lhs), Value::Constant(rhs)) = (&lhs.value, &rhs.value) {
-            let out = (U512::from(lhs) * U512::from(rhs)) % U512::from(self.scalar_modulus);
-            return self.scalar(Value::Constant(out.try_into().unwrap()));
+            let out = (U512::from(*lhs) * U512::from(*rhs)) % U512::from(self.scalar_modulus);
+            return self.scalar(Value::Constant(U256::from(out)));
         }
 
         self.scalar(Value::Product(
@@ -445,26 +439,16 @@ impl EvmLoader {
 
 #[cfg(test)]
 impl EvmLoader {
-    fn start_gas_metering(self: &Rc<Self>, identifier: &str) {
-        self.gas_metering_ids
-            .borrow_mut()
-            .push(identifier.to_string());
-        let code = format!("let {identifier} := gas()");
-        self.code.borrow_mut().runtime_append(code);
+    fn start_gas_metering(self: &Rc<Self>, _: &str) {
+        //  unimplemented
     }
 
     fn end_gas_metering(self: &Rc<Self>) {
-        let code = format!(
-            "log1(0, 0, sub({}, gas()))",
-            self.gas_metering_ids.borrow().last().unwrap()
-        );
-        self.code.borrow_mut().runtime_append(code);
+        //  unimplemented
     }
 
-    pub fn print_gas_metering(self: &Rc<Self>, costs: Vec<u64>) {
-        for (identifier, cost) in self.gas_metering_ids.borrow().iter().zip(costs) {
-            println!("{}: {}", identifier, cost);
-        }
+    pub fn print_gas_metering(self: &Rc<Self>, _: Vec<u64>) {
+        //  unimplemented
     }
 }
 
@@ -681,7 +665,7 @@ where
     fn ec_point_load_const(&self, value: &C) -> EcPoint {
         let coordinates = value.coordinates().unwrap();
         let [x, y] = [coordinates.x(), coordinates.y()]
-            .map(|coordinate| U256::from_little_endian(coordinate.to_repr().as_ref()));
+            .map(|coordinate| U256::try_from_le_slice(coordinate.to_repr().as_ref()).unwrap());
         self.ec_point(Value::Constant((x, y)))
     }
 
@@ -696,7 +680,7 @@ where
             .iter()
             .cloned()
             .map(|(scalar, ec_point)| match scalar.value {
-                Value::Constant(constant) if U256::one() == constant => ec_point.clone(),
+                Value::Constant(constant) if U256::from(1) == constant => ec_point.clone(),
                 _ => ec_point.loader.ec_point_scalar_mul(ec_point, scalar),
             })
             .reduce(|acc, ec_point| acc.loader.ec_point_add(&acc, &ec_point))

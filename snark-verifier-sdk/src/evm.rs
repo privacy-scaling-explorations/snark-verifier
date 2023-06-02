@@ -3,7 +3,6 @@ use crate::{GWC, SHPLONK};
 use super::{CircuitExt, PlonkVerifier};
 #[cfg(feature = "display")]
 use ark_std::{end_timer, start_timer};
-use ethereum_types::Address;
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fq, Fr, G1Affine},
     plonk::{create_proof, verify_proof, Circuit, ProvingKey, VerifyingKey},
@@ -23,7 +22,7 @@ use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
 pub use snark_verifier::loader::evm::encode_calldata;
 use snark_verifier::{
-    loader::evm::{compile_yul, EvmLoader, ExecutorBuilder},
+    loader::evm::{compile_yul, deploy_and_call, EvmLoader},
     pcs::{
         kzg::{KzgAccumulator, KzgAsVerifyingKey, KzgDecidingKey, KzgSuccinctVerifyingKey},
         AccumulationDecider, AccumulationScheme, PolynomialCommitmentScheme,
@@ -180,23 +179,8 @@ pub fn gen_evm_verifier_shplonk<C: CircuitExt<Fr>>(
 
 pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
     let calldata = encode_calldata(&instances, &proof);
-    let success = {
-        let mut evm = ExecutorBuilder::default()
-            .with_gas_limit(u64::MAX.into())
-            .build();
-
-        let caller = Address::from_low_u64_be(0xfe);
-        let verifier = evm
-            .deploy(caller, deployment_code.into(), 0.into())
-            .address
-            .unwrap();
-        let result = evm.call_raw(caller, verifier, calldata.into(), 0.into());
-
-        dbg!(result.gas_used);
-
-        !result.reverted
-    };
-    assert!(success);
+    let gas_cost = deploy_and_call(deployment_code, calldata).unwrap();
+    dbg!(gas_cost);
 }
 
 pub fn write_calldata(instances: &[Vec<Fr>], proof: &[u8], path: &Path) -> io::Result<String> {
