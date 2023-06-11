@@ -177,10 +177,11 @@ pub fn gen_evm_verifier_shplonk<C: CircuitExt<Fr>>(
     gen_evm_verifier::<C, SHPLONK>(params, vk, num_instance, path)
 }
 
-pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) {
+pub fn evm_verify(deployment_code: Vec<u8>, instances: Vec<Vec<Fr>>, proof: Vec<u8>) -> u64 {
     let calldata = encode_calldata(&instances, &proof);
     let gas_cost = deploy_and_call(deployment_code, calldata).unwrap();
     dbg!(gas_cost);
+    gas_cost
 }
 
 pub fn write_calldata(instances: &[Vec<Fr>], proof: &[u8], path: &Path) -> io::Result<String> {
