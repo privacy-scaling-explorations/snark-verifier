@@ -139,12 +139,41 @@ where
     (previous_instances, accumulator)
 }
 
+/// SDK trait which makes it possible for other project directly use the AggregationCircuit with any `AccumulationScheme' like GWC & SHPLONK
+pub trait AccumulationSchemeSDK:
+    for<'a> PolynomialCommitmentScheme<
+        G1Affine,
+        Rc<Halo2Loader<'a>>,
+        VerifyingKey = Svk,
+        Output = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
+    > + for<'a> AccumulationScheme<
+        G1Affine,
+        Rc<Halo2Loader<'a>>,
+        Accumulator = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
+        VerifyingKey = KzgAsVerifyingKey,
+    > + PolynomialCommitmentScheme<
+        G1Affine,
+        NativeLoader,
+        VerifyingKey = Svk,
+        Output = KzgAccumulator<G1Affine, NativeLoader>,
+    > + AccumulationScheme<
+        G1Affine,
+        NativeLoader,
+        Accumulator = KzgAccumulator<G1Affine, NativeLoader>,
+        VerifyingKey = KzgAsVerifyingKey,
+    > + AccumulationSchemeProver<G1Affine, ProvingKey = KzgAsProvingKey<G1Affine>>
+{
+}
+
 /// `AS` should be the [`AccumulationScheme`] and [`PolynomialCommitmentScheme`] used to create `snarks`.
 /// Many things will fail if `AS` does not match how `snarks` were actually created.
 ///
 /// In practice, `AS` is either `SHPLONK` or `GWC`.
 #[derive(Clone)]
-pub struct AggregationCircuit<AS> {
+pub struct AggregationCircuit<AS>
+where
+    AS: AccumulationSchemeSDK,
+{
     svk: Svk,
     pub snarks: Vec<SnarkWitness>,
     instances: Vec<Fr>,
@@ -153,29 +182,8 @@ pub struct AggregationCircuit<AS> {
 }
 
 impl<AS> AggregationCircuit<AS>
-// without unstable rust, I don't know how to make this where clause go away...
 where
-    for<'a> AS: PolynomialCommitmentScheme<
-            G1Affine,
-            Rc<Halo2Loader<'a>>,
-            VerifyingKey = Svk,
-            Output = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-        > + AccumulationScheme<
-            G1Affine,
-            Rc<Halo2Loader<'a>>,
-            Accumulator = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-            VerifyingKey = KzgAsVerifyingKey,
-        > + PolynomialCommitmentScheme<
-            G1Affine,
-            NativeLoader,
-            VerifyingKey = Svk,
-            Output = KzgAccumulator<G1Affine, NativeLoader>,
-        > + AccumulationScheme<
-            G1Affine,
-            NativeLoader,
-            Accumulator = KzgAccumulator<G1Affine, NativeLoader>,
-            VerifyingKey = KzgAsVerifyingKey,
-        > + AccumulationSchemeProver<G1Affine, ProvingKey = KzgAsProvingKey<G1Affine>>,
+    AS: AccumulationSchemeSDK,
 {
     /// Given snarks, this creates a circuit and runs the `GateThreadBuilder` to verify all the snarks.
     /// By default, the returned circuit has public instances equal to the limbs of the pair of elliptic curve points, referred to as the `accumulator`, that need to be verified in a final pairing check.
@@ -327,29 +335,8 @@ impl AggregationConfig {
 }
 
 impl<AS> Circuit<Fr> for AggregationCircuit<AS>
-// without unstable rust, I don't know how to make this where clause go away...
 where
-    for<'a> AS: PolynomialCommitmentScheme<
-            G1Affine,
-            Rc<Halo2Loader<'a>>,
-            VerifyingKey = Svk,
-            Output = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-        > + AccumulationScheme<
-            G1Affine,
-            Rc<Halo2Loader<'a>>,
-            Accumulator = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-            VerifyingKey = KzgAsVerifyingKey,
-        > + PolynomialCommitmentScheme<
-            G1Affine,
-            NativeLoader,
-            VerifyingKey = Svk,
-            Output = KzgAccumulator<G1Affine, NativeLoader>,
-        > + AccumulationScheme<
-            G1Affine,
-            NativeLoader,
-            Accumulator = KzgAccumulator<G1Affine, NativeLoader>,
-            VerifyingKey = KzgAsVerifyingKey,
-        > + AccumulationSchemeProver<G1Affine, ProvingKey = KzgAsProvingKey<G1Affine>>,
+    AS: AccumulationSchemeSDK,
 {
     type Config = AggregationConfig;
     type FloorPlanner = SimpleFloorPlanner;
@@ -398,29 +385,8 @@ where
 }
 
 impl<AS> CircuitExt<Fr> for AggregationCircuit<AS>
-// without unstable rust, I don't know how to make this where clause go away...
 where
-    for<'a> AS: PolynomialCommitmentScheme<
-            G1Affine,
-            Rc<Halo2Loader<'a>>,
-            VerifyingKey = Svk,
-            Output = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-        > + AccumulationScheme<
-            G1Affine,
-            Rc<Halo2Loader<'a>>,
-            Accumulator = KzgAccumulator<G1Affine, Rc<Halo2Loader<'a>>>,
-            VerifyingKey = KzgAsVerifyingKey,
-        > + PolynomialCommitmentScheme<
-            G1Affine,
-            NativeLoader,
-            VerifyingKey = Svk,
-            Output = KzgAccumulator<G1Affine, NativeLoader>,
-        > + AccumulationScheme<
-            G1Affine,
-            NativeLoader,
-            Accumulator = KzgAccumulator<G1Affine, NativeLoader>,
-            VerifyingKey = KzgAsVerifyingKey,
-        > + AccumulationSchemeProver<G1Affine, ProvingKey = KzgAsProvingKey<G1Affine>>,
+    AS: AccumulationSchemeSDK,
 {
     fn num_instance(&self) -> Vec<usize> {
         vec![self.instances.len()]
