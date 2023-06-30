@@ -38,7 +38,7 @@ where
     pub evaluations: Vec<L::LoadedScalar>,
     /// Proof of [`PolynomialCommitmentScheme`].
     pub pcs: <AS as PolynomialCommitmentScheme<C, L>>::Proof,
-    /// Old [`AccumulationScheme::Accumulator`]s read from instnaces.
+    /// Old [`AccumulationScheme::Accumulator`]s read from instances.
     pub old_accumulators: Vec<AS::Accumulator>,
 }
 
