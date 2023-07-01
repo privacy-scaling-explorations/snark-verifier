@@ -102,11 +102,13 @@ impl SnarkWitness {
 }
 
 pub trait CircuitExt<F: Field>: Circuit<F> {
-    /// Return the number of instances of the circuit.
+    /// Return the instances of the circuit.
     /// This may depend on extra circuit parameters but NOT on private witnesses.
-    fn num_instance(&self) -> Vec<usize>;
-
     fn instances(&self) -> Vec<Vec<F>>;
+
+    fn num_instance(&self) -> Vec<usize> {
+        self.instances().iter().map(Vec::len).collect()
+    }
 
     fn accumulator_indices() -> Option<Vec<(usize, usize)>> {
         None
