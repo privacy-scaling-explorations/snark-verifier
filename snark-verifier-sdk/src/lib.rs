@@ -107,10 +107,7 @@ pub trait CircuitExt<F: Field>: Circuit<F> {
     fn instances(&self) -> Vec<Vec<F>>;
 
     fn num_instance(&self) -> Vec<usize> {
-        self.instances()
-            .iter()
-            .map(|inst| inst.len())
-            .collect::<Vec<usize>>()
+        self.instances().iter().map(Vec::len).collect()
     }
 
     fn accumulator_indices() -> Option<Vec<(usize, usize)>> {
