@@ -1,6 +1,6 @@
 [package]
 name = "snark-verifier"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
@@ -50,7 +50,10 @@ loader_halo2 = ["dep:halo2_proofs", "dep:halo2_wrong_ecc", "dep:poseidon"]
 system_halo2 = ["dep:halo2_proofs"]
 
 # features of halo2
-halo2_circuit_params = ["halo2_proofs?/circuit-params", "halo2_wrong_ecc?/circuit-params"]
+halo2_circuit_params = [
+    "halo2_proofs?/circuit-params",
+    "halo2_wrong_ecc?/circuit-params",
+]
 derive_serde = ["dep:serde"]
 
 [[example]]
