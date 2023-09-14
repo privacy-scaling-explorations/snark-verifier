@@ -24,7 +24,7 @@ macro_rules! halo2_kzg_evm_verify {
         use halo2_proofs::poly::commitment::ParamsProver;
         use std::rc::Rc;
         use $crate::{
-            loader::evm::{compile_yul, deploy_and_call, encode_calldata, EvmLoader},
+            loader::evm::{compile_solidity, deploy_and_call, encode_calldata, EvmLoader},
             system::halo2::{
                 test::kzg::{BITS, LIMBS},
                 transcript::evm::EvmTranscript,
@@ -48,7 +48,7 @@ macro_rules! halo2_kzg_evm_verify {
                 <$plonk_verifier>::read_proof(&vk, &protocol, &instances, &mut transcript).unwrap();
             <$plonk_verifier>::verify(&vk, &protocol, &instances, &proof).unwrap();
 
-            compile_yul(&loader.yul_code())
+            compile_solidity(&loader.solidity_code())
         };
 
         let calldata = encode_calldata($instances, &$proof);

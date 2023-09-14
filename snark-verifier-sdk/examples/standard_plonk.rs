@@ -170,27 +170,15 @@ fn main() {
     );
     end_timer!(start0);
 
-    std::fs::remove_file("./examples/agg.snark").unwrap_or_default();
-    let _snark = gen_snark_shplonk(
+    let num_instances = agg_circuit.num_instance();
+    let instances = agg_circuit.instances();
+    let proof_calldata = gen_evm_proof_shplonk(&params, &pk, agg_circuit, instances.clone());
+
+    let deployment_code = gen_evm_verifier_shplonk::<AggregationCircuit<SHPLONK>>(
         &params,
-        &pk,
-        agg_circuit.clone(),
-        Some(Path::new("./examples/agg.snark")),
+        pk.get_vk(),
+        num_instances,
+        Some(Path::new("./examples/StandardPlonkVerifierExample.sol")),
     );
-
-    #[cfg(feature = "loader_evm")]
-    {
-        // do one more time to verify
-        let num_instances = agg_circuit.num_instance();
-        let instances = agg_circuit.instances();
-        let proof_calldata = gen_evm_proof_shplonk(&params, &pk, agg_circuit, instances.clone());
-
-        let deployment_code = gen_evm_verifier_shplonk::<AggregationCircuit<SHPLONK>>(
-            &params,
-            pk.get_vk(),
-            num_instances,
-            Some(Path::new("./examples/standard_plonk.yul")),
-        );
-        evm_verify(deployment_code, instances, proof_calldata);
-    }
+    evm_verify(deployment_code, instances, proof_calldata);
 }
