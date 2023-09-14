@@ -103,6 +103,9 @@ pub fn estimate_gas(cost: Cost) -> usize {
 
 /// Compile given yul `code` into deployment bytecode.
 pub fn compile_yul(code: &str) -> Vec<u8> {
+    let _cmd_check = Command::new("solc")
+        .status()
+        .expect("Solidity compiler does not exist.");
     let mut cmd = Command::new("solc")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
