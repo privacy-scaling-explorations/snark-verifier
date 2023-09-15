@@ -1,6 +1,6 @@
 [package]
 name = "snark-verifier-sdk"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [dependencies]
@@ -21,14 +21,16 @@ snark-verifier = { path = "../snark-verifier", default-features = false }
 
 # system_halo2
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2023_04_20" } # not optional for now
-halo2curves = { git = 'https://github.com/privacy-scaling-explorations/halo2curves', tag = "0.3.2" } # must be same version as in halo2_proofs
+halo2curves = { git = 'https://github.com/privacy-scaling-explorations/halo2curves', tag = "0.3.2" }  # must be same version as in halo2_proofs
 
 # loader_halo2
 halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20", package = "ecc", optional = true }
 poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon", tag = "v2023_04_20", optional = true }
 
 # loader_evm
-ethereum-types = { version = "0.14", default-features = false, features = ["std"], optional = true }
+ethereum-types = { version = "0.14", default-features = false, features = [
+    "std",
+], optional = true }
 
 [dev-dependencies]
 ark-std = { version = "0.3.0", features = ["print-trace"] }
@@ -41,12 +43,17 @@ criterion-macro = "0.4"
 default = ["loader_halo2", "loader_evm", "derive_serde", "display"]
 display = ["dep:ark-std"]
 loader_evm = ["snark-verifier/loader_evm", "dep:ethereum-types"]
-loader_halo2 = ["snark-verifier/system_halo2", "snark-verifier/loader_halo2", "dep:halo2_wrong_ecc", "dep:poseidon"]
+loader_halo2 = [
+    "snark-verifier/system_halo2",
+    "snark-verifier/loader_halo2",
+    "dep:halo2_wrong_ecc",
+    "dep:poseidon",
+]
 parallel = ["snark-verifier/parallel"]
 derive_serde = ["snark-verifier/derive_serde", "halo2curves/derive_serde"]
 halo2_circuit_params = ["snark-verifier/halo2_circuit_params"]
 
 [[bench]]
+
 name = "standard_plonk"
-required-features = ["loader_halo2"]
-harness = false
+required-features = ["loader_halo2", "loader_evm"]

@@ -101,8 +101,8 @@ pub fn estimate_gas(cost: Cost) -> usize {
     intrinsic_cost + calldata_cost + ec_operation_cost
 }
 
-/// Compile given yul `code` into deployment bytecode.
-pub fn compile_yul(code: &str) -> Vec<u8> {
+/// Compile given Solidity `code` into deployment bytecode.
+pub fn compile_solidity(code: &str) -> Vec<u8> {
     let _cmd_check = Command::new("solc")
         .status()
         .expect("Solidity compiler does not exist.");
@@ -110,7 +110,6 @@ pub fn compile_yul(code: &str) -> Vec<u8> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .arg("--bin")
-        .arg("--yul")
         .arg("-")
         .spawn()
         .unwrap();
