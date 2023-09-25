@@ -119,8 +119,7 @@ pub fn compile_solidity(code: &str) -> Vec<u8> {
         }
     };
 
-    cmd
-        .stdin
+    cmd.stdin
         .take()
         .unwrap()
         .write_all(code.as_bytes())
