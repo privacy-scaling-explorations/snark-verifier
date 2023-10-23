@@ -27,7 +27,13 @@ pragma solidity ^0.8.0;
 
 contract Halo2Verifier {{
     fallback(bytes calldata) external returns (bytes memory) {{
-        assembly {{
+        assembly (\"memory-safe\") {{
+            // Enforce that Solidity memory layout is respected
+            let data := mload(0x40)
+            if iszero(eq(data, 0x80)) {{
+                revert(0, 0)
+            }}
+
             let success := true
             let f_p := {base_modulus}
             let f_q := {scalar_modulus}
