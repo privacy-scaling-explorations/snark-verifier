@@ -22,6 +22,9 @@ use std::{
     rc::Rc,
 };
 
+/// Memory pointer starts at 0x80, which is the end of the Solidity memory layout scratch space.
+pub const MEM_PTR_START: usize = 0x80;
+
 #[derive(Clone, Debug)]
 pub enum Value<T> {
     Constant(T),
@@ -77,7 +80,7 @@ impl EvmLoader {
             base_modulus,
             scalar_modulus,
             code: RefCell::new(code),
-            ptr: Default::default(),
+            ptr: RefCell::new(MEM_PTR_START),
             cache: Default::default(),
         })
     }

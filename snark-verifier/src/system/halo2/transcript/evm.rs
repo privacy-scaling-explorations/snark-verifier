@@ -2,7 +2,12 @@
 
 use crate::{
     loader::{
-        evm::{loader::Value, u256_to_fe, util::MemoryChunk, EcPoint, EvmLoader, Scalar, U256},
+        evm::{
+            loader::{Value, MEM_PTR_START},
+            u256_to_fe,
+            util::MemoryChunk,
+            EcPoint, EvmLoader, Scalar, U256,
+        },
         native::{self, NativeLoader},
         Loader,
     },
@@ -40,7 +45,7 @@ where
     /// u256 for `transcript_initial_state`.
     pub fn new(loader: &Rc<EvmLoader>) -> Self {
         let ptr = loader.allocate(0x20);
-        assert_eq!(ptr, 0);
+        assert_eq!(ptr, MEM_PTR_START);
         let mut buf = MemoryChunk::new(ptr);
         buf.extend(0x20);
         Self {
@@ -118,7 +123,7 @@ where
 
     fn common_scalar(&mut self, scalar: &Scalar) -> Result<(), Error> {
         match scalar.value() {
-            Value::Constant(_) if self.buf.ptr() == 0 => {
+            Value::Constant(_) if self.buf.ptr() == MEM_PTR_START => {
                 self.loader.copy_scalar(scalar, self.buf.ptr());
             }
             Value::Memory(ptr) => {
