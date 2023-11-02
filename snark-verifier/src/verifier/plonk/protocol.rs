@@ -61,7 +61,7 @@ where
     )]
     /// Prover and verifier common initial state to write to transcript if any.
     pub transcript_initial_state: Option<L::LoadedScalar>,
-    /// Instance polynomials commiting key if any.
+    /// Instance polynomials committing key if any.
     pub instance_committing_key: Option<InstanceCommittingKey<C>>,
     /// Linearization strategy.
     pub linearization: Option<LinearizationStrategy>,

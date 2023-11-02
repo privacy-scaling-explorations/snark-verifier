@@ -2,7 +2,7 @@
 //! [`PlonkVerifier`] implemented and both are implemented assuming the used
 //! [`PolynomialCommitmentScheme`] has [atomic] or [split] accumulation scheme
 //! ([`PlonkVerifier`] is just [`PlonkSuccinctVerifier`] plus doing accumulator
-//! deciding then returns accept/reject as ouput).
+//! deciding then returns accept/reject as output).
 //!
 //! [PLONK]: https://eprint.iacr.org/2019/953
 //! [atomic]: https://eprint.iacr.org/2020/499
@@ -27,7 +27,7 @@ pub(crate) mod protocol;
 pub use proof::PlonkProof;
 pub use protocol::PlonkProtocol;
 
-/// Verifier that verifies the cheap part of PLONK and ouput the accumulator.
+/// Verifier that verifies the cheap part of PLONK and output the accumulator.
 #[derive(Debug)]
 pub struct PlonkSuccinctVerifier<AS, AE = PhantomData<AS>>(PhantomData<(AS, AE)>);
 
@@ -93,7 +93,7 @@ where
 }
 
 /// Verifier that first verifies the cheap part of PLONK, then decides
-/// accumulator and returns accept/reject as ouput.
+/// accumulator and returns accept/reject as output.
 #[derive(Debug)]
 pub struct PlonkVerifier<AS, AE = PhantomData<AS>>(PhantomData<(AS, AE)>);
 
