@@ -545,8 +545,7 @@ impl<'a, F: PrimeField> Polynomials<'a, F> {
     }
 
     fn system_challenge_offset(&self) -> usize {
-        let num_challenge = self.num_challenge();
-        num_challenge[..num_challenge.len() - 3].iter().sum()
+        self.num_challenge.iter().sum()
     }
 
     fn theta(&self) -> Expression<F> {
