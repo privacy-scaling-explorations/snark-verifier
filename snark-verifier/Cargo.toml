@@ -21,7 +21,7 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", 
 
 # loader_evm
 sha3 = { version = "0.10", optional = true }
-revm = { version = "3.3.0", optional = true }
+revm = { version = "3.5.0", optional = true,   default-features = false }
 
 # loader_halo2
 halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20", package = "ecc", optional = true }
