@@ -52,3 +52,29 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --all --all-features --all-targets -- -D warnings
+
+  build:
+    name: Build target ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - wasm32-wasi
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          override: false
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v1
+        with:
+          cache-on-failure: true
+
+      - name: Run build
+        run: cargo build --target ${{ matrix.target }}
