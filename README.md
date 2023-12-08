@@ -4,14 +4,14 @@ Generic (S)NARK verifier.
 
 ## User Guide
 
-If you write a circuit in Halo2 and want to verify the generated proof on Ethereum, this project is for you.
+This project is tailored for verifying [Halo2](https://github.com/privacy-scaling-explorations/halo2)-generated proofs on Ethereum.
 
-This repository also contains an example to verify an aggregated proof, which is a proof for multiple other proofs. Try it out with `cargo run --example evm-verifier-with-accumulator`.
+Additionally, within this repository, there is an example provided for verifying an aggregated proof, which serves as proof for multiple other proofs. You can test it by executing `cargo run --example evm-verifier-with-accumulator`.
 
-The effort has been under active developement, so there are variants of repositories to chose.
+As this effort is continuously evolving, there are multiple repository variants to choose from. For optimal results:
 
-- For production use, [axiom’s fork](https://github.com/axiom-crypto/snark-verifier) is audited and thus recommended.
-- In the future, [halo2-solidity-verifier](https://github.com/privacy-scaling-explorations/halo2-solidity-verifier) is favored. Some notes:
-  - We plan to sunset snark-verifier and shift focus to halo2-solidity-verifier
-  - halo2-solidity-verifier is unaudited and has some limitations, see the project README for details.
-  - snark-verifier fails to generate Solidity code by hitting the contract size limit when the circuit is too large. halo2-solidity-verifier is written to solve this issue.
+- For production use, it is recommended to use [axiom’s fork](https://github.com/axiom-crypto/snark-verifier), which has been audited.
+- In the future, consider using [halo2-solidity-verifier](https://github.com/privacy-scaling-explorations/halo2-solidity-verifier). However, please note the following:
+  - The plan is to phase out snark-verifier and shift focus to halo2-solidity-verifier
+  - Keep in mind halo2-solidity-verifier is currently unaudited and has certain limitations, refer to the project README for details.
+  - snark-verifier may encounter issues generating Solidity code due to hitting the contract size limit with large circuits, a problem addressed by halo2-solidity-verifier.
