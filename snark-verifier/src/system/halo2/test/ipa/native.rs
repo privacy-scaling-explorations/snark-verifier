@@ -15,7 +15,7 @@ use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 macro_rules! test {
-    (@ $name:ident, $k:expr, $config:expr, $create_cirucit:expr, $prover:ty, $verifier:ty, $plonk_verifier:ty) => {
+    (@ $name:ident, $k:expr, $config:expr, $create_circuit:expr, $prover:ty, $verifier:ty, $plonk_verifier:ty) => {
         paste! {
             #[test]
             fn [<test_ $name>]() {
@@ -23,7 +23,7 @@ macro_rules! test {
                     pallas::Affine,
                     $k,
                     $config,
-                    $create_cirucit
+                    $create_circuit
                 );
                 let snark = halo2_ipa_create_snark!(
                     $prover,
@@ -46,8 +46,8 @@ macro_rules! test {
             }
         }
     };
-    ($name:ident, $k:expr, $config:expr, $create_cirucit:expr) => {
-        test!(@ $name, $k, $config, $create_cirucit, ProverIPA<pallas::Affine>, VerifierIPA<pallas::Affine>, PlonkVerifier::<IpaAs<pallas::Affine, Bgh19>>);
+    ($name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
+        test!(@ $name, $k, $config, $create_circuit, ProverIPA<pallas::Affine>, VerifierIPA<pallas::Affine>, PlonkVerifier::<IpaAs<pallas::Affine, Bgh19>>);
     }
 }
 

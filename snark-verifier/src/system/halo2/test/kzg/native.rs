@@ -18,14 +18,14 @@ use paste::paste;
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
 macro_rules! test {
-    (@ $prefix:ident, $name:ident, $k:expr, $config:expr, $create_cirucit:expr, $prover:ty, $verifier:ty, $plonk_verifier:ty) => {
+    (@ $prefix:ident, $name:ident, $k:expr, $config:expr, $create_circuit:expr, $prover:ty, $verifier:ty, $plonk_verifier:ty) => {
         paste! {
             #[test]
             fn [<test_ $prefix _ $name>]() {
                 let (params, pk, protocol, circuits) = halo2_kzg_prepare!(
                     $k,
                     $config,
-                    $create_cirucit
+                    $create_circuit
                 );
                 let snark = halo2_kzg_create_snark!(
                     $prover,
@@ -48,9 +48,9 @@ macro_rules! test {
             }
         }
     };
-    ($name:ident, $k:expr, $config:expr, $create_cirucit:expr) => {
-        test!(@ shplonk, $name, $k, $config, $create_cirucit, ProverSHPLONK<_>, VerifierSHPLONK<_>, PlonkVerifier<KzgAs<Bn256, Bdfg21>, LimbsEncoding<LIMBS, BITS>>);
-        test!(@ plonk, $name, $k, $config, $create_cirucit, ProverGWC<_>, VerifierGWC<_>, PlonkVerifier<KzgAs<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
+    ($name:ident, $k:expr, $config:expr, $create_circuit:expr) => {
+        test!(@ shplonk, $name, $k, $config, $create_circuit, ProverSHPLONK<_>, VerifierSHPLONK<_>, PlonkVerifier<KzgAs<Bn256, Bdfg21>, LimbsEncoding<LIMBS, BITS>>);
+        test!(@ plonk, $name, $k, $config, $create_circuit, ProverGWC<_>, VerifierGWC<_>, PlonkVerifier<KzgAs<Bn256, Gwc19>, LimbsEncoding<LIMBS, BITS>>);
     }
 }
 
