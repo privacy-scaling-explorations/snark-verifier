@@ -9,7 +9,10 @@ use crate::{
     },
     verifier::plonk::PlonkVerifier,
 };
-use halo2_curves::bn256::{Bn256, G1Affine};
+use halo2_curves::{
+    bn256::{Bn256, G1Affine},
+    pairing::Engine,
+};
 use halo2_proofs::{
     poly::kzg::multiopen::{ProverGWC, ProverSHPLONK, VerifierGWC, VerifierSHPLONK},
     transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer},
@@ -64,5 +67,5 @@ test!(
     zk_main_gate_with_range_with_mock_kzg_accumulator,
     9,
     halo2_kzg_config!(true, 2, (0..4 * LIMBS).map(|idx| (0, idx)).collect()),
-    main_gate_with_range_with_mock_kzg_accumulator::<Bn256>()
+    main_gate_with_range_with_mock_kzg_accumulator::<<Bn256 as Engine>::G1Affine, Bn256>()
 );

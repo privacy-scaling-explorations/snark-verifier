@@ -20,11 +20,11 @@ ark-std = { version = "0.3.0", features = ["print-trace"], optional = true }
 snark-verifier = { path = "../snark-verifier", default-features = false }
 
 # system_halo2
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v2023_04_20" } # not optional for now
-halo2curves = { git = 'https://github.com/privacy-scaling-explorations/halo2curves', tag = "0.3.2" }  # must be same version as in halo2_proofs
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v0.3.0" } # not optional for now
+halo2curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "v0.6.0" }
 
 # loader_halo2
-halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2023_04_20", package = "ecc", optional = true }
+halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2024_01_31", package = "ecc", optional = true }
 poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon", tag = "v2023_04_20", optional = true }
 
 # loader_evm
