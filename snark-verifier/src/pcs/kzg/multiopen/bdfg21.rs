@@ -67,7 +67,7 @@ where
                 .zip(coeffs.iter())
                 .map(|(set, coeff)| set.msm(coeff, commitments, &powers_of_mu));
 
-            msms.zip(proof.gamma.powers(sets.len()).into_iter())
+            msms.zip(proof.gamma.powers(sets.len()))
                 .map(|(msm, power_of_gamma)| msm * &power_of_gamma)
                 .sum::<Msm<_, _>>()
                 - Msm::base(&proof.w) * &coeffs[0].z_s
