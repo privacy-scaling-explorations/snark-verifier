@@ -1,8 +1,8 @@
 use crate::{
     system::halo2::test::{read_or_create_srs, MainGateWithRange},
-    util::arithmetic::{fe_to_limbs, CurveAffine, MultiMillerLoop, PrimeField},
+    util::arithmetic::{fe_to_limbs, CurveAffine, MultiMillerLoop},
 };
-use halo2_curves::serde::SerdeObject;
+use halo2_curves::{serde::SerdeObject, CurveExt};
 use halo2_proofs::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG};
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
 
@@ -21,17 +21,18 @@ pub const BITS: usize = 68;
 
 pub fn setup<M: MultiMillerLoop>(k: u32) -> ParamsKZG<M>
 where
-    M::Scalar: PrimeField,
+    M::G1Affine: SerdeObject + CurveAffine,
+    M::G1: CurveExt<AffineExt = M::G1Affine>,
 {
     ParamsKZG::<M>::setup(k, ChaCha20Rng::from_seed(Default::default()))
 }
 
 pub fn main_gate_with_range_with_mock_kzg_accumulator<M: MultiMillerLoop>(
-) -> MainGateWithRange<M::Scalar>
+) -> MainGateWithRange<M::Fr>
 where
-    M::Scalar: PrimeField,
-    M::G1Affine: SerdeObject,
-    M::G2Affine: SerdeObject,
+    M::G2Affine: CurveAffine + SerdeObject,
+    M::G1Affine: CurveAffine<CurveExt = M::G1, ScalarExt = M::Fr> + SerdeObject,
+    M::G1: CurveExt<AffineExt = M::G1Affine>,
 {
     let srs = read_or_create_srs(TESTDATA_DIR, 1, setup::<M>);
     let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());

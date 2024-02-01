@@ -2,7 +2,7 @@ use crate::{
     loader::{native::NativeLoader, LoadedScalar, Loader},
     pcs::{kzg::KzgAccumulator, AccumulationScheme, AccumulationSchemeProver},
     util::{
-        arithmetic::{Curve, CurveAffine, Field, MultiMillerLoop, PrimeField},
+        arithmetic::{Curve, CurveAffine, Field, MultiMillerLoop},
         msm::Msm,
         transcript::{TranscriptRead, TranscriptWrite},
     },
@@ -19,7 +19,7 @@ pub struct KzgAs<M, MOS>(PhantomData<(M, MOS)>);
 impl<M, L, MOS> AccumulationScheme<M::G1Affine, L> for KzgAs<M, MOS>
 where
     M: MultiMillerLoop,
-    M::Scalar: PrimeField,
+    M::G1Affine: CurveAffine,
     L: Loader<M::G1Affine>,
     MOS: Clone + Debug,
 {
@@ -46,7 +46,7 @@ where
         let (lhs, rhs) = instances
             .iter()
             .map(|accumulator| (&accumulator.lhs, &accumulator.rhs))
-            .chain(proof.blind.as_ref().map(|(lhs, rhs)| (lhs, rhs)))
+            .chain(proof.blind.as_ref().map(|tup| (&tup.0, &tup.1)))
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
         let powers_of_r = proof.r.powers(lhs.len());
@@ -140,7 +140,7 @@ where
 impl<M, MOS> AccumulationSchemeProver<M::G1Affine> for KzgAs<M, MOS>
 where
     M: MultiMillerLoop,
-    M::Scalar: PrimeField,
+    M::G1Affine: CurveAffine,
     MOS: Clone + Debug,
 {
     type ProvingKey = KzgAsProvingKey<M::G1Affine>;
@@ -165,7 +165,7 @@ where
         let blind = pk
             .zk()
             .then(|| {
-                let s = M::Scalar::random(rng);
+                let s = M::Fr::random(rng);
                 let (g, s_g) = pk.0.unwrap();
                 let lhs = (s_g * s).to_affine();
                 let rhs = (g * s).to_affine();

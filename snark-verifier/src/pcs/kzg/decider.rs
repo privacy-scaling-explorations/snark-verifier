@@ -42,6 +42,9 @@ impl<M: MultiMillerLoop> AsRef<KzgSuccinctVerifyingKey<M::G1Affine>> for KzgDeci
 }
 
 mod native {
+
+    use halo2_curves::CurveAffine;
+
     use crate::{
         loader::native::NativeLoader,
         pcs::{
@@ -49,7 +52,7 @@ mod native {
             AccumulationDecider,
         },
         util::{
-            arithmetic::{Group, MillerLoopResult, MultiMillerLoop, PrimeField},
+            arithmetic::{Group, MillerLoopResult, MultiMillerLoop},
             Itertools,
         },
         Error,
@@ -59,7 +62,7 @@ mod native {
     impl<M, MOS> AccumulationDecider<M::G1Affine, NativeLoader> for KzgAs<M, MOS>
     where
         M: MultiMillerLoop,
-        M::Scalar: PrimeField,
+        M::G1Affine: CurveAffine,
         MOS: Clone + Debug,
     {
         type DecidingKey = KzgDecidingKey<M>;
@@ -113,7 +116,9 @@ mod evm {
     impl<M, MOS> AccumulationDecider<M::G1Affine, Rc<EvmLoader>> for KzgAs<M, MOS>
     where
         M: MultiMillerLoop,
-        M::Scalar: PrimeField<Repr = [u8; 0x20]>,
+        M::Fr: PrimeField<Repr = [u8; 0x20]>,
+        M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+        M::G2Affine: CurveAffine,
         MOS: Clone + Debug,
     {
         type DecidingKey = KzgDecidingKey<M>;
@@ -162,7 +167,7 @@ mod evm {
                 loader.code_mut().runtime_append(code);
                 let challenge = loader.scalar(Value::Memory(challenge_ptr));
 
-                let powers_of_challenge = LoadedScalar::<M::Scalar>::powers(&challenge, lhs.len());
+                let powers_of_challenge = LoadedScalar::<M::Fr>::powers(&challenge, lhs.len());
                 let [lhs, rhs] = [lhs, rhs].map(|msms| {
                     msms.iter()
                         .zip(powers_of_challenge.iter())

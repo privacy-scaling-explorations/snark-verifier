@@ -837,7 +837,7 @@ impl<F: PrimeField<Repr = [u8; 0x20]>> ScalarLoader<F> for Rc<EvmLoader> {
 
         let initial_value = loader.push(products.first().unwrap());
         let mut code = format!("let prod := {initial_value}\n");
-        for (_, (value, product)) in values.iter().zip(products.iter()).skip(1).enumerate() {
+        for (value, product) in values.iter().zip(products.iter()).skip(1) {
             let v = loader.push(value);
             let ptr = product.ptr();
             code.push_str(

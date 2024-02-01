@@ -23,7 +23,8 @@ pub struct Gwc19;
 impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
-    M::Scalar: PrimeField,
+    M::Fr: Ord,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
     L: Loader<M::G1Affine>,
 {
     type VerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
@@ -32,7 +33,7 @@ where
 
     fn read_proof<T>(
         _: &Self::VerifyingKey,
-        queries: &[Query<M::Scalar>],
+        queries: &[Query<M::Fr>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
     where
@@ -45,7 +46,7 @@ where
         svk: &Self::VerifyingKey,
         commitments: &[Msm<M::G1Affine, L>],
         z: &L::LoadedScalar,
-        queries: &[Query<M::Scalar, L::LoadedScalar>],
+        queries: &[Query<M::Fr, L::LoadedScalar>],
         proof: &Self::Proof,
     ) -> Result<Self::Output, Error> {
         let sets = query_sets(queries);
@@ -161,11 +162,10 @@ where
 impl<M> CostEstimation<M::G1Affine> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
-    M::Scalar: PrimeField,
 {
-    type Input = Vec<Query<M::Scalar>>;
+    type Input = Vec<Query<M::Fr>>;
 
-    fn estimate_cost(queries: &Vec<Query<M::Scalar>>) -> Cost {
+    fn estimate_cost(queries: &Vec<Query<M::Fr>>) -> Cost {
         let num_w = query_sets(queries).len();
         Cost {
             num_commitment: num_w,
