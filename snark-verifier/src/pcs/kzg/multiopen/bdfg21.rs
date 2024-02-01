@@ -1,4 +1,4 @@
-use halo2_curves::group::prime::PrimeCurveAffine;
+use halo2_curves::{ff::PrimeField, group::prime::PrimeCurveAffine};
 
 use crate::{
     cost::{Cost, CostEstimation},
@@ -8,7 +8,7 @@ use crate::{
         PolynomialCommitmentScheme, Query,
     },
     util::{
-        arithmetic::{CurveAffine, Fraction, MultiMillerLoop, PrimeField},
+        arithmetic::{CurveAffine, Fraction, MultiMillerLoop},
         msm::Msm,
         transcript::TranscriptRead,
         Itertools,
@@ -30,7 +30,6 @@ impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for KzgAs<M, Bdfg21>
 where
     M: MultiMillerLoop,
     M::G1Affine: CurveAffine,
-    M::Fr: PrimeField + Ord,
     L: Loader<M::G1Affine>,
 {
     type VerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
@@ -373,7 +372,6 @@ where
 impl<M> CostEstimation<M::G1Affine> for KzgAs<M, Bdfg21>
 where
     M: MultiMillerLoop,
-    M::Fr: PrimeField,
 {
     type Input = Vec<Query<M::Fr>>;
 

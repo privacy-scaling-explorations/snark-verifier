@@ -1,6 +1,6 @@
 use crate::{
     system::halo2::test::{read_or_create_srs, MainGateWithRange},
-    util::arithmetic::{fe_to_limbs, CurveAffine, MultiMillerLoop, PrimeField},
+    util::arithmetic::{fe_to_limbs, CurveAffine, MultiMillerLoop},
 };
 use halo2_curves::{serde::SerdeObject, CurveExt};
 use halo2_proofs::poly::{commitment::ParamsProver, kzg::commitment::ParamsKZG};
@@ -21,7 +21,6 @@ pub const BITS: usize = 68;
 
 pub fn setup<M: MultiMillerLoop>(k: u32) -> ParamsKZG<M>
 where
-    M::Fr: PrimeField,
     M::G1Affine: SerdeObject + CurveAffine,
     M::G1: CurveExt<AffineExt = M::G1Affine>,
 {

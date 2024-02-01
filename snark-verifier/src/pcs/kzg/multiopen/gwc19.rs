@@ -26,7 +26,6 @@ impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
     M::G1Affine: CurveAffine,
-    M::Fr: PrimeField,
     L: Loader<M::G1Affine>,
 {
     type VerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
@@ -164,7 +163,6 @@ where
 impl<M> CostEstimation<M::G1Affine> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
-    M::Fr: PrimeField,
 {
     type Input = Vec<Query<M::Fr>>;
 

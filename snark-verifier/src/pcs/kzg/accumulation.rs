@@ -2,7 +2,7 @@ use crate::{
     loader::{native::NativeLoader, LoadedScalar, Loader},
     pcs::{kzg::KzgAccumulator, AccumulationScheme, AccumulationSchemeProver},
     util::{
-        arithmetic::{Curve, CurveAffine, Field, MultiMillerLoop, PrimeField},
+        arithmetic::{Curve, CurveAffine, Field, MultiMillerLoop},
         msm::Msm,
         transcript::{TranscriptRead, TranscriptWrite},
     },
@@ -20,7 +20,6 @@ impl<M, L, MOS> AccumulationScheme<M::G1Affine, L> for KzgAs<M, MOS>
 where
     M: MultiMillerLoop,
     M::G1Affine: CurveAffine,
-    M::Fr: PrimeField,
     L: Loader<M::G1Affine>,
     MOS: Clone + Debug,
 {
@@ -142,7 +141,6 @@ impl<M, MOS> AccumulationSchemeProver<M::G1Affine> for KzgAs<M, MOS>
 where
     M: MultiMillerLoop,
     M::G1Affine: CurveAffine,
-    M::Fr: PrimeField,
     MOS: Clone + Debug,
 {
     type ProvingKey = KzgAsProvingKey<M::G1Affine>;
