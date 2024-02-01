@@ -18,7 +18,6 @@ use halo2_proofs::{
     },
     transcript::{TranscriptReadBuffer, TranscriptWriterBuffer},
 };
-use halo2curves::pairing::Engine;
 use itertools::Itertools;
 use rand::{rngs::StdRng, SeedableRng};
 pub use snark_verifier::loader::evm::encode_calldata;
@@ -128,11 +127,7 @@ where
             Rc<EvmLoader>,
             VerifyingKey = KzgAsVerifyingKey,
             Accumulator = KzgAccumulator<G1Affine, Rc<EvmLoader>>,
-        > + AccumulationDecider<
-            G1Affine,
-            Rc<EvmLoader>,
-            DecidingKey = KzgDecidingKey<Bn256, <Bn256 as Engine>::G1Affine>,
-        >,
+        > + AccumulationDecider<G1Affine, Rc<EvmLoader>, DecidingKey = KzgDecidingKey<Bn256>>,
 {
     let protocol = compile(
         params,

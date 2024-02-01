@@ -25,7 +25,7 @@ halo2curves = { git = "https://github.com/privacy-scaling-explorations/halo2curv
 
 # loader_halo2
 halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2024_01_31", package = "ecc", optional = true }
-poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon", tag = "v2023_04_20", optional = true }
+poseidon = { git = "https://github.com/privacy-scaling-explorations/poseidon", tag = "v2024_01_31", optional = true }
 
 # loader_evm
 ethereum-types = { version = "0.14", default-features = false, features = [

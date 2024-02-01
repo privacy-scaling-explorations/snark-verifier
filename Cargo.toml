@@ -5,8 +5,4 @@ members = [
 ]
 
 [patch.crates-io]
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v0.3.0" }
 halo2curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "v0.6.0" }
-
-[patch."https://github.com/privacy-scaling-explorations/halo2wrong"]
-halo2_wrong_ecc = { git = "https://www.github.com/privacy-scaling-explorations/halo2wrong", tag = "v2024_01_31", package = "ecc", optional = true}

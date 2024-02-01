@@ -5,9 +5,12 @@ use std::marker::PhantomData;
 
 /// KZG deciding key.
 #[derive(Debug, Clone, Copy)]
-pub struct KzgDecidingKey<M: MultiMillerLoop, C: CurveAffine> {
+pub struct KzgDecidingKey<M: MultiMillerLoop>
+where
+    M::G1Affine: CurveAffine,
+{
     /// KZG succinct verifying key.
-    pub svk: KzgSuccinctVerifyingKey<C>,
+    pub svk: KzgSuccinctVerifyingKey<M::G1Affine>,
     /// Generator on G2.
     pub g2: M::G2Affine,
     /// Generator to the trusted-setup secret on G2.
@@ -15,7 +18,7 @@ pub struct KzgDecidingKey<M: MultiMillerLoop, C: CurveAffine> {
     _marker: PhantomData<M>,
 }
 
-impl<C: CurveAffine, M: MultiMillerLoop<G1Affine = C>> KzgDecidingKey<M, C>
+impl<C: CurveAffine, M: MultiMillerLoop<G1Affine = C>> KzgDecidingKey<M>
 where
     M::G1Affine: CurveAffine,
     M::G2Affine: CurveAffine,
@@ -36,18 +39,18 @@ where
 }
 
 impl<C: CurveAffine, M: MultiMillerLoop<G1Affine = C>> From<(M::G1Affine, M::G2Affine, M::G2Affine)>
-    for KzgDecidingKey<M, C>
+    for KzgDecidingKey<M>
 where
     M::G1Affine: CurveAffine,
     M::G2Affine: CurveAffine,
 {
-    fn from((g1, g2, s_g2): (M::G1Affine, M::G2Affine, M::G2Affine)) -> KzgDecidingKey<M, C> {
+    fn from((g1, g2, s_g2): (M::G1Affine, M::G2Affine, M::G2Affine)) -> KzgDecidingKey<M> {
         KzgDecidingKey::new(g1, g2, s_g2)
     }
 }
 
 impl<C: CurveAffine, M: MultiMillerLoop<G1Affine = C>> AsRef<KzgSuccinctVerifyingKey<M::G1Affine>>
-    for KzgDecidingKey<M, C>
+    for KzgDecidingKey<M>
 {
     fn as_ref(&self) -> &KzgSuccinctVerifyingKey<M::G1Affine> {
         &self.svk
@@ -79,7 +82,7 @@ mod native {
         M::Fr: PrimeField,
         MOS: Clone + Debug,
     {
-        type DecidingKey = KzgDecidingKey<M, M::G1Affine>;
+        type DecidingKey = KzgDecidingKey<M>;
 
         fn decide(
             dk: &Self::DecidingKey,
@@ -135,7 +138,7 @@ mod evm {
         <M::G1Affine as CurveAffine>::ScalarExt: PrimeField<Repr = [u8; 0x20]>,
         MOS: Clone + Debug,
     {
-        type DecidingKey = KzgDecidingKey<M, M::G1Affine>;
+        type DecidingKey = KzgDecidingKey<M>;
 
         fn decide(
             dk: &Self::DecidingKey,
