@@ -272,10 +272,11 @@ mod halo2_wrong {
                     )?;
                     let acc =
                         Value::known(*scalar) * lhs.value() * rhs.value() + Value::known(constant);
-                    let output = values.iter().skip(1).fold(
-                        Ok::<_, Error>(acc),
-                        |acc, (scalar, lhs, rhs)| {
-                            acc.and_then(|acc| {
+                    let output =
+                        values
+                            .iter()
+                            .skip(1)
+                            .try_fold(acc, |acc, (scalar, lhs, rhs)| {
                                 self.apply(
                                     ctx,
                                     [
@@ -292,10 +293,10 @@ mod halo2_wrong {
                                     )
                                     .into(),
                                 )?;
-                                Ok(acc + Value::known(*scalar) * lhs.value() * rhs.value())
-                            })
-                        },
-                    )?;
+                                Ok::<_, Error>(
+                                    acc + Value::known(*scalar) * lhs.value() * rhs.value(),
+                                )
+                            })?;
                     self.apply(
                         ctx,
                         [
@@ -419,10 +420,7 @@ mod halo2_wrong {
                     Ok::<_, Error>((scalar.deref().clone(), self.assign_constant(ctx, *base)?))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let pairs = pairs
-                .iter()
-                .map(|(scalar, base)| (scalar, base))
-                .collect_vec();
+            let pairs = pairs.iter().map(|tup| (&tup.0, &tup.1)).collect_vec();
             self.variable_base_msm(ctx, &pairs)
         }
 

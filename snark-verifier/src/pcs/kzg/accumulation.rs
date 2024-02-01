@@ -47,7 +47,7 @@ where
         let (lhs, rhs) = instances
             .iter()
             .map(|accumulator| (&accumulator.lhs, &accumulator.rhs))
-            .chain(proof.blind.as_ref().map(|(lhs, rhs)| (lhs, rhs)))
+            .chain(proof.blind.as_ref().map(|tup| (&tup.0, &tup.1)))
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
         let powers_of_r = proof.r.powers(lhs.len());
