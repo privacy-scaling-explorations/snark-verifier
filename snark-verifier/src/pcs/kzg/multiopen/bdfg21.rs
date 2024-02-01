@@ -1,4 +1,4 @@
-use halo2_curves::{ff::PrimeField, group::prime::PrimeCurveAffine};
+use halo2_curves::ff::PrimeField;
 
 use crate::{
     cost::{Cost, CostEstimation},
@@ -29,7 +29,8 @@ pub struct Bdfg21;
 impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for KzgAs<M, Bdfg21>
 where
     M: MultiMillerLoop,
-    M::G1Affine: CurveAffine,
+    M::Fr: Ord,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
     L: Loader<M::G1Affine>,
 {
     type VerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
@@ -38,7 +39,7 @@ where
 
     fn read_proof<T>(
         _: &KzgSuccinctVerifyingKey<M::G1Affine>,
-        _: &[Query<<M::G1Affine as PrimeCurveAffine>::Scalar>],
+        _: &[Query<M::Fr>],
         transcript: &mut T,
     ) -> Result<Bdfg21Proof<M::G1Affine, L>, Error>
     where
@@ -51,7 +52,7 @@ where
         svk: &KzgSuccinctVerifyingKey<M::G1Affine>,
         commitments: &[Msm<M::G1Affine, L>],
         z: &L::LoadedScalar,
-        queries: &[Query<<M::G1Affine as PrimeCurveAffine>::Scalar, L::LoadedScalar>],
+        queries: &[Query<M::Fr, L::LoadedScalar>],
         proof: &Bdfg21Proof<M::G1Affine, L>,
     ) -> Result<Self::Output, Error> {
         let sets = query_sets(queries);

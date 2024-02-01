@@ -1,5 +1,3 @@
-use halo2_curves::group::prime::PrimeCurveAffine;
-
 use crate::{
     cost::{Cost, CostEstimation},
     loader::{LoadedScalar, Loader},
@@ -25,7 +23,8 @@ pub struct Gwc19;
 impl<M, L> PolynomialCommitmentScheme<M::G1Affine, L> for KzgAs<M, Gwc19>
 where
     M: MultiMillerLoop,
-    M::G1Affine: CurveAffine,
+    M::Fr: Ord,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
     L: Loader<M::G1Affine>,
 {
     type VerifyingKey = KzgSuccinctVerifyingKey<M::G1Affine>;
@@ -34,7 +33,7 @@ where
 
     fn read_proof<T>(
         _: &Self::VerifyingKey,
-        queries: &[Query<<M::G1Affine as PrimeCurveAffine>::Scalar>],
+        queries: &[Query<M::Fr>],
         transcript: &mut T,
     ) -> Result<Self::Proof, Error>
     where
@@ -47,7 +46,7 @@ where
         svk: &Self::VerifyingKey,
         commitments: &[Msm<M::G1Affine, L>],
         z: &L::LoadedScalar,
-        queries: &[Query<<M::G1Affine as PrimeCurveAffine>::Scalar, L::LoadedScalar>],
+        queries: &[Query<M::Fr, L::LoadedScalar>],
         proof: &Self::Proof,
     ) -> Result<Self::Output, Error> {
         let sets = query_sets(queries);

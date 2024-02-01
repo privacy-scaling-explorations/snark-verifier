@@ -27,13 +27,12 @@ where
     ParamsKZG::<M>::setup(k, ChaCha20Rng::from_seed(Default::default()))
 }
 
-pub fn main_gate_with_range_with_mock_kzg_accumulator<
-    C: CurveAffine,
-    M: MultiMillerLoop<G1Affine = C, Fr = C::ScalarExt, G1 = C::CurveExt>,
->() -> MainGateWithRange<<M::G1Affine as CurveAffine>::ScalarExt>
+pub fn main_gate_with_range_with_mock_kzg_accumulator<M: MultiMillerLoop>(
+) -> MainGateWithRange<M::Fr>
 where
     M::G2Affine: CurveAffine + SerdeObject,
-    M::G1Affine: CurveAffine + SerdeObject,
+    M::G1Affine: CurveAffine<CurveExt = M::G1, ScalarExt = M::Fr> + SerdeObject,
+    M::G1: CurveExt<AffineExt = M::G1Affine>,
 {
     let srs = read_or_create_srs(TESTDATA_DIR, 1, setup::<M>);
     let [g1, s_g1] = [srs.get_g()[0], srs.get_g()[1]].map(|point| point.coordinates().unwrap());
