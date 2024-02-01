@@ -3,6 +3,3 @@ members = [
     "snark-verifier",
     "snark-verifier-sdk"
 ]
-
-[patch.crates-io]
-halo2curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "v0.6.0" }

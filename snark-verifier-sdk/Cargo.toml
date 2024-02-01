@@ -21,7 +21,7 @@ snark-verifier = { path = "../snark-verifier", default-features = false }
 
 # system_halo2
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2", tag = "v0.3.0" } # not optional for now
-halo2curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "v0.6.0" }
+halo2curves = "0.6.0"
 
 # loader_halo2
 halo2_wrong_ecc = { git = "https://github.com/privacy-scaling-explorations/halo2wrong", tag = "v2024_01_31", package = "ecc", optional = true }
